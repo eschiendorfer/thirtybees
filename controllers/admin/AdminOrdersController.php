@@ -791,10 +791,19 @@ class AdminOrdersControllerCore extends AdminController
                                 '{order_name}' => $order->getUniqReference(),
                                 '{message}'    => $message,
                             ];
+
+                            // Subject depending on IMAP sync is used
+                            if (Configuration::get('PS_SAV_IMAP_URL') && Configuration::get('PS_SAV_IMAP_USER') && Configuration::get('PS_SAV_IMAP_PWD')) {
+                                $subject = sprintf(Mail::l('New message regarding your order #ct%1$s #tc%2$s'), $customerThread->id, $customerThread->token, (int)$order->id_lang);
+                            }
+                            else {
+                                $subject = Mail::l('New message regarding your order', (int)$order->id_lang);
+                            }
+
                             if (@Mail::Send(
                                 (int) $order->id_lang,
                                 'order_merchant_comment',
-                                Mail::l('New message regarding your order', (int) $order->id_lang),
+                                $subject,
                                 $varsTpl,
                                 $customer->email,
                                 $customer->firstname.' '.$customer->lastname,
