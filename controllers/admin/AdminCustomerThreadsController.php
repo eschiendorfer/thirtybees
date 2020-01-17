@@ -442,7 +442,7 @@ class AdminCustomerThreadsControllerCore extends AdminController
                     }
                 }
             } else {
-                //check if subject has id_order
+                //check if subject has identifier (#ct->id_customer_thread, #tc->token)
                 preg_match('/\#ct([0-9]*)/', $subject, $matches1);
                 preg_match('/\#tc([0-9-a-z-A-Z]*)/', $subject, $matches2);
                 $matchFound = false;
@@ -494,7 +494,7 @@ class AdminCustomerThreadsControllerCore extends AdminController
                     } //check if order exist in database
 
                     if (Validate::isLoadedObject($ct) && ((isset($matches2[1]) && $ct->token == $matches2[1]) || $newCt)) {
-                        $message = imap_fetchbody($mbox, $overview->msgno, 1);
+                        $message = imap_fetchbody($mbox, $overview->msgno, 1.1);
                         if (base64_encode(base64_decode($message)) === $message) {
                             $message = base64_decode($message);
                         }
