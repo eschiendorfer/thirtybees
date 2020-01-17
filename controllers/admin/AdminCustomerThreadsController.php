@@ -391,9 +391,8 @@ class AdminCustomerThreadsControllerCore extends AdminController
 
         //checks if there is no error when connecting imap server
         $errors = imap_errors();
-        if (is_array($errors)) {
-            $errors = array_unique($errors);
-        }
+        $errors = is_array($errors) ? array_unique($errors) : [];
+
         $strErrors = '';
         $strErrorDelete = '';
 
