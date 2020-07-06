@@ -25,34 +25,40 @@
 <div class="table-responsive">
 	<table class="table" id="shipping_table">
 		<thead>
-			<tr>
-				<th>
-					<span class="title_box ">{l s='Date'}</span>
-				</th>
-				<th>
-					<span class="title_box ">&nbsp;</span>
-				</th>
-				<th>
-					<span class="title_box ">{l s='Carrier'}</span>
-				</th>
-				<th>
-					<span class="title_box ">{l s='Weight'}</span>
-				</th>
-				<th>
-					<span class="title_box ">{l s='Shipping cost'}</span>
-				</th>
-				<th>
-					<span class="title_box ">{l s='Tracking number'}</span>
-				</th>
-				<th></th>
-			</tr>
+		<tr>
+			<th>
+				<span class="title_box ">{l s='Date'}</span>
+			</th>
+			<th>
+				<span class="title_box ">&nbsp;</span>
+			</th>
+			<th>
+				<span class="title_box ">{l s='Carrier'}</span>
+			</th>
+			<th>
+				<span class="title_box ">{l s='Weight'}</span>
+			</th>
+			<th>
+				<span class="title_box ">{l s='Shipping cost'}</span>
+			</th>
+			<th>
+				<span class="title_box ">{l s='Tracking number'}</span>
+			</th>
+			<th></th>
+		</tr>
 		</thead>
 		<tbody>
-			{foreach from=$order->getShipping() item=line}
+		{foreach from=$order->getShipping() item=line}
 			<tr>
 				<td>{dateFormat date=$line.date_add full=true}</td>
 				<td>&nbsp;</td>
-				<td>{$line.carrier_name}</td>
+				<td>
+					<select name="id_carrier">
+						{foreach from=$carriers item=carrier}
+							<option value="{$carrier.id_carrier}" {if $line.id_carrier==$carrier.id_carrier}selected{/if}>{$carrier.name}</option>
+						{/foreach}
+					</select>
+				</td>
 				<td class="weight">{$line.weight|string_format:"%.3f"} {Configuration::get('PS_WEIGHT_UNIT')}</td>
 				<td class="center">
 					{if $order->getTaxCalculationMethod() == $smarty.const.PS_TAX_INC}
@@ -67,27 +73,36 @@
 				<td>
 					{if $line.can_edit}
 						<form method="post" action="{$link->getAdminLink('AdminOrders')|escape:'html':'UTF-8'}&amp;vieworder&amp;id_order={$order->id|intval}">
-							<span class="shipping_number_edit" style="display:none;">
-								<input type="hidden" name="id_order_carrier" value="{$line.id_order_carrier|htmlentities}" />
-								<input type="text" name="tracking_number" value="{$line.tracking_number|htmlentities}" />
-								<button type="submit" class="btn btn-default" name="submitShippingNumber">
-									<i class="icon-ok"></i>
-									{l s='Update'}
+							<div class="btn-group">
+								<a href="#" class="edit_shipping_number_link btn btn-default">
+									<i class="icon-pencil"></i>
+									{l s='Edit'}
+								</a>
+								<a href="#" class="cancel_shipping_number_link btn btn-default" style="display: none;">
+									<i class="icon-remove"></i>
+									{l s='Cancel'}
+								</a>
+								<span class="shipping_number_edit" style="display:none;">
+									<input type="hidden" name="id_order_carrier" value="{$line.id_order_carrier|htmlentities}" />
+									<input type="text" name="tracking_number" value="{$line.tracking_number|htmlentities}" />
+									<button type="submit" class="btn btn-default" name="submitShippingNumber">
+										<i class="icon-ok"></i>
+										{l s='Update'}
+									</button>
+								</span>
+								<button type="button" class="btn btn-default dropdown-toggle shipping_number_show" data-toggle="dropdown">
+									<span class="caret"></span>
 								</button>
-							</span>
-							<a href="#" class="edit_shipping_number_link btn btn-default">
-								<i class="icon-pencil"></i>
-								{l s='Edit'}
-							</a>
-							<a href="#" class="cancel_shipping_number_link btn btn-default" style="display: none;">
-								<i class="icon-remove"></i>
-								{l s='Cancel'}
-							</a>
+								<button type="submit" name="recalculateShippingCost" class="btn btn-default dropdown-menu" style="padding: 6px; 8px;">
+									<i class="icon-refresh"></i>
+									{l s='Recalculate Shipping Cost'}
+								</button>
+							</div>
 						</form>
 					{/if}
 				</td>
 			</tr>
-			{/foreach}
+		{/foreach}
 		</tbody>
 	</table>
 </div>

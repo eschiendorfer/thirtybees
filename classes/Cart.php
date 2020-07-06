@@ -781,7 +781,7 @@ class CartCore extends ObjectModel
         $psTaxAddressType = $configuration->get('PS_TAX_ADDRESS_TYPE');
         $psUseEcotax = $configuration->get('PS_USE_ECOTAX');
 
-        if (!$this->id) {
+        if (!$this->id && !is_array($products)) {
             return 0;
         }
 

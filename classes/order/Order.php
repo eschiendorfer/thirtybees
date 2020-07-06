@@ -2558,6 +2558,73 @@ class OrderCore extends ObjectModel
     }
 
     /**
+     *
+     * This method allows to recalculate the shipping cost of the current order
+     *
+     * @param int $id_carrier
+     * @return bool
+     *
+     * @since 1.1.x
+     * @version 1.0.0 Initial version
+     */
+    public function recalculateShippingCost($id_carrier) {
+
+        // We recreate a provisionally cart, to recalculate the shipping cost
+        $cart = new Cart();
+        $cart->id_lang = $this->id_lang;
+        $cart->id_currency = $this->id_currency;
+        $cart->id_carrier = (int)$id_carrier;
+        $cart->id_address_delivery = $this->id_address_delivery;
+
+        $products = $this->getProducts(); // It means that prices are taken from the saved order
+
+        foreach ($products as $key => $product) {
+            $products[$key]['cart_quantity'] = $product['product_quantity'];
+            $products[$key]['id_product_attribute'] = $product['product_attribute_id'];
+        }
+
+        $newShippingCostTaxExcl = (float)$cart->getPackageShippingCost((int) $id_carrier, false, null, $products);
+        $newShippingCostTaxIncl = (float)$cart->getPackageShippingCost((int) $id_carrier, true, null, $products);
+
+        $shippingCostChangeTaxExcl = $this->total_shipping_tax_excl-$newShippingCostTaxExcl;
+        $shippingCostChangeTaxIncl = $this->total_shipping_tax_incl-$newShippingCostTaxIncl;
+
+        // Update Order
+        $this->id_carrier = $id_carrier;
+        $this->total_shipping_tax_excl = $newShippingCostTaxExcl;
+        $this->total_shipping_tax_incl = $newShippingCostTaxIncl;
+        $this->total_shipping = $this->total_shipping_tax_incl;
+
+        $this->total_paid_tax_excl -= $shippingCostChangeTaxExcl;
+        $this->total_paid_tax_incl -= $shippingCostChangeTaxIncl;
+        $this->total_paid = $this->total_paid_tax_incl;
+
+        $this->update();
+
+        // Update OrderCarrier
+        $orderCarrier = new OrderCarrier($this->getIdOrderCarrier());
+        $orderCarrier->id_carrier = $id_carrier;
+        $orderCarrier->weight = (float)$this->getTotalWeight();
+        $orderCarrier->shipping_cost_tax_excl = $this->total_shipping_tax_excl;
+        $orderCarrier->shipping_cost_tax_incl = $this->total_shipping_tax_incl;
+        $orderCarrier->update();
+
+        // Update Invoice if needed
+        if ($this->invoice_number) {
+            $orderInvoice = OrderInvoice::getInvoiceByNumber($this->invoice_number);
+            $orderInvoice->total_shipping_tax_excl = $newShippingCostTaxExcl;
+            $orderInvoice->total_shipping_tax_incl = $newShippingCostTaxIncl;
+
+            $orderInvoice->total_paid_tax_excl -= $shippingCostChangeTaxExcl;
+            $orderInvoice->total_paid_tax_incl -= $shippingCostChangeTaxIncl;
+
+            $orderInvoice->update();
+        }
+
+        return true;
+    }
+
+    /**
      * Returns the correct product taxes breakdown.
      *
      * @since   1.5.0.1

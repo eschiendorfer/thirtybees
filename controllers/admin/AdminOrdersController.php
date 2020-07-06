@@ -1789,6 +1789,8 @@ class AdminOrdersControllerCore extends AdminController
             } else {
                 $this->errors[] = Tools::displayError('You do not have permission to edit this.');
             }
+        } elseif (Tools::isSubmit('recalculateShippingCost') && ($id_carrier = (int)Tools::getValue('id_carrier')) && isset($order)) {
+            $order->recalculateShippingCost($id_carrier);
         }
 
         parent::postProcess();
@@ -2040,6 +2042,7 @@ class AdminOrdersControllerCore extends AdminController
             'orderMessages'                => OrderMessage::getOrderMessages($order->id_lang),
             'messages'                     => CustomerMessage::getMessagesByOrderId($order->id, false),
             'carrier'                      => new Carrier($order->id_carrier),
+            'carriers'                     => Carrier::getCarriers($this->context->language->id, false, false, null, null, Carrier::PS_CARRIERS_ONLY, $order->id_shop),
             'history'                      => $history,
             'states'                       => OrderState::getOrderStates($this->context->language->id),
             'warehouse_list'               => $warehouseList,

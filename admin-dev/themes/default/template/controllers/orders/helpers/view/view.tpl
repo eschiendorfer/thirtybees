@@ -295,7 +295,7 @@
             <h4 class="visible-print">{l s='Shipping'} <span class="badge">({$order->getShipping()|@count})</span></h4>
             <!-- Shipping block -->
             {if !$order->isVirtual()}
-              <div class="form-horizontal">
+              <form method="post" class="form-horizontal">
                 {if $order->gift_message}
                   <div class="form-group">
                     <label class="control-label col-lg-3">{l s='Message'}</label>
@@ -320,7 +320,7 @@
                 {else}
                   <span class="label label-inactive"><i class="icon-remove"></i> {l s='Gift wrapping'}</span>
                 {/if}
-              </div>
+              </form>
             {/if}
           </div>
           <!-- Tab returns -->
