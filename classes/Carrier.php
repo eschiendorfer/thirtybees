@@ -883,6 +883,7 @@ class CarrierCore extends ObjectModel implements InitializationCallback
      *                             CARRIERS_MODULE_NEED_RANGE
      *                             PS_CARRIERS_AND_CARRIER_MODULES_NEED_RANGE
      *                             ALL_CARRIERS
+     * @param int $idShop          Shop id
      *
      * @return array Carriers
      *
@@ -891,7 +892,7 @@ class CarrierCore extends ObjectModel implements InitializationCallback
      *
      * @todo    Check if the query has been fixed and remove the EXISTS subquery ^MD
      */
-    public static function getCarriers($idLang, $active = false, $delete = false, $idZone = false, $idsGroup = null, $modulesFilters = self::PS_CARRIERS_ONLY)
+    public static function getCarriers($idLang, $active = false, $delete = false, $idZone = false, $idsGroup = null, $modulesFilters = self::PS_CARRIERS_ONLY, $idShop = null)
     {
         // Filter by groups and no groups => return empty array
         if ($idsGroup && (!is_array($idsGroup) || !count($idsGroup))) {
@@ -933,6 +934,11 @@ class CarrierCore extends ObjectModel implements InitializationCallback
                 $sql->where('c.`is_module` = 0 OR c.`need_range` = 1');
                 break;
         }
+
+        if ($idShop) {
+            $sql->innerJoin('carrier_shop', 'cs', 'cs.`id_carrier` = c.`id_carrier` AND cs.`id_shop`='.$idShop);
+        }
+
         $sql->groupBy('c.`id_carrier`');
         $sql->orderBy('c.`position` ASC');
 
