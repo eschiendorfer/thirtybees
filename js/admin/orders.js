@@ -584,6 +584,9 @@ function init() {
 
     $(this).parent().find('.edit_shipping_number_link').hide();
     $(this).parent().find('.cancel_shipping_number_link').show();
+
+    $(this).closest('tr').next('tr.shipping_edit').show();
+    $(this).closest('tr').next('tr').find('a.cancel_shipping_number_link').show();
     e.preventDefault();
   });
 
@@ -593,7 +596,21 @@ function init() {
 
     $(this).parent().find('.edit_shipping_number_link').show();
     $(this).parent().find('.cancel_shipping_number_link').hide();
+
+    $(this).closest('tr.shipping_edit').hide();
+    $(this).closest('tr').prev('tr').find('a.edit_shipping_number_link').show();
     e.preventDefault();
+  });
+
+  $('#recalculate_shipping_on, #recalculate_shipping_off').unbind('change').change(function () {
+    if($('#recalculate_shipping_on').is(':checked')) {
+      $('input[name="weight"]').closest('.form-group').hide();
+      $('input[name="shipping_cost_tax_incl"]').closest('.form-group').hide();
+    }
+    else {
+      $('input[name="weight"]').closest('.form-group').show();
+      $('input[name="shipping_cost_tax_incl"]').closest('.form-group').show();
+    }
   });
 
   $('#add_product_product_invoice').unbind('change').change(function () {

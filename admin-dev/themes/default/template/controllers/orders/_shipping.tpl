@@ -51,13 +51,9 @@
 		{foreach from=$order->getShipping() item=line}
 			<tr>
 				<td>{dateFormat date=$line.date_add full=true}</td>
-				<td>&nbsp;</td>
+				<td>{$line.carrier_name}</td>
 				<td>
-					<select name="id_carrier">
-						{foreach from=$carriers item=carrier}
-							<option value="{$carrier.id_carrier}" {if $line.id_carrier==$carrier.id_carrier}selected{/if}>{$carrier.name}</option>
-						{/foreach}
-					</select>
+
 				</td>
 				<td class="weight">{$line.weight|string_format:"%.3f"} {Configuration::get('PS_WEIGHT_UNIT')}</td>
 				<td class="center">
@@ -72,34 +68,89 @@
 				</td>
 				<td>
 					{if $line.can_edit}
-						<form method="post" action="{$link->getAdminLink('AdminOrders')|escape:'html':'UTF-8'}&amp;vieworder&amp;id_order={$order->id|intval}">
-							<div class="btn-group">
-								<a href="#" class="edit_shipping_number_link btn btn-default">
-									<i class="icon-pencil"></i>
-									{l s='Edit'}
-								</a>
-								<a href="#" class="cancel_shipping_number_link btn btn-default" style="display: none;">
-									<i class="icon-remove"></i>
-									{l s='Cancel'}
-								</a>
-								<span class="shipping_number_edit" style="display:none;">
-									<input type="hidden" name="id_order_carrier" value="{$line.id_order_carrier|htmlentities}" />
-									<input type="text" name="tracking_number" value="{$line.tracking_number|htmlentities}" />
-									<button type="submit" class="btn btn-default" name="submitShippingNumber">
-										<i class="icon-ok"></i>
-										{l s='Update'}
-									</button>
-								</span>
-								<button type="button" class="btn btn-default dropdown-toggle shipping_number_show" data-toggle="dropdown">
-									<span class="caret"></span>
-								</button>
-								<button type="submit" name="recalculateShippingCost" class="btn btn-default dropdown-menu" style="padding: 6px; 8px;">
-									<i class="icon-refresh"></i>
-									{l s='Recalculate Shipping Cost'}
-								</button>
-							</div>
-						</form>
+						<a href="#" class="edit_shipping_number_link btn btn-default">
+							<i class="icon-pencil"></i>
+							{l s='Edit'}
+						</a>
 					{/if}
+				</td>
+			</tr>
+			<tr class="shipping_edit" style="display:none;">
+				<td colspan="7">
+					<input type="hidden" name="id_order_carrier" value="{$line.id_order_carrier|htmlentities}" />
+					<div class="form-group">
+						<label class="control-label col-lg-3">{l s='Carrier'}</label>
+						<div class="col-lg-9">
+							<select name="id_carrier">
+								{foreach from=$carriers item=carrier}
+									<option value="{$carrier.id_carrier}" {if $line.id_carrier==$carrier.id_carrier}selected{/if}>{$carrier.name}</option>
+								{/foreach}
+							</select>
+						</div>
+					</div>
+					<div class="form-group">
+						<label class="control-label col-lg-3">{l s='Recalculate Shipping'}</label>
+						<div class="col-lg-9">
+							<span class="switch prestashop-switch fixed-width-lg">
+								<input type="radio" name="recalculate_shipping" id="recalculate_shipping_on" value="1">
+								<label for="recalculate_shipping_on">
+									{l s='Yes'}
+								</label>
+								<input type="radio" name="recalculate_shipping" id="recalculate_shipping_off" value="0" checked="checked">
+								<label for="recalculate_shipping_off">
+									{l s='No'}
+								</label>
+								<a class="slide-button btn"></a>
+							</span>
+						</div>
+					</div>
+					<div class="form-group">
+						<label class="control-label col-lg-3">{l s='Weight'}</label>
+						<div class="col-lg-9">
+							<div class="input-group">
+								<input type="text" name="weight" value="{$line.weight|string_format:"%.3f"}" onkeyup="this.value = this.value.replace(/,/g, '.');" />
+								<div class="input-group-addon">{Configuration::get('PS_WEIGHT_UNIT')}</div>
+							</div>
+						</div>
+					</div>
+					<div class="form-group">
+						<label class="control-label col-lg-3">{l s='Shipping Cost'}</label>
+						<div class="col-lg-9">
+							<div class="input-group">
+								<input type="text" name="shipping_cost_tax_incl" value="{$line.shipping_cost_tax_incl}" onkeyup="this.value = this.value.replace(/,/g, '.');" />
+								<div class="input-group-addon">{$currency->iso_code} {l s='Tax incl.'}</div>
+							</div>
+						</div>
+					</div>
+					<div class="form-group">
+						<label class="control-label col-lg-3">{l s='Tracking number'}</label>
+						<div class="col-lg-9">
+							<input type="text" name="tracking_number" value="{$line.tracking_number|htmlentities}" />
+						</div>
+					</div>
+					<div class="form-group">
+						<label class="control-label col-lg-3">{l s='Send Tracking Email'}</label>
+						<div class="col-lg-9">
+							<span class="switch prestashop-switch fixed-width-lg">
+								<input type="radio" name="send_transit_email" id="send_transit_email_on" value="1">
+								<label for="send_transit_email_on">
+									{l s='Yes'}
+								</label>
+								<input type="radio" name="send_transit_email" id="send_transit_email_off" value="0" checked="checked">
+								<label for="send_transit_email_off">
+									{l s='No'}
+								</label>
+								<a class="slide-button btn"></a>
+							</span>
+						</div>
+					</div>
+					<button type="submit" id="submitShippingNumber" class="btn btn-primary pull-right" name="submitShippingNumber">
+						{l s='Update'}
+					</button>
+					<a href="#" class="cancel_shipping_number_link btn btn-default">
+						<i class="icon-remove"></i>
+						{l s='Cancel'}
+					</a>
 				</td>
 			</tr>
 		{/foreach}

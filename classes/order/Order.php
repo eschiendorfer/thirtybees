@@ -2562,19 +2562,15 @@ class OrderCore extends ObjectModel
      * This method allows to recalculate the shipping cost of the current order
      *
      * @param int $id_carrier
+     * @param float $weight
+     * @param float $amountTaxIncl
+     * @param string $trackingNumber
      * @return bool
      *
      * @since 1.1.x
      * @version 1.0.0 Initial version
      */
-    public function recalculateShippingCost($id_carrier) {
-
-        // We recreate a provisionally cart, to recalculate the shipping cost
-        $cart = new Cart();
-        $cart->id_lang = $this->id_lang;
-        $cart->id_currency = $this->id_currency;
-        $cart->id_carrier = (int)$id_carrier;
-        $cart->id_address_delivery = $this->id_address_delivery;
+    public function updateShipping($id_carrier, $weight = null, $amountTaxIncl = null, $trackingNumber = null) {
 
         $products = $this->getProducts(); // It means that prices are taken from the saved order
 
@@ -2583,8 +2579,26 @@ class OrderCore extends ObjectModel
             $products[$key]['id_product_attribute'] = $product['product_attribute_id'];
         }
 
-        $newShippingCostTaxExcl = (float)$cart->getPackageShippingCost((int) $id_carrier, false, null, $products);
-        $newShippingCostTaxIncl = (float)$cart->getPackageShippingCost((int) $id_carrier, true, null, $products);
+        if ($amountTaxIncl===null) {
+            // We create a temporary cart, to recalculate the shipping cost
+            $cart = new Cart();
+            $cart->id_lang = $this->id_lang;
+            $cart->id_currency = $this->id_currency;
+            $cart->id_carrier = (int)$id_carrier;
+            $cart->id_address_delivery = $this->id_address_delivery;
+
+            $newShippingCostTaxExcl = (float)$cart->getPackageShippingCost((int) $id_carrier, false, null, $products);
+            $newShippingCostTaxIncl = (float)$cart->getPackageShippingCost((int) $id_carrier, true, null, $products);
+        }
+        else {
+            $newCarrier = new Carrier($id_carrier);
+            $deliveryAddress = new Address($this->id_address_delivery);
+            $newShippingCostTaxIncl = (float) $amountTaxIncl;
+            $newShippingCostTaxExcl = (float) $amountTaxIncl/(1+($newCarrier->getTaxesRate($deliveryAddress)/100));
+        }
+
+        $newShippingCostTaxExcl = round($newShippingCostTaxExcl, _TB_PRICE_DATABASE_PRECISION_);
+        $newShippingCostTaxIncl = round($newShippingCostTaxIncl, _TB_PRICE_DATABASE_PRECISION_);
 
         $shippingCostChangeTaxExcl = $this->total_shipping_tax_excl-$newShippingCostTaxExcl;
         $shippingCostChangeTaxIncl = $this->total_shipping_tax_incl-$newShippingCostTaxIncl;
@@ -2604,9 +2618,10 @@ class OrderCore extends ObjectModel
         // Update OrderCarrier
         $orderCarrier = new OrderCarrier($this->getIdOrderCarrier());
         $orderCarrier->id_carrier = $id_carrier;
-        $orderCarrier->weight = (float)$this->getTotalWeight();
+        $orderCarrier->weight = ($weight!==null) ? (float)$weight : (float)$this->getTotalWeight();
         $orderCarrier->shipping_cost_tax_excl = $this->total_shipping_tax_excl;
         $orderCarrier->shipping_cost_tax_incl = $this->total_shipping_tax_incl;
+        $orderCarrier->tracking_number = pSQL($trackingNumber);
         $orderCarrier->update();
 
         // Update Invoice if needed
