@@ -973,48 +973,55 @@
 
 			Object.entries(conditional_field).forEach(function(conditional_field_rules) {
 
-				var [id_field_element, rules] = conditional_field_rules;
+				var [id_field_element, group_rules_object] = conditional_field_rules;
 				var field_element = document.getElementById(id_field_element);
 
 				var form_group = field_element.closest('.form-group');
-				var found_matching_rule = false;
-				var first_non_matching_rule = false;
+				var found_matching_rule_group = false; // If one rule group matches, the loop can be skipped (OR condition)
+				var display = group_rules_object.display_default; // This will be overridden, if one group matches all rules
 
-				rules.forEach(function(rule) {
+				group_rules_object.group_rules.forEach(function(rules_object) {
 
-					if (found_matching_rule===false) {
+					if (found_matching_rule_group === false) {
 
-						// Get the field, that decides if the main field should be showed or hided
-						var field_element_conditional = document.getElementById(rule.id);
+						// Loop through all rules. They all need to be true (AND condition)
+						var all_rules_matching = true;
 
-						var values = rule.values;
+						rules_object.rules.forEach(function (rule) {
 
-						if (Array.isArray(values)) {
-							// Make sure that all values are compared as strings (otherwise includes function won't work for integers)
-							values = values.map(String);
+							if (all_rules_matching===true) {
+								// Get the field, that decides, if the main field should be showed or hided
+								var field_element_conditional = document.getElementById(rule.id);
+								var values = rule.values;
 
-							if (values.includes(field_element_conditional.value)) {
-								found_matching_rule = rule.mode;
+								if (Array.isArray(values)) {
+									// Make sure that all values are compared as strings (otherwise includes function won't work for integers)
+									values = values.map(String);
+
+									if (!values.includes(field_element_conditional.value)) {
+										all_rules_matching = false;
+									}
+								} else if (
+										(values === true && !field_element_conditional.value) ||
+										(values === false && field_element_conditional.value) ||
+										(field_element_conditional.tagName==='SELECT' && field_element_conditional.value==='0') // A select with value 0 is normally "Please choose"
+								) {
+									all_rules_matching = false;
+								}
+
 							}
-						}
-						else {
-							if ((values===true && field_element_conditional.value) || (values===false && !field_element_conditional.value)) {
-								found_matching_rule = rule.mode;
-							}
-						}
+						});
 
-						if (first_non_matching_rule===false) {
-							// The rule is not matching -> so chose the opposite display option
-							first_non_matching_rule = rule.mode==='hide' ? 'show' : 'hide';
+						if (all_rules_matching===true) {
+							found_matching_rule_group = true;
+							display = rules_object.display;
 						}
 					}
 
 				});
 
-				var mode = found_matching_rule!==false ? found_matching_rule : first_non_matching_rule;
-
 				// Show or hide the form group
-				form_group.style.display = (mode==='hide') ? 'none' : '';
+				form_group.style.display = (display===true) ? '' : 'none';
 
 			});
 
