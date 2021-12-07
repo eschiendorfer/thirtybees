@@ -69,7 +69,7 @@
 					<div class="form-wrapper">
 					{foreach $field as $input}
 						{* Fill the conditional_fields javascript array *}
-						{if isset($input.conditional_rules)}
+						{if isset($input.conditional_rules) && is_array($input.conditional_rules) && !empty($input.conditional_rules)}
 							<script>
 								{assign var='conditional_helper' value=[{$input.name} => $input.conditional_rules]}
 								conditional_fields.push('{$conditional_helper|json_encode}');
@@ -950,9 +950,7 @@
 	// Trigger the display function on multiple events
 	if (form) {
 
-		document.addEventListener("DOMContentLoaded", function(event) {
-			displayConditionalFormElements();
-		});
+		displayConditionalFormElements();
 
 		form.addEventListener('change', function() {
 			displayConditionalFormElements();
