@@ -23,7 +23,9 @@
 *  International Registered Trademark & Property of PrestaShop SA
 *}
 {if isset($fields.title)}<h3>{$fields.title}</h3>{/if}
-
+<script>
+	var conditional_fields = [];
+</script>
 {if isset($tabs) && $tabs|count}
 <script type="text/javascript">
 	var helper_tabs = {$tabs|json_encode};
@@ -66,6 +68,13 @@
 				{elseif $key == 'input'}
 					<div class="form-wrapper">
 					{foreach $field as $input}
+						{* Fill the conditional_fields javascript array *}
+						{if isset($input.conditional_rules)}
+							<script>
+								{assign var='conditional_helper' value=[{$input.name} => $input.conditional_rules]}
+								conditional_fields.push('{$conditional_helper|json_encode}');
+							</script>
+						{/if}
 						{block name="input_row"}
 						<div class="form-group{if isset($input.form_group_class)} {$input.form_group_class}{/if}{if $input.type == 'hidden'} hide{/if}"{if $input.name == 'id_state'} id="contains_states"{if !$contains_states} style="display:none;"{/if}{/if}{if isset($tabs) && isset($input.tab)} data-tab-id="{$input.tab}"{/if}>
 						{if $input.type == 'hidden'}
@@ -931,3 +940,86 @@
 	{block name="script"}{/block}
 	</script>
 {/if}
+
+{* Handle conditional fields *}
+<script>
+
+	var form_identifier = "{if isset($fields.form.form.id_form)}{$fields.form.form.id_form|escape:'html':'UTF-8'}{else}{if $table == null}configuration_form{else}{$table}_form{/if}{if isset($smarty.capture.table_count) && $smarty.capture.table_count}_{$smarty.capture.table_count|intval}{/if}{/if}";
+	var form = document.querySelector('form#'+form_identifier);
+
+	// Trigger the display function on multiple events
+	if (form) {
+
+		document.addEventListener("DOMContentLoaded", function(event) {
+			displayConditionalFormElements();
+		});
+
+		form.addEventListener('change', function() {
+			displayConditionalFormElements();
+		});
+
+		// Make sure that chosen fields are also triggering the displayConditionalFormElements() function
+		$(document).ready(function() {
+			$('.chosen').chosen().change(function () {
+				displayConditionalFormElements();
+			});
+		});
+
+	}
+
+	function displayConditionalFormElements() {
+
+		conditional_fields.forEach(function(conditional_field) {
+
+			conditional_field = JSON.parse(conditional_field);
+
+			Object.entries(conditional_field).forEach(function(conditional_field_rules) {
+
+				var [id_field_element, rules] = conditional_field_rules;
+				var field_element = document.getElementById(id_field_element);
+
+				var form_group = field_element.closest('.form-group');
+				var found_matching_rule = false;
+				var first_non_matching_rule = false;
+
+				rules.forEach(function(rule) {
+
+					if (found_matching_rule===false) {
+
+						// Get the field, that decides if the main field should be showed or hided
+						var field_element_conditional = document.getElementById(rule.id);
+
+						var values = rule.values;
+
+						if (Array.isArray(values)) {
+							// Make sure that all values are compared as strings (otherwise includes function won't work for integers)
+							values = values.map(String);
+
+							if (values.includes(field_element_conditional.value)) {
+								found_matching_rule = rule.mode;
+							}
+						}
+						else {
+							if ((values===true && field_element_conditional.value) || (values===false && !field_element_conditional.value)) {
+								found_matching_rule = rule.mode;
+							}
+						}
+
+						if (first_non_matching_rule===false) {
+							// The rule is not matching -> so chose the opposite display option
+							first_non_matching_rule = rule.mode==='hide' ? 'show' : 'hide';
+						}
+					}
+
+				});
+
+				var mode = found_matching_rule!==false ? found_matching_rule : first_non_matching_rule;
+
+				// Show or hide the form group
+				form_group.style.display = (mode==='hide') ? 'none' : '';
+
+			});
+
+		});
+	}
+</script>
