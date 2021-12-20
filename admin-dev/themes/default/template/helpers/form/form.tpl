@@ -23,16 +23,18 @@
 *  International Registered Trademark & Property of PrestaShop SA
 *}
 {if isset($fields.title)}<h3>{$fields.title}</h3>{/if}
-<script>
-	var conditional_fields = [];
-	var checkbox_elements = [];
-</script>
 {if isset($tabs) && $tabs|count}
 <script type="text/javascript">
 	var helper_tabs = {$tabs|json_encode};
 	var unique_field_id = '';
 </script>
 {/if}
+
+<script type="text/javascript">
+	var conditional_fields = [];
+	var checkbox_elements = [];
+</script>
+
 {block name="defaultForm"}
 {if isset($identifier_bk) && $identifier_bk == $identifier}{capture name='identifier_count'}{counter name='identifier_count'}{/capture}{/if}
 {assign var='identifier_bk' value=$identifier scope='parent'}
@@ -71,16 +73,6 @@
 					{foreach $field as $input}
 						{* Fill the conditional_fields javascript array *}
 						{if isset($input.conditional_rules) && is_array($input.conditional_rules) && !empty($input.conditional_rules) && $input.type!=='checkbox'}
-						{*
-                                                  <pre>
-                                                        {*
-                                                        {array_column($field, 'name')|print_r}
-
-                                                        {($field.9.name)|print_r}
-                                                        {assign var='conditional_rule_id_key' value=$field.9.values.id}
-                                                        {($field.9.values.query)|print_r}
-
-							</pre>*}
 							<script>
 								{assign var='conditional_helper' value=[{$input.name} => $input.conditional_rules]}
 								conditional_fields.push('{$conditional_helper|json_encode}');
@@ -1041,7 +1033,7 @@
 										if (field_element_conditional.selectedOptions.length) {
 											for (var i = 0; i < field_element_conditional.selectedOptions.length; i++) {
 												// In true/false mode: skip value=0 as this is normally kind of "Please choose"
-												if (Array.isArray(values_accepted) || field_element_conditional.selectedOptions[i].value!=='0') {
+												if (Array.isArray(values_accepted) || (field_element_conditional.selectedOptions[i].value!=='' && field_element_conditional.selectedOptions[i].value!=='0')) {
 													field_elements_conditional_values.push(field_element_conditional.selectedOptions[i].value);
 												}
 											}
@@ -1049,7 +1041,7 @@
 
 									} else if (field_element_conditional.tagName === 'INPUT' && (field_element_conditional.type === 'radio' || field_element_conditional.type === 'checkbox')) {
 										// Make sure that switches doesn't get the 0 value, if the values_accepted is true/false
-										if (field_element_conditional.checked && (Array.isArray(values_accepted) || field_element_conditional.value!=='0')) {
+										if (field_element_conditional.checked && (Array.isArray(values_accepted) || (field_element_conditional.value!=='' && field_element_conditional.value!=='0'))) {
 											// Note: the checkbox does not use any value attribute
 											var current_value = field_element_conditional.type==='checkbox' ? field_element_conditional.name.replace(rule.id+'_', '') : field_element_conditional.value;
 											field_elements_conditional_values.push(current_value);
@@ -1058,7 +1050,6 @@
 										field_elements_conditional_values.push(field_element_conditional.value);
 									}
 								});
-
 
 								if (Array.isArray(values_accepted)) {
 									// Make sure that all values are compared as strings (otherwise includes function won't work for integers)
@@ -1076,7 +1067,6 @@
 								} else if ((values_accepted===true && !field_elements_conditional_values.length) || (values_accepted===false && field_elements_conditional_values.length)) {
 									all_rules_matching = false;
 								}
-
 							}
 						});
 
@@ -1095,10 +1085,26 @@
 				// Apply the Actions: we need to use querySelectorAll as inputs with type radio two elements
 				var field_elements = document.querySelectorAll('form#'+form_identifier+' [name="'+id_field_element+'"]');
 
+				// Make sure that language fields are also working (as they have name_'id_lang')
+				languages.forEach(function(language) {
+					var lang_field = document.querySelector('form#'+form_identifier+' [name="'+id_field_element+'_'+language.id_lang+'"]');
+					if (lang_field) {
+						field_elements.length ? field_elements.push(lang_field) : field_elements=[lang_field];
+					}
+				});
+
 				field_elements.forEach(function(field_element) {
 					// Action: display
 					if (action_display!==undefined) {
-						field_element.closest('.form-group').style.display = (action_display === true) ? '' : 'none';
+
+						if (field_element.type==='file') {
+							// Input with type file does use a nested version of form-group
+							field_element.closest('.form-group').parentElement.closest('.form-group').style.display = (action_display === true) ? '' : 'none';
+						}
+						else {
+							field_element.closest('.form-group').style.display = (action_display === true) ? '' : 'none';
+						}
+
 					}
 
 					// Action: disabled
