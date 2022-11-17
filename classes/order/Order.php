@@ -1441,7 +1441,7 @@ class OrderCore extends ObjectModel
      */
     public function isReturnable()
     {
-        if (Configuration::get('PS_ORDER_RETURN', null, null, $this->id_shop) && $this->isPaidAndShipped()) {
+        if (Configuration::get('PS_ORDER_RETURN', null, null, $this->id_shop) && $this->hasBeenShipped()) {
             return $this->getNumberOfDays();
         }
 
