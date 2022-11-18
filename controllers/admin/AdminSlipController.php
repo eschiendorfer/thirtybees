@@ -96,10 +96,6 @@ class AdminSlipControllerCore extends AdminController
 
         $this->_orderBy = 'id_order_slip';
         $this->_orderWay = 'DESC';
-        $this->optionTitle = $this->l('Slip');
-
-        $this->_orderBy = 'id_order_slip';
-        $this->_orderWay = 'DESC';
 
         $this->fields_options = [
             'general' => [
