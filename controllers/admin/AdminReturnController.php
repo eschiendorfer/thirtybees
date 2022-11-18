@@ -47,16 +47,42 @@ class AdminReturnControllerCore extends AdminController
         $this->context = Context::getContext();
         $this->table = 'order_return';
         $this->className = 'OrderReturn';
-        $this->_select = 'ors.color, orsl.`name`, o.`id_shop`';
+        $this->_select = 'ors.color, orsl.`name`, o.`id_shop`, o.`reference`, CONCAT(c.`firstname`, \' \', c.`lastname`) AS `customer`';
         $this->_join = 'LEFT JOIN '._DB_PREFIX_.'order_return_state ors ON (ors.`id_order_return_state` = a.`state`)';
         $this->_join .= 'LEFT JOIN '._DB_PREFIX_.'order_return_state_lang orsl ON (orsl.`id_order_return_state` = a.`state` AND orsl.`id_lang` = '.(int) $this->context->language->id.')';
         $this->_join .= ' LEFT JOIN '._DB_PREFIX_.'orders o ON (o.`id_order` = a.`id_order`)';
+        $this->_join .= ' LEFT JOIN '._DB_PREFIX_.'customer c ON (o.`id_customer` = c.`id_customer`)';
 
         $this->fields_list = [
-            'id_order_return' => ['title' => $this->l('ID'), 'align' => 'center', 'width' => 25],
-            'id_order'        => ['title' => $this->l('Order ID'), 'width' => 100, 'align' => 'center', 'filter_key' => 'a!id_order'],
-            'name'            => ['title' => $this->l('Status'), 'color' => 'color', 'width' => 'auto', 'align' => 'left'],
-            'date_add'        => ['title' => $this->l('Date issued'), 'width' => 150, 'type' => 'date', 'align' => 'right', 'filter_key' => 'a!date_add'],
+            'id_order_return' => [
+                'title' => $this->l('ID'),
+                'align' => 'text-center',
+                'class' => 'fixed-width-xs',
+            ],
+            'reference' => [
+                'title' => $this->l('Order Reference'),
+                'filter_key' => 'o!reference',
+                'align' => 'text-center',
+                'class' => 'fixed-width-xs',
+                'callback' => 'getOrderLink'
+            ],
+            'customer' => [
+                'title' => $this->l('Customer'),
+                'havingFilter' => true,
+            ],
+            'name' => [
+                'title' => $this->l('Status'),
+                'color' => 'color',
+                'width' => 'auto',
+                'align' => 'left'
+            ],
+            'date_add' => [
+                'title' => $this->l('Date issued'),
+                'width' => 150,
+                'type' => 'date',
+                'align' => 'right',
+                'filter_key' => 'a!date_add'
+            ],
         ];
 
         $this->fields_options = [
@@ -310,4 +336,21 @@ class AdminReturnControllerCore extends AdminController
         }
         parent::postProcess();
     }
+
+    /**
+     * @param int $reference
+     * @param array $row
+     * @return string
+     * @throws PrestaShopException
+     */
+    public static function getOrderLink($reference, $row)
+    {
+        $params = [
+            'vieworder'=> true,
+            'id_order' => (int)$row['id_order']
+        ];
+        $link = Context::getContext()->link->getAdminLink('AdminOrders', true, $params);
+        return "<a href='{$link}'>{$reference}</a>";
+    }
+
 }
