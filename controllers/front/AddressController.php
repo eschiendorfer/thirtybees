@@ -195,20 +195,6 @@ class AddressControllerCore extends FrontController
     }
 
     /**
-     * @throws PrestaShopException
-     */
-    public function displayAjax()
-    {
-        if (count($this->errors)) {
-            $return = [
-                'hasError' => !empty($this->errors),
-                'errors'   => $this->errors,
-            ];
-            $this->ajaxDie(json_encode($return));
-        }
-    }
-
-    /**
      * Process changes on an address
      *
      * @throws PrestaShopException
