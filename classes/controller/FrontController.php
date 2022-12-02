@@ -859,6 +859,26 @@ class FrontControllerCore extends Controller
     }
 
     /**
+     * Run ajax process
+     * @see Controller::run()
+     *
+     * @since 1.5.0
+     */
+    public function displayAjax(){
+        $return = [
+            'hasError' => !empty($this->errors),
+            'errors'   => $this->errors,
+            'token'    => Tools::getToken(false),
+        ];
+
+        if ($this->template) {
+            $return['page'] = $this->context->smarty->fetch($this->template);
+        }
+
+        $this->ajaxDie(json_encode($return));
+    }
+
+    /**
      * Renders page content.
      * Used for retrocompatibility with PS 1.4.
      *
