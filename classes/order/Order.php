@@ -1606,7 +1606,7 @@ class OrderCore extends ObjectModel
                 $orderPayment->amount = $this->total_paid_tax_incl;
                 $orderPayment->payment_method = $this->payment;
                 $orderPayment->conversion_rate = $this->conversion_rate;
-                $orderPayment->setPaymentCostAccounting($this->module, $orderPayment->amount, $orderPayment->id_currency, $orderPayment->conversion_rate);
+                $orderPayment->setPaymentCostAccounting($this->module, $orderPayment->amount, $orderPayment->id_currency);
                 $orderPayment->add();
 
                 $conn->insert(
@@ -2178,7 +2178,7 @@ class OrderCore extends ObjectModel
         $orderPayment->transaction_id = $paymentTransactionId;
         $orderPayment->amount = $amountPaid;
         $orderPayment->date_add = ($date ? $date : null);
-        $orderPayment->setPaymentCostAccounting($this->module, $orderPayment->amount, $orderPayment->id_currency, $orderPayment->conversion_rate);
+        $orderPayment->setPaymentCostAccounting($this->module, $orderPayment->amount, $orderPayment->id_currency);
 
         // Add time to the date if needed
         if ($orderPayment->date_add != null && preg_match('/^[0-9]+-[0-9]+-[0-9]+$/', $orderPayment->date_add)) {
