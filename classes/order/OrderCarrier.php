@@ -237,4 +237,31 @@ class OrderCarrierCore extends ObjectModel
 
         $this->shipping_cost_accounting = Tools::ps_round($fee_absolute*$conversionRate + ($fee_relative/100*$shipping_cost), 6);
     }
+
+    /**
+     * Set shipping_cost_accounting value
+     *
+     * @param object $carrier CarrierObject or id_carrier
+     * @param float $shipping_cost Shipping cost paid by customer (default tax_excl)
+     * @param int $id_currency ID Currency
+     * @param float $conversionRate Order conversion rate
+     *
+     */
+    public function setShippingCostAccounting($carrier, $shipping_cost, $id_country, $conversionRate) {
+
+        if (is_int($carrier)) {
+            $carrier = new Carrier($carrier);
+        }
+
+        if ($id_country==Configuration::get('PS_COUNTRY_DEFAULT')) {
+            $fee_relative = Configuration::get('CONF_'.$carrier->id_reference.'_SHIP');
+            $fee_absolute = Configuration::get('CONF_'.$carrier->id_reference.'_SHIP_FIXED');
+        }
+        else {
+            $fee_relative = Configuration::get('CONF_'.$carrier->id_reference.'_SHIP_OVERSEAS');
+            $fee_absolute = Configuration::get('CONF_'.$carrier->id_reference.'_SHIP_FIXED_OVERSEAS');
+        }
+
+        $this->shipping_cost_accounting = Tools::ps_round($fee_absolute*$conversionRate + ($fee_relative/100*$shipping_cost), 6);
+    }
 }
