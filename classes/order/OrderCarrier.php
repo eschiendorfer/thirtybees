@@ -249,7 +249,7 @@ class OrderCarrierCore extends ObjectModel
      */
     public function setShippingCostAccounting($carrier, $shipping_cost, $id_country, $conversionRate) {
 
-        if (is_int($carrier)) {
+        if (!is_object($carrier) && Validate::isUnsignedId($carrier)) {
             $carrier = new Carrier($carrier);
         }
 
