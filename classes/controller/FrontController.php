@@ -864,7 +864,7 @@ class FrontControllerCore extends Controller
      *
      * @since 1.5.0
      */
-    public function displayAjax(){
+    protected function displayAjax(){
         $return = [
             'hasError' => !empty($this->errors),
             'errors'   => $this->errors,
