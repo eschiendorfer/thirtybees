@@ -210,7 +210,7 @@ class OrderCarrierCore extends ObjectModel
      * @param float $conversionRate Order conversion rate
      *
      */
-    public function setShippingCostAccounting($carrier, $shipping_cost, $id_country, $conversionRate) {
+    public function setShippingCostAccounting($carrier, $shipping_cost, $id_country, $conversionRate, $id_order = null) {
 
         if (!is_object($carrier) && Validate::isUnsignedId($carrier)) {
             $carrier = new Carrier($carrier);
@@ -223,6 +223,16 @@ class OrderCarrierCore extends ObjectModel
         else {
             $fee_relative = Configuration::get('CONF_'.$carrier->id_reference.'_SHIP_OVERSEAS');
             $fee_absolute = Configuration::get('CONF_'.$carrier->id_reference.'_SHIP_FIXED_OVERSEAS');
+        }
+
+        // Todo: This is just a genzo hack and wouldn't work in core
+        // Check if letter shipping is available for this order
+        if ($id_order && Module::isEnabled('genzo_shipping')) {
+            /* @var $genzoShipping Genzo_Shipping */
+            $genzoShipping = Module::getInstanceByName('genzo_shipping');
+            if (!empty($genzoShipping->getPackagingOptionsForOrder($id_order, true))) {
+                $fee_absolute = 3.00; // Assuming that a letter cost's us this
+            }
         }
 
         $this->shipping_cost_accounting = Tools::ps_round($fee_absolute*$conversionRate + ($fee_relative/100*$shipping_cost), 6);
