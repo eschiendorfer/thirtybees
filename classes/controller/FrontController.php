@@ -120,6 +120,9 @@ class FrontControllerCore extends Controller
     /** @var bool If true, forces display to maintenance page. */
     protected $maintenance = false;
 
+    /** @var array AJAX values that will be sent in ajaxDisplay() */
+    public $ajaxValues = [];
+
     /**
      * Controller constructor.
      *
@@ -868,6 +871,7 @@ class FrontControllerCore extends Controller
         $return = [
             'hasError' => !empty($this->errors),
             'errors'   => $this->errors,
+            'ajaxValues'   => $this->ajaxValues,
             'token'    => Tools::getToken(false),
         ];
 
