@@ -1000,6 +1000,7 @@
 					var action_display = group_rules_object.display_default;
 					var action_disabled = group_rules_object.disabled_default;
 					var action_set_values = group_rules_object.set_values_default;
+					var action_no_change = false;
 
 					group_rules_object.group_rules.forEach(function (rules_object) {
 
@@ -1079,6 +1080,7 @@
 								action_display = rules_object.display;
 								action_disabled = rules_object.disabled;
 								action_set_values = rules_object.set_values;
+								action_no_change = rules_object.no_change;
 							}
 						}
 
@@ -1096,46 +1098,46 @@
 					}
 				});
 
-				field_elements.forEach(function(field_element) {
-					// Action: display
-					if (action_display!==undefined) {
+				// In a few edge cases you want to define, that nothing changes anymore -> to achieve you can set a group rule with 'no_change' => true
+				if (!action_no_change) {
+					field_elements.forEach(function (field_element) {
+						// Action: display
+						if (action_display !== undefined) {
 
-						if (field_element.type==='file') {
-							// Input with type file does use a nested version of form-group
-							field_element.closest('.form-group').parentElement.closest('.form-group').style.display = (action_display === true) ? '' : 'none';
-						}
-						else {
-							field_element.closest('.form-group').style.display = (action_display === true) ? '' : 'none';
-						}
+							if (field_element.type === 'file') {
+								// Input with type file does use a nested version of form-group
+								field_element.closest('.form-group').parentElement.closest('.form-group').style.display = (action_display === true) ? '' : 'none';
+							} else {
+								field_element.closest('.form-group').style.display = (action_display === true) ? '' : 'none';
+							}
 
-					}
-
-					// Action: disabled
-					if (action_disabled!==undefined) {
-						field_element.disabled = action_disabled;
-					}
-
-					// Action: set_value
-					if (action_set_values!==undefined) {
-
-						if (!Array.isArray(action_set_values)) {
-							action_set_values = [action_set_values];
 						}
 
-						action_set_values = action_set_values.map(String);
-
-						if (field_element.tagName==='INPUT' && (field_element.type==='radio' || field_element.type==='checkbox')) {
-							// In the checkbox inputs there isn't any value attribute. It has to be extracted from name
-							var current_value = field_element.type==='checkbox' ? /[^_]*$/.exec(field_element.name)[0] : field_element.value;
-							field_element.checked = action_set_values.includes(current_value);
-						}
-						else {
-							field_element.value = action_set_values[0];
+						// Action: disabled
+						if (action_disabled !== undefined) {
+							field_element.disabled = action_disabled;
 						}
 
-					}
-				});
+						// Action: set_value
+						if (action_set_values !== undefined) {
 
+							if (!Array.isArray(action_set_values)) {
+								action_set_values = [action_set_values];
+							}
+
+							action_set_values = action_set_values.map(String);
+
+							if (field_element.tagName === 'INPUT' && (field_element.type === 'radio' || field_element.type === 'checkbox')) {
+								// In the checkbox inputs there isn't any value attribute. It has to be extracted from name
+								var current_value = field_element.type === 'checkbox' ? /[^_]*$/.exec(field_element.name)[0] : field_element.value;
+								field_element.checked = action_set_values.includes(current_value);
+							} else {
+								field_element.value = action_set_values[0];
+							}
+
+						}
+					});
+				}
 			});
 		});
 	}
