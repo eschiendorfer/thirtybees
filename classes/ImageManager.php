@@ -29,6 +29,8 @@
  *  PrestaShop is an internationally registered trademark & property of PrestaShop SA
  */
 
+use Thirtybees\Core\Error\ErrorUtils;
+
 /**
  * Class ImageManagerCore
  */
@@ -281,7 +283,12 @@ class ImageManagerCore
         }
 
         if (is_null($imageExtension)) {
-            $imageExtension = static::resolveImageExtension($dstFile);
+            // try to detect extension from target file name
+            $imageExtension = static::getImageExtensionFromFilename($dstFile);
+            if (! $imageExtension) {
+                // fallback to system default extension
+                $imageExtension = static::getDefaultImageExtension();
+            }
         }
 
         list($tmpWidth, $tmpHeight, $type) = getimagesize($srcFile);
@@ -585,19 +592,20 @@ class ImageManagerCore
         // Get all source image paths, that are related to this entity
         $possibleSourceImages = [];
 
-        if ($entityType==ImageEntity::ENTITY_TYPE_PRODUCTS) {
+        if ($entityType == ImageEntity::ENTITY_TYPE_PRODUCTS) {
             if (empty($idsImage)) {
                 $idsImage = array_column(Image::getImages(null, $idEntity), 'id_image');
             }
             foreach ($idsImage as $idImage) {
                 $possibleSourceImages[] = [
+                    'description' => 'product ' . $idEntity . ', image ' . $idImage,
                     'path' => $imageEntity['path'].Image::getImgFolderStatic($idImage),
                     'filename' => $idImage,
                 ];
             }
-        }
-        else {
+        } else {
             $possibleSourceImages[] = [
+                'description' => lcfirst((string)$imageEntity['classname']) . ' ' . $idEntity,
                 'path' => $imageEntity['path'],
                 'filename' => $idEntity,
             ];
@@ -656,11 +664,12 @@ class ImageManagerCore
                         }
                     }
                 }
-            }
-            else {
+            } else {
                 if ($entityType === ImageEntity::ENTITY_TYPE_PRODUCTS) {
-                    // Note: for other entity types, we don't even know if we can expect an image
-                    throw new PrestaShopException("Source file in {$possibleSourceImage['path']} is missing!");
+                    $description = $possibleSourceImage['description'];
+                    $path = $possibleSourceImage['path'] . $possibleSourceImage['filename'] . '.' . static::getDefaultImageExtension();
+                    $path = ErrorUtils::getRelativeFile($path);
+                    throw new PrestaShopException("Source image file for $description not found ($path)");
                 }
             }
 
@@ -674,10 +683,11 @@ class ImageManagerCore
      *
      * @param array $file Upload $_FILE value
      * @param int $maxFileSize Maximum upload size
+     * @param string[] $allowedExtensions allowed image extensions
      *
      * @return bool|string Return false if no error encountered
      */
-    public static function validateUpload($file, $maxFileSize = 0, $types = null)
+    public static function validateUpload($file, $maxFileSize = 0, $allowedExtensions = null)
     {
         if ((int) $maxFileSize > 0 && $file['size'] > (int) $maxFileSize) {
             return sprintf(Tools::displayError('Image is too large (%1$d kB). Maximum allowed: %2$d kB'), $file['size'] / 1024, $maxFileSize / 1024);
@@ -685,7 +695,10 @@ class ImageManagerCore
         if ($file['error']) {
             return Tools::decodeUploadError($file['error']);
         }
-        if (!ImageManager::isRealImage($file['tmp_name'], $file['type']) || !ImageManager::isCorrectImageFileExt($file['name'], $types) || preg_match('/%00/', $file['name'])) {
+        if (!ImageManager::isRealImage($file['tmp_name'], $file['type']) ||
+            !ImageManager::isCorrectImageFileExt($file['name'], $allowedExtensions) ||
+            preg_match('/%00/', $file['name'])
+        ) {
             return Tools::displayError('Image format not recognized, allowed formats are: ').implode(', ',self::getAllowedImageExtensions());
         }
         return false;
@@ -755,28 +768,19 @@ class ImageManagerCore
      * Check if image file extension is correct
      *
      * @param string $filename Real filename
-     * @param array|null $authorizedExtensions
+     * @param array|null $allowedExtensions
      *
      * @return bool True if it's correct
      */
-    public static function isCorrectImageFileExt($filename, $authorizedExtensions = null)
+    public static function isCorrectImageFileExt($filename, $allowedExtensions = null)
     {
         // Filter on file extension
-        if ($authorizedExtensions === null) {
-            $authorizedExtensions = self::getAllowedImageExtensions();
+        if ($allowedExtensions === null) {
+            $allowedExtensions = static::getAllowedImageExtensions();
         }
 
-        $nameExplode = explode('.', $filename);
-        if (count($nameExplode) >= 2) {
-            $current_extension = strtolower($nameExplode[count($nameExplode) - 1]);
-            if (!in_array($current_extension, $authorizedExtensions)) {
-                return false;
-            }
-        } else {
-            return false;
-        }
-
-        return true;
+        $extension = pathinfo((string)$filename, PATHINFO_EXTENSION);
+        return in_array($extension, $allowedExtensions);
     }
 
     /**
@@ -1323,21 +1327,48 @@ class ImageManagerCore
     }
 
     /**
-     * @param string $filename
+     * Resolves valid image extension from filepath. File does not need to exits -- extension is extracted from name
+     * only
      *
-     * @return string
+     * @param string $filepath
      *
-     * @throws PrestaShopException
+     * @return string|null
      */
-    protected static function resolveImageExtension(string $filename)
+    protected static function getImageExtensionFromFilename(string $filepath)
     {
-        $extension = strtolower((string)pathinfo($filename, PATHINFO_EXTENSION));
+        $extension = strtolower((string)pathinfo($filepath, PATHINFO_EXTENSION));
         if ($extension) {
             $allowedExtensions = static::getAllowedImageExtensions(true, true);
             if (in_array($extension, $allowedExtensions)) {
                 return $extension;
             }
         }
-        return static::getDefaultImageExtension();
+        return null;
+    }
+
+    /**
+     * Resolves valid image extension from filepath. File have to exists - image extension is resolved from file content
+     *
+     * @return string|null
+     */
+    public static function getImageExtension(string $filepath)
+    {
+        $imageInfo = @getimagesize($filepath);
+        if (! $imageInfo) {
+            return null;
+        }
+
+        $mimeType = $imageInfo['mime'] ?? null;
+        if (! $mimeType) {
+            return null;
+        }
+
+        // Detect mime content type
+        foreach (Media::getFileInformations('images') as $ext => $imageFileInfo) {
+            if (strstr($mimeType, $imageFileInfo['mimeType'])) {
+                return $ext;
+            }
+        }
+        return null;
     }
 }

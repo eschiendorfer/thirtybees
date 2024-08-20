@@ -59,18 +59,44 @@ class ImageEntityCore extends ObjectModel
     public $classname;
 
     /**
+     * @var string|string[]
+     */
+    public $display_name;
+
+    /**
      * @var array Object model definition
      */
     public static $definition = [
         'table'   => 'image_entity',
         'primary' => 'id_image_entity',
+        'multilang' => true,
         'fields'  => [
             'name'          => ['type' => self::TYPE_STRING, 'validate' => 'isImageTypeName', 'required' => true, 'size' => 64],
             'classname'     => ['type' => self::TYPE_STRING, 'required' => true, 'size' => 64],
+
+            /* Lang fields */
+            'display_name'  => ['type' => self::TYPE_STRING, 'required' => true, 'size' => 128, 'lang' => true],
         ],
         'keys' => [
             'image_entity' => [
                 'image_entity_name' => ['type' => ObjectModel::KEY, 'columns' => ['name']],
+            ],
+        ],
+    ];
+
+    /**
+     * @var array Webservice parameters
+     */
+    protected $webserviceParameters = [
+        'objectsNodeName' => 'image_entities',
+        'objectNodeName'  => 'image_entity',
+        'fields'          => [],
+        'associations'    => [
+            'image_types' => [
+                'resource' => 'image_types',
+                'fields'   => [
+                    'id' => [],
+                ],
             ],
         ],
     ];
@@ -84,7 +110,6 @@ class ImageEntityCore extends ObjectModel
      */
     public static function rebuildImageEntities($classname, $images)
     {
-
         // Adding images from themes
         /** @var Theme $theme */
         foreach (Theme::getThemes() as $theme) {
@@ -168,14 +193,24 @@ class ImageEntityCore extends ObjectModel
         foreach ($images as $imageEntityName => $imageEntity) {
 
             $existingImageEntity = static::getImageEntityInfo($imageEntityName);
-            $id_image_entity = $existingImageEntity['id_image_entity'] ?? 0;
+            $imageEntityId = isset($existingImageEntity['id_image_entity']) ? (int)$existingImageEntity['id_image_entity'] : 0;
 
-            $imageEntityObj = new ImageEntity($id_image_entity);
+            $imageEntityObj = new ImageEntity($imageEntityId);
             $imageEntityObj->name = $imageEntityName;
             $imageEntityObj->classname = $imageEntity['classname'] ?? $classname;
+            $displayName = [];
+            foreach (Language::getLanguages(false, false, true) as $langId) {
+                if (isset($imageEntityObj->display_name[$langId]) && $imageEntityObj->display_name[$langId]) {
+                    $displayName[$langId] = $imageEntityObj->display_name[$langId];
+                }  else {
+                    $displayName[$langId] = $imageEntity['displayName'] ?? ucfirst($imageEntityName);
+                }
+            }
+            $imageEntityObj->display_name = $displayName;
             $imageEntityObj->save();
+            $imageEntityId = (int)$imageEntityObj->id;
 
-            if ($imageEntityObj->id && !empty($imageEntity['imageTypes'])) {
+            if ($imageEntityId && !empty($imageEntity['imageTypes']) && is_array($imageEntity['imageTypes'])) {
                 foreach ($imageEntity['imageTypes'] as $imageType) {
 
                     $imageTypeObj = ImageType::getInstanceByName($imageType['name']);
@@ -190,7 +225,7 @@ class ImageEntityCore extends ObjectModel
 
                     // Link imageType to imageEntity
                     if ($imageTypeObj->id) {
-                        Db::getInstance()->insert('image_entity_type', ['id_image_entity' => $imageEntityObj->id, 'id_image_type' => $imageTypeObj->id], false, true, Db::REPLACE);
+                        $imageEntityObj->associateImageType($imageTypeObj->id);
                     }
                 }
             }
@@ -226,14 +261,7 @@ class ImageEntityCore extends ObjectModel
                 $ids_image_entity[$imageEntity['name']] = $imageEntity['id_image_entity'];
             }
 
-            $oldEntityTypes = [
-                static::ENTITY_TYPE_PRODUCTS,
-                static::ENTITY_TYPE_CATEGORIES,
-                static::ENTITY_TYPE_MANUFACTURERS,
-                static::ENTITY_TYPE_SUPPLIERS,
-                static::ENTITY_TYPE_SCENES,
-                static::ENTITY_TYPE_STORES,
-            ];
+            $oldEntityTypes = static::getLegacyImageEntities();
 
             foreach ($imageTypes as $imageType) {
                 foreach ($oldEntityTypes as $oldEntityType) {
@@ -287,14 +315,17 @@ class ImageEntityCore extends ObjectModel
      */
     public static function getImageEntities(): array
     {
-        $cacheKey = 'ImageEntity::getImageEntities';
+        $langId = (int)Context::getContext()->language->id;
+        $cacheKey = 'ImageEntity::getImageEntities_' . $langId;
         if (! Cache::isStored($cacheKey)) {
             $query = new DbQuery();
             $query->select('ie.*');
+            $query->select('l.display_name');
             $query->from(static::$definition['table'], 'ie');
             $query->select('it.id_image_type, it.name AS image_type, it.width, it.height, it.id_image_type_parent');
-            $query->leftJoin('image_entity_type', 'iet', 'iet.id_image_entity=ie.id_image_entity');
-            $query->leftJoin('image_type', 'it', 'iet.id_image_type=it.id_image_type');
+            $query->leftJoin('image_entity_type', 'iet', '(iet.id_image_entity = ie.id_image_entity)');
+            $query->leftJoin('image_type', 'it', '(iet.id_image_type = it.id_image_type)');
+            $query->leftJoin('image_entity_lang', 'l', '(l.id_image_entity = ie.id_image_entity AND l.id_lang = '.$langId.')');
             $query->orderBy('ie.name ASC');
 
             $result = Db::getInstance()->getArray($query);
@@ -315,6 +346,7 @@ class ImageEntityCore extends ObjectModel
                         'primary' => $definition['primary'],
                         'path' => $definition['images'][$name]['path'] ?? '',
                         'name' => $name,
+                        'display_name' => $res['display_name'] ? $res['display_name'] : ucfirst($name),
                         'classname' => $className,
                         'id_image_entity' => (int)$res['id_image_entity'],
                         'imageTypes' => [],
@@ -355,6 +387,11 @@ class ImageEntityCore extends ObjectModel
             $conn = Db::getInstance();
             if ($deleteExisting) {
                 $conn->delete('image_entity_type', "id_image_entity = $imageEntityId");
+
+                // BC: keep legacy properties in tb_image_type synchronized
+                if (in_array($this->name, static::getLegacyImageEntities())) {
+                    $conn->update('image_type', [ $this->name => 0]);
+                }
             }
 
             foreach ($imageTypeIds as $imageTypeId) {
@@ -373,12 +410,70 @@ class ImageEntityCore extends ObjectModel
     public function associateImageType(int $imageTypeId)
     {
         $imageEntityId = (int)$this->id;
+        $imageTypeId = (int)$imageTypeId;
         if ($imageEntityId && $imageTypeId) {
-            Db::getInstance()->insert('image_entity_type', [
+            $conn = Db::getInstance();
+            $conn->insert('image_entity_type', [
                 'id_image_entity' => $imageEntityId,
                 'id_image_type' => $imageTypeId,
             ], false, true, Db::INSERT_IGNORE);
+
+            // BC: keep legacy properties in tb_image_type synchronized
+            if (in_array($this->name, static::getLegacyImageEntities())) {
+                $conn->update('image_type', [ $this->name => 1 ], 'id_image_type = ' . $imageTypeId);
+            }
+            ImageType::cleanCache();
         }
     }
 
+    /**
+     * @param bool $autoDate
+     * @param bool $nullValues
+     *
+     * @return bool
+     *
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    public function add($autoDate = true, $nullValues = false)
+    {
+        $res = parent::add($autoDate, $nullValues);
+        ImageType::cleanCache();
+        return $res;
+    }
+
+    /**
+     * @return array
+     *
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    public function getWsImageTypes()
+    {
+        $result = [];
+        $info = static::getImageEntityInfo($this->name);
+        if ($info) {
+            foreach ($info['imageTypes'] as $type) {
+                $result[] = [
+                    'id' => (int)$type['id_image_type']
+                ];
+            }
+        }
+        return $result;
+    }
+
+    /**
+     * @return string[]
+     */
+    public static function getLegacyImageEntities()
+    {
+        return [
+            static::ENTITY_TYPE_PRODUCTS,
+            static::ENTITY_TYPE_CATEGORIES,
+            static::ENTITY_TYPE_MANUFACTURERS,
+            static::ENTITY_TYPE_SUPPLIERS,
+            static::ENTITY_TYPE_SCENES,
+            static::ENTITY_TYPE_STORES,
+        ];
+    }
 }
