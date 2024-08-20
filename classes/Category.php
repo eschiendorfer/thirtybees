@@ -86,6 +86,7 @@ class CategoryCore extends ObjectModel implements InitializationCallback
             ],
             ImageEntity::ENTITY_TYPE_CATEGORIES_THUMB => [
                 'inputName' => 'thumb',
+                'displayName' => 'Categories Thumbnails',
                 'path' => _PS_CAT_IMG_DIR_.'thumb/',
             ],
         ],
@@ -798,7 +799,7 @@ class CategoryCore extends ObjectModel implements InitializationCallback
      * @param string $categoryName Searched category name
      * @param int $idParentCategory parent category ID
      *
-     * @return array Corresponding category
+     * @return array|false Corresponding category
      *
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException

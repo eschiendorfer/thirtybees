@@ -130,7 +130,47 @@ class ImageTypeCore extends ObjectModel
     /**
      * @var array Webservice parameters
      */
-    protected $webserviceParameters = [];
+    protected $webserviceParameters = [
+        'objectsNodeName' => 'image_types',
+        'objectNodeName'  => 'image_type',
+        'fields'          => [],
+        'associations'    => [
+            'image_entities' => [
+                'resource' => 'image_entities',
+                'fields'   => [
+                    'id' => [],
+                ],
+            ],
+        ],
+    ];
+
+    /**
+     * @param int|null $id
+     * @param int|null $idLang
+     * @param int|null $idShop
+     *
+     * @throws PrestaShopException
+     */
+    public function __construct($id = null, $idLang = null, $idShop = null)
+    {
+        parent::__construct($id, $idLang, $idShop);
+
+        // BC: populate values of legacy properties based on entity association
+        if ($id) {
+            foreach (ImageEntity::getLegacyImageEntities() as $entityType) {
+                $this->{$entityType} = 0;
+                $info = ImageEntity::getImageEntityInfo($entityType);
+                if ($info) {
+                    foreach ($info['imageTypes'] as $type) {
+                        if ((int)$type['id_image_type'] === $id) {
+                            $this->{$entityType} = 1;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     /**
      * @return bool
@@ -433,9 +473,55 @@ class ImageTypeCore extends ObjectModel
     public function add($autoDate = true, $nullValues = false)
     {
         $res = parent::add($autoDate, $nullValues);
+        static::cleanCache();
+        return $res;
+    }
+
+    /**
+     * @param bool $nullValues
+     *
+     * @return bool
+     *
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    public function update($nullValues = false)
+    {
+        $res = parent::update($nullValues);
+        static::cleanCache();
+        return $res;
+    }
+
+    /**
+     * @return array
+     *
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    public function getWsImageEntities()
+    {
+        $result = [];
+        foreach (ImageEntity::getImageEntities() as $imageEntity) {
+            foreach ($imageEntity['imageTypes'] as $type) {
+                if ((int)$type['id_image_type'] === (int)$this->id) {
+                    $result[] = [
+                        'id' => (int)$imageEntity['id_image_entity'],
+                    ];
+                    break;
+                }
+            }
+        }
+        return $result;
+    }
+
+    /**
+     * @return void
+     */
+    public static function cleanCache()
+    {
         static::$typeNameCache = null;
         Cache::clean('ImageType::*');
-        return $res;
+        Cache::clean('ImageEntity::*');
     }
 
 }

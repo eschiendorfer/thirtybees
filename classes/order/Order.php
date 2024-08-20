@@ -550,7 +550,7 @@ class OrderCore extends ObjectModel
      * @param bool|int $noHidden Filter no hidden status
      * @param int $filters Flag to use specific field filter
      *
-     * @return array History entries ordered by date DESC
+     * @return array[] History entries ordered by date DESC
      *
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
@@ -968,7 +968,7 @@ class OrderCore extends ObjectModel
      *
      * @param int $idLang
      *
-     * @return array Order status details
+     * @return array|false Order status details
      *
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
