@@ -73,6 +73,29 @@ class CMSCategoryCore extends ObjectModel
     ];
 
     /**
+     * @var array Webservice parameters
+     */
+    protected $webserviceParameters = [
+        'objectNodeName'  => 'cms_category',
+        'objectsNodeName' => 'cms_categories',
+        'fields'          => [
+            'id_parent' => [
+                'xlink_resource' => 'cms_categories'
+            ],
+        ],
+        'associations'    => [
+            'cms_categories' => [
+                'getter' => 'getChildrenWs',
+                'resource' => 'cms_categories',
+            ],
+            'content_management_system' => [
+                'getter' => 'getCmsWs',
+                'resource' => 'content_management_system',
+            ],
+        ],
+    ];
+
+    /**
      * @var array
      */
     protected static $_links = [];
@@ -380,7 +403,7 @@ class CMSCategoryCore extends ObjectModel
      * @param string $query Searched string
      * @param bool $unrestricted allows search without lang and includes first CMSCategory and exact match
      *
-     * @return array Corresponding categories
+     * @return array|false Corresponding categories
      *
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
@@ -414,7 +437,7 @@ class CMSCategoryCore extends ObjectModel
      * @param string $cmsCategoryName Searched CMSCategory name
      * @param int $idParentCmsCategory parent CMSCategory ID
      *
-     * @return array Corresponding CMSCategory
+     * @return array|false Corresponding CMSCategory
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      * @deprecated 1.0.0
@@ -882,5 +905,39 @@ class CMSCategoryCore extends ObjectModel
 			WHERE `id_parent` = '.(int) $movedCategory['id_parent'].'
 			AND `id_cms_category`='.(int) $movedCategory['id_cms_category']
             ));
+    }
+
+    /**
+     * @return array
+     *
+     * @throws PrestaShopException
+     */
+    public function getChildrenWs()
+    {
+        $result = [];
+        $children = $this->getSubCategories(Configuration::get('PS_LANG_DEFAULT'), false);
+        foreach ($children as $category) {
+            $result[] = [
+                'id' => $category['id_cms_category']
+            ];
+        }
+        return $result;
+    }
+
+    /**
+     * @return array
+     *
+     * @throws PrestaShopException
+     */
+    public function getCmsWs()
+    {
+        $result = [];
+        $pages = Cms::getCMSPages((int)Configuration::get('PS_LANG_DEFAULT'), (int)$this->id, false);
+        foreach ($pages as $cms) {
+            $result[] = [
+                'id' => $cms['id_cms']
+            ];
+        }
+        return $result;
     }
 }

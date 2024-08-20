@@ -330,6 +330,7 @@ class WebserviceRequestCore
             'groups'                         => ['description' => 'The customer\'s groups', 'class' => 'Group'],
             'guests'                         => ['description' => 'The guests', 'class' => 'Guest'],
             'images'                         => ['description' => 'The images', 'specific_management' => true],
+            'image_entities'                 => ['description' => 'Image entities', 'class' => 'ImageEntity'],
             'image_types'                    => ['description' => 'The image types', 'class' => 'ImageType'],
             'languages'                      => ['description' => 'Shop languages', 'class' => 'Language'],
             'manufacturers'                  => ['description' => 'The product manufacturers', 'class' => 'Manufacturer'],
@@ -358,6 +359,7 @@ class WebserviceRequestCore
             'employees'                      => ['description' => 'The Employees', 'class' => 'Employee'],
             'search'                         => ['description' => 'Search', 'specific_management' => true, 'forbidden_method' => ['PUT', 'POST', 'DELETE']],
             'content_management_system'      => ['description' => 'Content management system', 'class' => 'CMS'],
+            'cms_categories'                 => ['description' => 'CMS Category', 'class' => 'CMSCategory'],
             'shops'                          => ['description' => 'Shops from multi-shop feature', 'class' => 'Shop'],
             'shop_groups'                    => ['description' => 'Shop groups from multi-shop feature', 'class' => 'ShopGroup'],
             'taxes'                          => ['description' => 'The tax rate', 'class' => 'Tax'],
@@ -545,7 +547,7 @@ class WebserviceRequestCore
         // Check webservice activation and request authentication
         if ($this->webserviceChecks()) {
 
-            $logger->setKey(WebserviceKey::getInstanceByKey($this->_key));
+            $logger->setKey($this->getWebserviceKey());
 
             $headers = static::getWebserviceHeaders();
             $logger->logRequest($method, $_SERVER['REQUEST_URI'], $headers, $inputXml);
@@ -1949,5 +1951,19 @@ class WebserviceRequestCore
             return static::$shopIDs;
         }
         return [];
+    }
+
+    /**
+     * @return WebserviceKey|null
+     *
+     * @throws PrestaShopException
+     */
+    public function getWebserviceKey(): WebserviceKey
+    {
+        $key = WebserviceKey::getInstanceByKey($this->_key);
+        if (! $key) {
+            throw new PrestaShopException("Webservice key not assigned");
+        }
+        return $key;
     }
 }

@@ -1667,9 +1667,9 @@ class AdminControllerCore extends Controller
     {
         if (!empty($this->fieldImageSettings)) {
             foreach ($this->fieldImageSettings as $imageEntityName => $fieldImageSetting) {
-                $imageExtension = $fieldImageSetting['imageExtension'] ?? false;
-                $imageTypes = ImageType::getImagesTypes($imageEntityName);
                 if (isset($fieldImageSetting['inputName']) && isset($fieldImageSetting['path'])) {
+                    $imageExtension = $fieldImageSetting['imageExtension'] ?? false;
+                    $imageTypes = $imageEntityName ? ImageType::getImagesTypes($imageEntityName) : [];
                     $width = $fieldImageSetting['width'] ?? null;
                     $height = $fieldImageSetting['height'] ?? null;
                     $this->uploadImage($id, $fieldImageSetting['inputName'], $fieldImageSetting['path'], $imageExtension, $width, $height, $imageTypes);
@@ -4569,8 +4569,6 @@ class AdminControllerCore extends Controller
 			<head>
 				<meta charset='UTF-8'>
 				<title>thirty bees Help</title>
-				<link href='//help.thirtybees.com/css/help.css' rel='stylesheet'>
-				<link href='//fonts.googleapis.com/css?family=Open+Sans:400,700' rel='stylesheet'>
 				<script src='"._PS_JS_DIR_."jquery/jquery-1.11.0.min.js'></script>
 				<script src='"._PS_JS_DIR_."admin.js'></script>
 				<script src='"._PS_JS_DIR_."tools.js'></script>
@@ -4960,5 +4958,22 @@ class AdminControllerCore extends Controller
             return '';
         }
         return (string)$value;
+    }
+
+    /**
+     * @param string $name
+     *
+     * @return array
+     *
+     * @throws PrestaShopException
+     */
+    protected function getFieldImageSettings(string $name): array
+    {
+        foreach ($this->fieldImageSettings as $fieldImageSetting) {
+            if ((string)$fieldImageSetting['name'] === $name) {
+                return $fieldImageSetting;
+            }
+        }
+        throw new PrestaShopException("Image settings for field '$name' not found");
     }
 }
