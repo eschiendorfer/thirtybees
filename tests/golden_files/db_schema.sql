@@ -1077,6 +1077,13 @@ CREATE TABLE `PREFIX_image_entity` (
   KEY `image_entity_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `PREFIX_image_entity_lang` (
+  `id_image_entity` int(11) unsigned NOT NULL,
+  `id_lang` int(11) unsigned NOT NULL,
+  `display_name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`id_image_entity`,`id_lang`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `PREFIX_image_entity_type` (
   `id_image_entity` int(11) unsigned NOT NULL,
   `id_image_type` int(11) unsigned NOT NULL,
@@ -1089,6 +1096,16 @@ CREATE TABLE `PREFIX_image_lang` (
   `legend` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   PRIMARY KEY (`id_image`,`id_lang`),
   KEY `id_image` (`id_image`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `PREFIX_image_regeneration` (
+  `id_image_entity` int(11) unsigned NOT NULL,
+  `id_entity` int(11) unsigned NOT NULL,
+  `status` enum('pending','completed','in_progress','failed') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
+  `error` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `date_add` datetime NOT NULL,
+  `date_upd` datetime NOT NULL,
+  PRIMARY KEY (`id_image_entity`,`id_entity`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `PREFIX_image_shop` (
@@ -2780,6 +2797,7 @@ CREATE TABLE `PREFIX_webservice_account` (
   `module_name` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `active` tinyint(2) NOT NULL,
   `context_employee_id` int(11) unsigned DEFAULT NULL,
+  `image_extension` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   PRIMARY KEY (`id_webservice_account`),
   KEY `key` (`key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
