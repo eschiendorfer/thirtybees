@@ -139,7 +139,8 @@
 							</span>
 						</div>
 					</div>
-					<button type="submit" id="submitShippingNumber" class="btn btn-primary pull-right" name="submitShippingNumber">
+					{hook h='displayAdminOrderShippingForm' id_carrier=$line.id_carrier}
+					<button type="submit" id="submitShippingNumber" class="btn btn-primary pull-right" name="submitShippingNumber" value="">
 						{l s='Update'}
 					</button>
 					<a href="#" class="cancel_shipping_number_link btn btn-default">
