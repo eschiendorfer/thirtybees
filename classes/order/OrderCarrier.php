@@ -230,7 +230,7 @@ class OrderCarrierCore extends ObjectModel
         if ($id_order && Module::isEnabled('genzo_shipping')) {
             /* @var $genzoShipping Genzo_Shipping */
             $genzoShipping = Module::getInstanceByName('genzo_shipping');
-            if (!empty($genzoShipping->getPackagingOptionsForOrder($id_order, true))) {
+            if (!empty($genzoShipping->getPackagingOptionsForOrder($id_order, true, true))) {
                 $fee_absolute = 3.00; // Assuming that a letter cost's us this
             }
         }
