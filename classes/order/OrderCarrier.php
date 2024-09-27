@@ -231,7 +231,8 @@ class OrderCarrierCore extends ObjectModel
             /* @var $genzoShipping Genzo_Shipping */
             $genzoShipping = Module::getInstanceByName('genzo_shipping');
             if (!empty($genzoShipping->getPackagingOptionsForOrder($id_order, true, true))) {
-                $fee_absolute = 3.00; // Assuming that a letter cost's us this
+                // Note: we never want to raise the fee absolute value (Abholung in Biberist should be calculated with zero cost) -> min()
+                $fee_absolute = min($genzoShipping, 3.00); // Assuming that a letter cost's us 3.00 CHF
             }
         }
 
