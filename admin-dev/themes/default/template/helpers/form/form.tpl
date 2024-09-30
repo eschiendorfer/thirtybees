@@ -457,16 +457,18 @@
 									{foreach $input.values.query as $value}
 										{assign var=id_checkbox value=$input.name|cat:'_'|cat:$value[$input.values.id]}
 
-										<script>
-											{assign var='conditional_helper' value=[{$id_checkbox} => $input.conditional_rules]}
-											conditional_fields.push('{$conditional_helper|json_encode}');
+										{if isset($input.conditional_rules) && is_array($input.conditional_rules) && !empty($input.conditional_rules)}
+											<script>
+												{assign var='conditional_helper' value=[{$id_checkbox} => $input.conditional_rules]}
+												conditional_fields.push('{$conditional_helper|json_encode}');
 
-											if (!checkbox_elements.{$input.name}) {
-												checkbox_elements.{$input.name} = [];
-											}
+												if (!checkbox_elements.{$input.name}) {
+													checkbox_elements.{$input.name} = [];
+												}
 
-											checkbox_elements.{$input.name}.push('{$id_checkbox|json_encode}');
-										</script>
+												checkbox_elements.{$input.name}.push('{$id_checkbox|json_encode}');
+											</script>
+										{/if}
 
 										<div class="checkbox{if isset($input.expand) && strtolower($input.expand.default) == 'show'} hidden{/if}">
 											{strip}
