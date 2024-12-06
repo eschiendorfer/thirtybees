@@ -108,7 +108,7 @@
 		{if $product.has_been_shipped}
 			{if is_int($product.has_been_shipped)}
 				<a href="{$link->getAdminLink('AdminOrders', true, ['vieworder' => true, 'id_order' => {$product.has_been_shipped} ])}">versandt</a>
-			{else}
+			{elseif !$product['product_quantity_refunded'] || $product['product_quantity_return']>0}
 				<span style="color: green;">versandt</span>
 			{/if}
 		{/if}
