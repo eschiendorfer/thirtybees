@@ -105,6 +105,13 @@
 			<input type="text" name="product_quantity" class="edit_product_quantity" value="{$product['product_quantity']|htmlentities}"/>
 		</span>
 		{/if}
+		{if $product.has_been_shipped}
+			{if is_int($product.has_been_shipped)}
+				<a href="{$link->getAdminLink('AdminOrders', true, ['vieworder' => true, 'id_order' => {$product.has_been_shipped} ])}">versandt</a>
+			{else}
+				<span style="color: green;">versandt</span>
+			{/if}
+		{/if}
 	</td>
 	{if $display_warehouse}
 		<td>
