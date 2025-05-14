@@ -278,11 +278,7 @@ class FrontControllerCore extends Controller
         }
 
         if (!$this->useMobileTheme()) {
-            // These hooks aren't used for the mobile theme.
-            // Needed hooks are called in the tpl files.
-
-            $hookHeader = Hook::displayHook('displayHeader');
-
+            $hookHeader = '';
             $faviconTemplate = Configuration::get('TB_SOURCE_FAVICON_CODE') ?? '';
             if (!empty(trim($faviconTemplate))) {
                 $faviconTemplate = preg_replace('/\<br(\s*)?\/?\>/i', "\n", $faviconTemplate);
@@ -317,19 +313,19 @@ class FrontControllerCore extends Controller
                 $hookHeader .= $this->getSeoFields();
             }
 
+            $hookHeader .= Hook::displayHook('displayHeader');
+
             // To be removed: append extra css and metas to the header hook
             $extraCode = Configuration::getMultiple([Configuration::CUSTOMCODE_METAS, Configuration::CUSTOMCODE_CSS]);
             $extraCss = $extraCode[Configuration::CUSTOMCODE_CSS] ? '<style>'.$extraCode[Configuration::CUSTOMCODE_CSS].'</style>' : '';
             $hookHeader .= $extraCode[Configuration::CUSTOMCODE_METAS].$extraCss;
 
-            $this->context->smarty->assign(
-                [
-                    'HOOK_HEADER'       => $hookHeader,
-                    'HOOK_TOP'          => Hook::displayHook('displayTop'),
-                    'HOOK_LEFT_COLUMN'  => ($this->display_column_left ? Hook::displayHook('displayLeftColumn') : ''),
-                    'HOOK_RIGHT_COLUMN' => ($this->display_column_right ? Hook::displayHook('displayRightColumn', ['cart' => $this->context->cart]) : ''),
-                ]
-            );
+            $this->context->smarty->assign([
+                'HOOK_HEADER'       => $hookHeader,
+                'HOOK_TOP'          => Hook::displayHook('displayTop'),
+                'HOOK_LEFT_COLUMN'  => ($this->display_column_left ? Hook::displayHook('displayLeftColumn') : ''),
+                'HOOK_RIGHT_COLUMN' => ($this->display_column_right ? Hook::displayHook('displayRightColumn', ['cart' => $this->context->cart]) : ''),
+            ]);
         } else {
             $this->context->smarty->assign('HOOK_MOBILE_HEADER', Hook::displayHook('displayMobileHeader'));
         }
@@ -665,7 +661,7 @@ class FrontControllerCore extends Controller
             if (!$this->useMobileTheme() && $this->checkLiveEditAccess()) {
                 $liveEditContent = $this->getLiveEditFooter();
             }
-            $domAvailable = extension_loaded('dom') ? true : false;
+            $domAvailable = extension_loaded('dom');
             $defer = (bool)Configuration::get('PS_JS_DEFER');
             if ($defer && $domAvailable) {
                 $html = Media::deferInlineScripts($html);
@@ -727,24 +723,26 @@ class FrontControllerCore extends Controller
     {
         if ($this->maintenance == true || !(int) Configuration::get('PS_SHOP_ENABLE')) {
             $this->maintenance = true;
-            $isCLI = Tools::isPHPCLI();
-            $excludedIP = in_array(Tools::getRemoteAddr(), explode(',', (string)Configuration::get('PS_MAINTENANCE_IP')));
-            // don't show maintenance page to excluded IP addresses, or to CLI scripts
-            if (!$isCLI && !$excludedIP) {
-                header('HTTP/1.1 503 temporarily overloaded');
 
-                $this->context->smarty->assign($this->initLogoAndFavicon());
-                $this->context->smarty->assign(
-                    [
-                        'HOOK_MAINTENANCE' => Hook::displayHook('displayMaintenance'),
-                    ]
-                );
-
-                // If the controller is a module, then getTemplatePath will try to find the template in the modules, so we need to instanciate a real frontcontroller
-                $frontController = preg_match('/ModuleFrontController$/', get_class($this)) ? new FrontController() : $this;
-                $this->smartyOutputContent($frontController->getTemplatePath($this->getThemeDir().'maintenance.tpl'));
-                exit;
+            if (Tools::isPHPCLI()) {
+                // don't show mantenance page in CLI mode
+                return;
             }
+
+            $allowedIP = in_array(Tools::getRemoteAddr(), Tools::getMaintenanceIPAddresses());
+            if ($allowedIP) {
+                // don't show mantenance page for maintenance IP addresses
+                return;
+            }
+
+            header('HTTP/1.1 503 temporarily overloaded');
+            $this->context->smarty->assign($this->initLogoAndFavicon());
+            $this->context->smarty->assign('HOOK_MAINTENANCE', Hook::displayHook('displayMaintenance'));
+
+            // If the controller is a module, then getTemplatePath will try to find the template in the modules, so we need to instanciate a real frontcontroller
+            $frontController = preg_match('/ModuleFrontController$/', get_class($this)) ? new FrontController() : $this;
+            $this->smartyOutputContent($frontController->getTemplatePath($this->getThemeDir() . 'maintenance.tpl'));
+            exit;
         }
     }
 
@@ -1179,7 +1177,7 @@ class FrontControllerCore extends Controller
         // 'orderwayposition' => Tools::getProductsOrder('way'), // Deprecated: orderwayposition
         // 'orderwaydefault' => Tools::getProductsOrder('way'),
 
-        $stockManagement = Configuration::get('PS_STOCK_MANAGEMENT') ? true : false; // no display quantity order if stock management disabled
+        $stockManagement = (bool)Configuration::get('PS_STOCK_MANAGEMENT'); // no display quantity order if stock management disabled
         $orderByValues = [0 => 'name', 1 => 'price', 2 => 'date_add', 3 => 'date_upd', 4 => 'position', 5 => 'manufacturer_name', 6 => 'quantity', 7 => 'reference'];
         $orderWayValues = [0 => 'asc', 1 => 'desc'];
 
@@ -1349,7 +1347,7 @@ class FrontControllerCore extends Controller
         Tools::setCookieLanguage($this->context->cookie);
 
         $protocolLink = (Configuration::get('PS_SSL_ENABLED') || Tools::usingSecureMode()) ? 'https://' : 'http://';
-        $useSSL = ((isset($this->ssl) && $this->ssl && Configuration::get('PS_SSL_ENABLED')) || Tools::usingSecureMode()) ? true : false;
+        $useSSL = (isset($this->ssl) && $this->ssl && Configuration::get('PS_SSL_ENABLED')) || Tools::usingSecureMode();
         $protocolContent = ($useSSL) ? 'https://' : 'http://';
         $link = new Link($protocolLink, $protocolContent);
         $this->context->link = $link;
@@ -2204,9 +2202,11 @@ class FrontControllerCore extends Controller
      */
     protected function getCurrentPageCanonicalUrl()
     {
-        return $this->getCurrentPageAlternateUrl(
-            (int)$this->context->shop->id,
-            (int)$this->context->language->id
+        return $this->addCurrentPaginationParametersToUrl(
+            $this->getCurrentPageAlternateUrl(
+                (int)$this->context->shop->id,
+                (int)$this->context->language->id
+            )
         );
     }
 
@@ -2236,7 +2236,7 @@ class FrontControllerCore extends Controller
             $dispatcher = Dispatcher::getInstance();
             if ($info = $dispatcher->isModuleControllerRoute($routeId)) {
                 // include only required $_GET parameters and ignore others
-                $params = array_intersect_key($_GET, $dispatcher->getRouteRequiredParams($routeId));
+                $params = array_intersect_key($_GET, $dispatcher->getRouteRequiredParams($routeId, $languageId));
                 return $this->context->link->getModuleLink($info['module'], $info['controller'], $params, null, $languageId, $shopId);
             } else {
                 return $this->context->link->getPageLink($routeId, null, $languageId, null, false, $shopId);
@@ -2262,13 +2262,8 @@ class FrontControllerCore extends Controller
             $shopId = (int)$target['targetShopId'];
             $languageId = (int)$target['targetLangId'];
             $isDefault = (bool)$target['isDefault'];
-            $lnk = $this->getCurrentPageAlternateUrl($shopId, $languageId);
+            $lnk = $this->addCurrentPaginationParametersToUrl($this->getCurrentPageAlternateUrl($shopId, $languageId));
             if ($lnk) {
-                // append page number
-                if ($p = Tools::getIntValue('p')) {
-                    $lnk .= "?p=$p";
-                }
-
                 $links[] = '<link rel="alternate" hreflang="' . $languageCode . '" href="' . $lnk . '">';
                 if ($isDefault) {
                     $default = '<link rel="alternate" hreflang="x-default" href="' . $lnk . '">';
@@ -2281,5 +2276,32 @@ class FrontControllerCore extends Controller
         }
 
         return $links;
+    }
+
+    /**
+     * Helper method that adds pagination parameters 'p' and 'n' to url
+     *
+     * @param string|null $url
+     * @return string|null
+     *
+     * @throws PrestaShopException
+     */
+    protected function addCurrentPaginationParametersToUrl($url)
+    {
+        if ($url) {
+            // add page number, unless it's first page
+            $p = Tools::getIntValue('p');
+            if ($p > 1) {
+                $url = Tools::url($url, "p=$p");
+            }
+
+            // add page size, unless it's default page size
+            $defaultProductsPerPage = max(1, (int) Configuration::get('PS_PRODUCTS_PER_PAGE'));
+            $n = Tools::getIntValue('n');
+            if ($n >= 1 && $n !== $defaultProductsPerPage) {
+                $url = Tools::url($url, "n=$n");
+            }
+        }
+        return $url;
     }
 }

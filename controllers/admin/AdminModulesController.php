@@ -30,6 +30,7 @@
  */
 
 use Thirtybees\Core\Package\PackageExtractor;
+use GuzzleHttp\Client;
 
 /**
  * Class AdminModulesControllerCore
@@ -272,9 +273,9 @@ class AdminModulesControllerCore extends AdminController
         $modulesPreferences = [];
         $modulesPreferencesTmp = Db::readOnly()->getArray(
             (new DbQuery())
-            ->select('*')
-            ->from('module_preference')
-            ->where('`id_employee` = '.(int) $this->id_employee)
+                ->select('*')
+                ->from('module_preference')
+                ->where('`id_employee` = '.(int) $this->id_employee)
         );
 
         foreach ($modulesPreferencesTmp as $k => $v) {
@@ -511,9 +512,7 @@ class AdminModulesControllerCore extends AdminController
     {
         foreach ($modules as $k => $module) {
             // Check add permissions, if add permissions not set, addons modules and uninstalled modules will not be displayed
-            if (!$this->hasAddPermission()) {
-                unset($modules[$k]);
-            } elseif (!$this->hasAddPermission() && (!isset($module->id) || $module->id < 1)) {
+            if (!$this->hasAddPermission() && (!isset($module->id) || $module->id < 1)) {
                 unset($modules[$k]);
             } elseif ($module->id && !Module::getPermissionStatic($module->id, 'view') && !Module::getPermissionStatic($module->id, 'configure')) {
                 unset($modules[$k]);
@@ -587,11 +586,11 @@ class AdminModulesControllerCore extends AdminController
             }
         } elseif ((int) Db::readOnly()->getValue(
             (new DbQuery())
-            ->select('`id_module_preference`')
-            ->from('module_preference')
-            ->where('`module` = \''.pSQL($module->name).'\'')
-            ->where('`id_employee` = '.(int) $this->id_employee)
-            ->where('`interest` = 0')
+                ->select('`id_module_preference`')
+                ->from('module_preference')
+                ->where('`module` = \''.pSQL($module->name).'\'')
+                ->where('`id_employee` = '.(int) $this->id_employee)
+                ->where('`interest` = 0')
         ) > 0) {
             return true;
         }
@@ -601,16 +600,16 @@ class AdminModulesControllerCore extends AdminController
         if ($selectedCategory === static::CATEGORY_FAVORITES) {
             if ((int) Db::readOnly()->getValue(
                 (new DbQuery())
-                ->select('`id_module_preference`')
-                ->from('module_preference')
-                ->where('`module` = \''.pSQL($module->name).'\'')
-                ->where('`id_employee` = '.(int) $this->id_employee)
-                ->where('`favorite` = 1')
-                ->where('`interest` = 1 OR `interest` IS NULL')
+                    ->select('`id_module_preference`')
+                    ->from('module_preference')
+                    ->where('`module` = \''.pSQL($module->name).'\'')
+                    ->where('`id_employee` = '.(int) $this->id_employee)
+                    ->where('`favorite` = 1')
+                    ->where('`interest` = 1 OR `interest` IS NULL')
             ) < 1) {
                 return true;
             }
-        } elseif ($selectedCategory === static::CATEGORY_PREMIUM)  {
+        } elseif ($selectedCategory === static::CATEGORY_PREMIUM) {
             if (! $module->premium) {
                 return true;
             }
@@ -689,14 +688,11 @@ class AdminModulesControllerCore extends AdminController
     }
 
     /**
-     * Render KPIs
-     *
-     * @return false|string
+     * @return HelperKpi[]
      *
      * @throws PrestaShopException
-     * @throws SmartyException
      */
-    public function renderKpis()
+    public function getKpis(): array
     {
         $time = time();
         $kpis = [];
@@ -712,7 +708,7 @@ class AdminModulesControllerCore extends AdminController
         }
         $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=installed_modules';
         $helper->refresh = (bool) (ConfigurationKPI::get('INSTALLED_MODULES_EXPIRE') < $time);
-        $kpis[] = $helper->generate();
+        $kpis[] = $helper;
 
         $helper = new HelperKpi();
         $helper->id = 'box-disabled-modules';
@@ -724,7 +720,7 @@ class AdminModulesControllerCore extends AdminController
         }
         $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=disabled_modules';
         $helper->refresh = (bool) (ConfigurationKPI::get('DISABLED_MODULES_EXPIRE') < $time);
-        $kpis[] = $helper->generate();
+        $kpis[] = $helper;
 
         // Show how many modules can be updated from api server
         $helper = new HelperKpi();
@@ -737,12 +733,9 @@ class AdminModulesControllerCore extends AdminController
         }
         $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=update_modules';
         $helper->refresh = (bool) (ConfigurationKPI::get('UPDATE_MODULES_EXPIRE') < $time);
-        $kpis[] = $helper->generate();
+        $kpis[] = $helper;
 
-        $helper = new HelperKpiRow();
-        $helper->kpis = $kpis;
-
-        return $helper->generate();
+        return $kpis;
     }
 
     /**
@@ -852,10 +845,10 @@ class AdminModulesControllerCore extends AdminController
         $module = Tools::getValue('module_pref');
         $idModulePreference = (int) Db::readOnly()->getValue(
             (new DbQuery())
-            ->select('`id_module_preference`')
-            ->from('module_preference')
-            ->where('`id_employee` = '.(int) $this->id_employee)
-            ->where('`module` = \''.pSQL($module).'\'')
+                ->select('`id_module_preference`')
+                ->from('module_preference')
+                ->where('`id_employee` = '.(int) $this->id_employee)
+                ->where('`module` = \''.pSQL($module).'\'')
         );
         if ($idModulePreference > 0) {
             if ($action == 'i') {
@@ -1733,7 +1726,7 @@ class AdminModulesControllerCore extends AdminController
 
         $zipLocation = _PS_MODULE_DIR_.$moduleName.'.zip';
         if (!file_exists($zipLocation)) {
-            $guzzle = new GuzzleHttp\Client([
+            $guzzle = new Client([
                 'timeout' => 30,
                 'verify'  => Configuration::getSslTrustStore(),
             ]);

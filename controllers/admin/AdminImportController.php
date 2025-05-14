@@ -199,6 +199,9 @@ class AdminImportControllerCore extends AdminController
                         'label' => $this->l('Warehouse'),
                         'help'  => $this->l('ID of the warehouse to set as storage.'),
                     ],
+                    'width'                     => ['label' => $this->l('Impact on width')],
+                    'height'                    => ['label' => $this->l('Impact on height')],
+                    'depth'                     => ['label' => $this->l('Impact on depth')],
                 ];
 
                 static::$defaultValues = [
@@ -212,6 +215,9 @@ class AdminImportControllerCore extends AdminController
                     'quantity'                  => 0,
                     'minimal_quantity'          => 1,
                     'weight'                    => 0,
+                    'width'                     => 0,
+                    'height'                    => 0,
+                    'depth'                     => 0,
                     'default_on'                => 0,
                     'advanced_stock_management' => 0,
                     'depends_on_stock'          => 0,
@@ -856,6 +862,7 @@ class AdminImportControllerCore extends AdminController
                 'regenerate'               => Tools::getValue('regenerate'),
                 'forceCat'                 => Tools::getValue('forceCat'),
                 'match_ref'                => Tools::getValue('match_ref'),
+                'only_file_product'        => Tools::getValue('only_file_product'),
                 'separator'                => $this->separator,
                 'multiple_value_separator' => $this->multiple_value_separator,
             ],
@@ -1258,8 +1265,10 @@ class AdminImportControllerCore extends AdminController
             $crossStepsVariables = [];
             if ($crossStepsVars = Tools::getValue('crossStepsVars')) {
                 $crossStepsVars = json_decode($crossStepsVars, true);
-                if (sizeof($crossStepsVars) > 0) {
+                if (is_array($crossStepsVars)) {
                     $crossStepsVariables = $crossStepsVars;
+                } else {
+                    $this->warnings[] = $this->l('Failed to deserialize cross-requests variables');
                 }
             }
 
@@ -1421,20 +1430,20 @@ class AdminImportControllerCore extends AdminController
                 break;
             case static::ENTITY_TYPE_PRODUCTS:
                 foreach ([
-                             'product',
-                             'product_shop',
-                             'feature_product',
-                             'product_lang',
-                             'category_product',
-                             'product_tag',
-                             'image',
-                             'image_lang',
-                             'image_shop',
-                             'specific_price',
-                             'specific_price_priority',
-                             'product_carrier',
-                             'cart_product',
-                         ] as $table) {
+                    'product',
+                    'product_shop',
+                    'feature_product',
+                    'product_lang',
+                    'category_product',
+                    'product_tag',
+                    'image',
+                    'image_lang',
+                    'image_shop',
+                    'specific_price',
+                    'specific_price_priority',
+                    'product_carrier',
+                    'cart_product',
+                ] as $table) {
                     try {
                         $conn->execute('TRUNCATE TABLE `'._DB_PREFIX_.$table.'`');
                     } catch (PrestaShopException $e) {
@@ -1442,26 +1451,26 @@ class AdminImportControllerCore extends AdminController
                     }
                 }
                 foreach ([
-                             'product_attachment',
-                             'product_country_tax',
-                             'product_download',
-                             'product_group_reduction_cache',
-                             'product_sale',
-                             'product_supplier',
-                             'warehouse_product_location',
-                             'stock',
-                             'stock_available',
-                             'stock_mvt',
-                             'customization',
-                             'customization_field',
-                             'supply_order_detail',
-                             'attribute_impact',
-                             'product_attribute',
-                             'product_attribute_shop',
-                             'product_attribute_combination',
-                             'product_attribute_image',
-                             'pack',
-                         ] as $table) {
+                    'product_attachment',
+                    'product_country_tax',
+                    'product_download',
+                    'product_group_reduction_cache',
+                    'product_sale',
+                    'product_supplier',
+                    'warehouse_product_location',
+                    'stock',
+                    'stock_available',
+                    'stock_mvt',
+                    'customization',
+                    'customization_field',
+                    'supply_order_detail',
+                    'attribute_impact',
+                    'product_attribute',
+                    'product_attribute_shop',
+                    'product_attribute_combination',
+                    'product_attribute_image',
+                    'pack',
+                ] as $table) {
                     try {
                         $conn->execute('TRUNCATE TABLE `'._DB_PREFIX_.$table.'`');
                     } catch (PrestaShopException $e) {
@@ -1475,18 +1484,18 @@ class AdminImportControllerCore extends AdminController
                 break;
             case static::ENTITY_TYPE_COMBINATIONS:
                 foreach ([
-                             'attribute',
-                             'attribute_impact',
-                             'attribute_lang',
-                             'attribute_group',
-                             'attribute_group_lang',
-                             'attribute_group_shop',
-                             'attribute_shop',
-                             'product_attribute',
-                             'product_attribute_shop',
-                             'product_attribute_combination',
-                             'product_attribute_image',
-                         ] as $table) {
+                    'attribute',
+                    'attribute_impact',
+                    'attribute_lang',
+                    'attribute_group',
+                    'attribute_group_lang',
+                    'attribute_group_shop',
+                    'attribute_shop',
+                    'product_attribute',
+                    'product_attribute_shop',
+                    'product_attribute_combination',
+                    'product_attribute_image',
+                ] as $table) {
                     try {
                         $conn->execute('TRUNCATE TABLE `'._DB_PREFIX_.$table.'`');
                     } catch (PrestaShopException $e) {
@@ -1904,7 +1913,7 @@ class AdminImportControllerCore extends AdminController
 
         //copying images of categories
         if (!empty($category->image)) {
-            if (!(static::copyImg($category->id, null, $category->image, static::ENTITY_TYPE_CATEGORIES, !$regenerate))) {
+            if (!(static::copyImg($category->id, null, $category->image, static::ENTITY_TYPE_CATEGORIES, !$regenerate, $this->warnings))) {
                 $this->warnings[] = $category->image.' '.$this->l('cannot be copied.');
             }
         }
@@ -1969,13 +1978,14 @@ class AdminImportControllerCore extends AdminController
      * @param string $url path or url to use
      * @param string $entityType entity type
      * @param bool $regenerate
+     * @param string[] $errors collect errors
      *
      * @return bool
      *
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    protected static function copyImg($idEntity, $idImage = null, $url = '', $entityType = 'products', $regenerate = true)
+    protected static function copyImg($idEntity, $idImage = null, $url = '', $entityType = 'products', $regenerate = true, &$errors = [])
     {
         $tmpfile = tempnam(_PS_TMP_IMG_DIR_, 'ps_import');
         $url = urldecode(trim($url));
@@ -1999,20 +2009,27 @@ class AdminImportControllerCore extends AdminController
 
         $url = http_build_url('', $parsedUrl);
 
-        $origTmpfile = $tmpfile;
+        $copyErr = null;
+        if (! Tools::copy($url, $tmpfile, null, $copyErr)) {
+            $msg = sprintf(Tools::displayError("Failed to download file '%s' to temporary file '%s'"), $url, $tmpfile);
+            if ($copyErr) {
+                $msg .= ': ' . $copyErr;
+            }
+            $errors[] = $msg;
+            return false;
+        }
 
-        if (Tools::copy($url, $tmpfile)) {
+        try {
             // Evaluate the memory required to resize the image: if it's too much, you can't resize it.
             if (!ImageManager::checkImageMemoryLimit($tmpfile)) {
-                @unlink($tmpfile);
+                $errors[] = sprintf(Tools::displayError("Failed to process image '%s': Not engough memory"), $url);
                 return false;
             }
 
             // Find path depending on $entityType
             $imageEntity = ImageEntity::getImageEntityInfo($entityType);
-            if (! $imageEntity) {
-                @unlink($tmpfile);
-                return false;
+            if (!$imageEntity) {
+                throw new PrestaShopException("Image entity $entityType not found");
             }
 
             $path = $imageEntity['path'];
@@ -2023,22 +2040,35 @@ class AdminImportControllerCore extends AdminController
                 $filename = $idImage;
             }
 
+            // Ensure the directory exists, or create it dynamically
+            if (!is_dir($path)) {
+                if (!mkdir($path, 0755, true) || !is_dir($path)) {
+                    $errors[] = sprintf(Tools::displayError("Failed to create directory '%s'"), $path);
+                    return false;
+                }
+            }
+
             // Create the new source image file
             $imageExtension = ImageManager::getDefaultImageExtension();
 
-            if (ImageManager::convertImageToExtension($tmpfile, $imageExtension, $path.$filename.'.'.$imageExtension) && $regenerate) {
+            $targetFile = $path . $filename . '.' . $imageExtension;
+            if (! ImageManager::convertImageToExtension($tmpfile, $imageExtension, $targetFile)) {
+                $error = sprintf(Tools::displayError("Failed to convert uploaded file to '%s' image format"), $imageExtension);
+                $errors[] = $error;
+                return false;
+            }
+
+            if ($regenerate) {
                 // Generate all image types for source image
                 ImageManager::generateImageTypesByEntity($entityType, $idEntity);
             }
 
-        } else {
-            @unlink($origTmpfile);
-
-            return false;
+            return true;
+        } finally {
+            if (file_exists($tmpfile)) {
+                unlink($tmpfile);
+            }
         }
-        unlink($origTmpfile);
-
-        return true;
     }
 
     /**
@@ -2516,20 +2546,23 @@ class AdminImportControllerCore extends AdminController
 
         $linkRewrite = (is_array($product->link_rewrite) && isset($product->link_rewrite[$idLang])) ? trim($product->link_rewrite[$idLang]) : '';
         $validLink = Validate::isLinkRewrite($linkRewrite);
-        if ((isset($product->link_rewrite[$idLang]) && empty($product->link_rewrite[$idLang])) || !$validLink) {
-            $linkRewrite = Tools::link_rewrite($product->name[$idLang]);
-            if ($linkRewrite == '') {
+        if (!$validLink) {
+            if (isset($product->name[$idLang])) {
+                $productName = $product->name[$idLang] ?? '';
+                $linkRewrite = Tools::link_rewrite($product->name[$idLang] ?? '');
+                if ($linkRewrite == '') {
+                    $linkRewrite = 'friendly-url-autogeneration-failed';
+                }
+
+                $this->informations[] = sprintf(
+                    $this->l('Rewrite link for %1$s (ID %2$s): re-written as %3$s.'),
+                    $productName,
+                    $idProduct ?? 'No ID',
+                    $linkRewrite
+                );
+            } else {
                 $linkRewrite = 'friendly-url-autogeneration-failed';
             }
-        }
-
-        if (!$validLink) {
-            $this->informations[] = sprintf(
-                $this->l('Rewrite link for %1$s (ID %2$s): re-written as %3$s.'),
-                $product->name[$idLang],
-                (!empty($info['id'])) ? $info['id'] : 'null',
-                $linkRewrite
-            );
         }
 
         if (!$validLink || !(is_array($product->link_rewrite) && count($product->link_rewrite))) {
@@ -2614,10 +2647,9 @@ class AdminImportControllerCore extends AdminController
             }
 
             if (!$validateOnly) {
-                if ($product->getType() == Product::PTYPE_VIRTUAL) {
-                    StockAvailable::setProductOutOfStock((int) $product->id, 1);
-                } else {
-                    StockAvailable::setProductOutOfStock((int) $product->id, (int) $product->out_of_stock);
+
+                if (isset($info['out_of_stock'])) {
+                    StockAvailable::setProductOutOfStock((int) $product->id, (int)$info['out_of_stock']);
                 }
 
                 if ($productDownloadId = ProductDownload::getIdFromIdProduct((int) $product->id)) {
@@ -2665,7 +2697,7 @@ class AdminImportControllerCore extends AdminController
             $this->errors[] = sprintf(
                 $this->l('%1$s (ID: %2$s) cannot be saved'),
                 (!empty($info['name'])) ? Tools::safeOutput($info['name']) : 'No Name',
-                (!empty($info['id'])) ? Tools::safeOutput($info['id']) : 'No ID'
+                $idProduct ?? 'No ID'
             );
             $this->errors[] = ($fieldError !== true ? $fieldError : '').(isset($langFieldError) && $langFieldError !== true ? $langFieldError : '').Db::getInstance()->getMsgError();
         } else {
@@ -2812,7 +2844,7 @@ class AdminImportControllerCore extends AdminController
                         ) {
                             // associate image to selected shops
                             $image->associateTo($shops);
-                            if (!static::copyImg($product->id, $image->id, $url, static::ENTITY_TYPE_PRODUCTS, !$regenerate)) {
+                            if (!static::copyImg($product->id, $image->id, $url, static::ENTITY_TYPE_PRODUCTS, !$regenerate, $this->warnings)) {
                                 $image->delete();
                                 $this->warnings[] = sprintf($this->l('Error copying image: %s'), $url);
                             }
@@ -3205,10 +3237,10 @@ class AdminImportControllerCore extends AdminController
             $customer->date_upd = date('Y-m-d H:i:s');
         }
 
-        if($birthday = Tools::getDateFromDateFormat(Tools::getValue('date_format', 'Y-m-d'), $info['birthday'], 'Y-m-d')){
+        if($birthday = Tools::getDateFromDateFormat(Tools::getValue('date_format', 'Y-m-d'), $info['birthday'], 'Y-m-d')) {
             $customer->birthday = $birthday;
         }
-        if($dateAdd = Tools::getDateFromDateFormat(Tools::getValue('date_format', 'Y-m-d'), $info['date_add'], 'Y-m-d')){
+        if($dateAdd = Tools::getDateFromDateFormat(Tools::getValue('date_format', 'Y-m-d'), $info['date_add'], 'Y-m-d')) {
             $customer->date_add = $dateAdd;
         }
 
@@ -3598,6 +3630,11 @@ class AdminImportControllerCore extends AdminController
             $attributes[$attribute['attribute_group'].'_'.$attribute['name']] = (int) $attribute['id_attribute'];
         }
 
+        $deletedProducts = [];
+        if (is_array($crossStepsVariables) && array_key_exists('deletedProducts', $crossStepsVariables) && is_array($crossStepsVariables['deletedProducts'])) {
+            $deletedProducts = $crossStepsVariables['deletedProducts'];
+        }
+
         $this->receiveTab();
         $datasource = $this->openDataSource($offset);
 
@@ -3627,7 +3664,8 @@ class AdminImportControllerCore extends AdminController
                     $attributes, // by ref
                     $regenerate,
                     $shopIsFeatureActive,
-                    $validateOnly
+                    $validateOnly,
+                    $deletedProducts // by ref
                 );
             } catch (PrestaShopException $e) {
                 $this->errors[] = $e->getMessage();
@@ -3638,6 +3676,7 @@ class AdminImportControllerCore extends AdminController
         if ($crossStepsVariables !== false) {
             $crossStepsVariables['groups'] = $groups;
             $crossStepsVariables['attributes'] = $attributes;
+            $crossStepsVariables['deletedProducts'] = $deletedProducts;
         }
 
         return $lineCount;
@@ -3651,13 +3690,14 @@ class AdminImportControllerCore extends AdminController
      * @param bool $regenerate
      * @param bool $shopIsFeatureActive
      * @param bool $validateOnly
+     * @param int[] $deletedProducts
      *
      * @return void
      *
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    protected function attributeImportOne($info, $defaultLanguage, &$groups, &$attributes, $regenerate, $shopIsFeatureActive, $validateOnly = false)
+    protected function attributeImportOne($info, $defaultLanguage, &$groups, &$attributes, $regenerate, $shopIsFeatureActive, $validateOnly, &$deletedProducts)
     {
         static::setDefaultValues($info);
 
@@ -3700,6 +3740,13 @@ class AdminImportControllerCore extends AdminController
             return;
         }
 
+        // delete combinations for product
+        $deleteCombinationsForProduct = Tools::getValue('only_file_product');
+        if ($deleteCombinationsForProduct && !in_array((int)$product->id, $deletedProducts)) {
+            $deletedProducts[] = (int)$product->id;
+            $product->deleteProductAttributes();
+        }
+
         $idImage = [];
 
         if (isset($info['image_url']) && $info['image_url']) {
@@ -3733,7 +3780,7 @@ class AdminImportControllerCore extends AdminController
                     ) {
                         $image->associateTo($idShopList);
 // FIXME: 2s/image !
-                        if (!static::copyImg($product->id, $image->id, $url, static::ENTITY_TYPE_PRODUCTS, !$regenerate)) {
+                        if (!static::copyImg($product->id, $image->id, $url, static::ENTITY_TYPE_PRODUCTS, !$regenerate, $this->warnings)) {
                             $this->warnings[] = sprintf($this->l('Error copying image: %s'), $url);
                             $image->delete();
                         } else {
@@ -3925,8 +3972,11 @@ class AdminImportControllerCore extends AdminController
                                         (string) $info['upc'],
                                         (int) $info['minimal_quantity'],
                                         $info['available_date'],
-                                        null,
-                                        $idShopList
+                                        false,
+                                        $idShopList,
+                                        $info['width'],
+                                        $info['height'],
+                                        $info['depth']
                                     );
                                     $idProductAttributeUpdate = true;
                                     if (!empty($info['supplier_reference'])) {
@@ -4222,7 +4272,7 @@ class AdminImportControllerCore extends AdminController
 
             //copying images of manufacturer
             if (!$validateOnly && !empty($manufacturer->image)) {
-                if (!static::copyImg($manufacturer->id, null, $manufacturer->image, static::ENTITY_TYPE_MANUFACTURERS, !$regenerate)) {
+                if (!static::copyImg($manufacturer->id, null, $manufacturer->image, static::ENTITY_TYPE_MANUFACTURERS, !$regenerate, $this->warnings)) {
                     $this->warnings[] = $manufacturer->image.' '.$this->l('cannot be copied.');
                 }
             }
@@ -4351,7 +4401,7 @@ class AdminImportControllerCore extends AdminController
 
             //copying images of suppliers
             if (!$validateOnly && !empty($supplier->image)) {
-                if (!static::copyImg($supplier->id, null, $supplier->image, static::ENTITY_TYPE_SUPPLIERS, !$regenerate)) {
+                if (!static::copyImg($supplier->id, null, $supplier->image, static::ENTITY_TYPE_SUPPLIERS, !$regenerate, $this->warnings)) {
                     $this->warnings[] = $supplier->image.' '.$this->l('cannot be copied.');
                 }
             }
@@ -4555,7 +4605,7 @@ class AdminImportControllerCore extends AdminController
         array_walk($info, [static::class, 'fillInfo'], $store);
 
         if (!empty($store->image)) {
-            if (!(static::copyImg($store->id, null, $store->image, 'stores', !$regenerate))) {
+            if (!(static::copyImg($store->id, null, $store->image, 'stores', !$regenerate, $this->warnings))) {
                 $this->warnings[] = $store->image.' '.$this->l('cannot be copied.');
             }
         }

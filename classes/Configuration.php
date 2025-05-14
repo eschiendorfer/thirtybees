@@ -203,7 +203,7 @@ class ConfigurationCore extends ObjectModel
     const LIMIT_UPLOAD_IMAGE_VALUE = 'PS_LIMIT_UPLOAD_IMAGE_VALUE';
     const LIMIT_UPLOAD_FILE_VALUE = 'PS_LIMIT_UPLOAD_FILE_VALUE';
     const TOKEN_ENABLE = 'PS_TOKEN_ENABLE';
-    CONST BO_FORCE_TOKEN = 'TB_BO_FORCE_TOKEN';
+    const BO_FORCE_TOKEN = 'TB_BO_FORCE_TOKEN';
     const STATS_RENDER = 'PS_STATS_RENDER';
     const STATS_OLD_CONNECT_AUTO_CLEAN = 'PS_STATS_OLD_CONNECT_AUTO_CLEAN';
     const STATS_GRID_RENDER = 'PS_STATS_GRID_RENDER';
@@ -266,6 +266,7 @@ class ConfigurationCore extends ObjectModel
     const STORE_REGISTERED = 'TB_STORE_REGISTERED';
     const MAIL_SUBJECT_TEMPLATE = 'TB_MAIL_SUBJECT_TEMPLATE';
     const API_SERVER_OVERRIDE = 'TB_API_SERVER_OVERRIDE';
+    const ACCOUNTS_SERVER_OVERRIDE = 'TB_ACCOUNTS_SERVER_OVERRIDE';
     const SSL_TRUST_STORE_TYPE = 'TB_SSL_TRUST_STORE_TYPE';
     const SSL_TRUST_STORE = 'TB_SSL_TRUST_STORE';
     const TRACKING_ID = 'TB_TRACKING_UID';
@@ -275,6 +276,8 @@ class ConfigurationCore extends ObjectModel
     const SUPPORTER_TYPE_NAME = 'TB_SUPPORTER_TYPE_NAME';
     const CONNECTED = 'TB_CONNECTED';
     const CONNECT_CODE = 'TB_CONNECT_CODE';
+    const MAINTENANCE_IP_ADDRESSES = 'PS_MAINTENANCE_IP';
+    const LANGUAGE_CODE_IN_URL = 'TB_LANGUAGE_CODE_IN_URL';
 
     /**
      * List of configuration keys that will raise warnings
@@ -714,7 +717,7 @@ class ConfigurationCore extends ObjectModel
             }
         }
 
-        return self::updateValueRaw($key, $values, $idShopGroup, $idShop);
+        return static::updateValueRaw($key, $values, $idShopGroup, $idShop);
     }
 
     /**
@@ -1130,9 +1133,9 @@ class ConfigurationCore extends ObjectModel
      * @return string
      * @throws PrestaShopException
      */
-    public static function getApiServer()
+    public static function getApiServer(): string
     {
-        $baseUriOverride = static::getGlobalValue(static::API_SERVER_OVERRIDE);
+        $baseUriOverride = (string)static::getGlobalValue(static::API_SERVER_OVERRIDE);
         if ($baseUriOverride) {
             $baseUriOverride = rtrim($baseUriOverride, '/');
             if (Validate::isAbsoluteUrl($baseUriOverride)) {
@@ -1140,6 +1143,27 @@ class ConfigurationCore extends ObjectModel
             }
         }
         return 'https://api.thirtybees.com';
+    }
+
+    /**
+     *  Returns url to thirty bees accounts server
+     *
+     *  Default api url can be overridden using configuration key TB_ACCOUNTS_SERVER_OVERRIDE. This should be used
+     *  by thirty bees developers only
+     *
+     * @return string
+     * @throws PrestaShopException
+     */
+    public static function getAccountsServer(): string
+    {
+        $baseUriOverride = static::getGlobalValue(static::ACCOUNTS_SERVER_OVERRIDE);
+        if ($baseUriOverride) {
+            $baseUriOverride = rtrim($baseUriOverride, '/');
+            if (Validate::isAbsoluteUrl($baseUriOverride)) {
+                return $baseUriOverride;
+            }
+        }
+        return 'https://accounts.thirtybees.com';
     }
 
     /**

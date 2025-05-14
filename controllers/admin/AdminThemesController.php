@@ -29,6 +29,8 @@
  *  PrestaShop is an internationally registered trademark & property of PrestaShop SA
  */
 
+use GuzzleHttp\Client;
+
 /**
  * Class AdminThemesControllerCore
  *
@@ -761,6 +763,27 @@ class AdminThemesControllerCore extends AdminController
         }
 
         return parent::processDelete();
+    }
+
+    /***
+     * @return bool
+     * @throws PrestaShopException
+     */
+    public function processUninstallTheme()
+    {
+        /** @var Theme|false $theme */
+        $theme = $this->loadObject();
+        if (! Validate::isLoadedObject($theme)) {
+            $this->errors[] = $this->l('Theme not found.');
+            return false;
+        }
+
+        if ($theme->isUsed()) {
+            $this->errors[] = $this->l('The theme is being used by at least one shop. It cannot be uninstalled.');
+            return false;
+        }
+
+        return (bool)parent::processDelete();
     }
 
     /**
@@ -2433,7 +2456,7 @@ class AdminThemesControllerCore extends AdminController
     public function ajaxProcessRefreshFaviconTemplate()
     {
         try {
-            $template = (string) (new \GuzzleHttp\Client([
+            $template = (string) (new Client([
                 'verify'      => Configuration::getSslTrustStore(),
                 'timeout'     => 20,
             ]))->get('https://raw.githubusercontent.com/thirtybees/favicons/master/template.html')->getBody();

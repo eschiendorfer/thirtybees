@@ -421,7 +421,7 @@ class OrderHistoryCore extends ObjectModel
      * @throws PrestaShopException
      * @throws SmartyException
      */
-    public function addWithemail($autodate = true, $templateVars = false, Context $context = null)
+    public function addWithemail($autodate = true, $templateVars = false, ?Context $context = null)
     {
         $order = new Order($this->id_order);
 
@@ -465,7 +465,7 @@ class OrderHistoryCore extends ObjectModel
             ->innerJoin('order_state', 'os', '(oh.id_order_state = os.id_order_state)')
             ->innerJoin('order_state_lang', 'osl', '(os.id_order_state = osl.id_order_state AND osl.id_lang = o.id_lang)')
             ->where('os.send_email = 1')
-			->where('oh.id_order_history = ' . (int) $this->id);
+            ->where('oh.id_order_history = ' . (int) $this->id);
         $result = Db::readOnly()->getRow($sql);
 
         if ($result && $result['template'] && Validate::isEmail($result['email'])) {
@@ -485,6 +485,7 @@ class OrderHistoryCore extends ObjectModel
                 '{order_name}' => $order->getUniqReference(),
                 '{followup}' => str_replace('@', $order->getWsShippingNumber(), $carrierUrl),
                 '{shipping_number}' => $order->getWsShippingNumber(),
+                '{invoice_number}' => $order->invoice_number,
             ];
 
             if ($result['module_name']) {

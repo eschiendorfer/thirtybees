@@ -29,6 +29,8 @@
  *  PrestaShop is an internationally registered trademark & property of PrestaShop SA
  */
 
+use GuzzleHttp\Client;
+
 /**
  * Class ThemeCore
  */
@@ -132,6 +134,8 @@ class ThemeCore extends ObjectModel
     }
 
     /**
+     * Returns all installed themes
+     *
      * @return PrestaShopCollection
      *
      * @throws PrestaShopException
@@ -142,6 +146,25 @@ class ThemeCore extends ObjectModel
         $themes->orderBy('name');
 
         return $themes;
+    }
+
+    /**
+     * Returns all installed themes that are actually used by some shop
+     *
+     * @return Theme[]
+     *
+     * @throws PrestaShopException
+     */
+    public static function getUsedThemes()
+    {
+        $usedThemes = [];
+        /** @var Theme $theme */
+        foreach (static::getThemes() as $theme) {
+            if ($theme->isUsed()) {
+                $usedThemes[] = $theme;
+            }
+        }
+        return $usedThemes;
     }
 
     /**
@@ -158,9 +181,9 @@ class ThemeCore extends ObjectModel
     {
         $idTheme = (int) Db::readOnly()->getValue(
             (new DbQuery())
-            ->select('`id_theme`')
-            ->from('theme')
-            ->where('`name` = \''.pSQL($name).'\'')
+                ->select('`id_theme`')
+                ->from('theme')
+                ->where('`name` = \''.pSQL($name).'\'')
         );
 
         if ($idTheme) {
@@ -725,7 +748,7 @@ class ThemeCore extends ObjectModel
                             $value = strtolower((string)$moduleRow['manageHooks']);
                             $manageHooks = $value === 'true';
                         }
-                        $moduleHooks = isset($hooks[$moduleName]) ? $hooks[$moduleName] : [];
+                        $moduleHooks = $hooks[$moduleName] ?? [];
                         $result = $this->installModule($module, $manageHooks, $moduleHooks, $return['warnings']['unmanagedModules']);
                         if ($result !== true) {
                             $return['moduleErrors'][] = [
@@ -848,7 +871,7 @@ class ThemeCore extends ObjectModel
         $module->enable();
 
         // theme can mark some modules as un-managed - module hooks will not be modified during theme installation
-        if (! $manageHooks){
+        if (! $manageHooks) {
             return true;
         }
 
@@ -1134,7 +1157,7 @@ class ThemeCore extends ObjectModel
         ];
         $archiveFile = tempnam(_PS_CACHE_DIR_, 'theme-templates');
         try {
-            $guzzle = new \GuzzleHttp\Client([
+            $guzzle = new Client([
                 'base_uri' => Configuration::getApiServer(),
                 'verify' => Configuration::getSslTrustStore(),
                 'timeout' => 20,

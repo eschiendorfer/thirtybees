@@ -239,7 +239,7 @@ class AddressFormatCore extends ObjectModel
             }
         }
 
-        return (count($this->_errorFormatList)) ? false : true;
+        return !count($this->_errorFormatList);
     }
 
     /**
@@ -448,10 +448,10 @@ class AddressFormatCore extends ObjectModel
     {
         return AddressFormat::generateAddress(
             $params['address'],
-            (isset($params['patternRules']) ? $params['patternRules'] : []),
-            (isset($params['newLine']) ? $params['newLine'] : "\r\n"),
-            (isset($params['separator']) ? $params['separator'] : ' '),
-            (isset($params['style']) ? $params['style'] : [])
+            ($params['patternRules'] ?? []),
+            ($params['newLine'] ?? "\r\n"),
+            ($params['separator'] ?? ' '),
+            ($params['style'] ?? [])
         );
     }
 
@@ -642,9 +642,9 @@ class AddressFormatCore extends ObjectModel
         if (!Cache::isStored('AddressFormat::_getFormatDB'.$idCountry)) {
             $format = Db::readOnly()->getValue(
                 (new DbQuery())
-                ->select('`format`')
-                ->from(bqSQL(static::$definition['table']))
-                ->where('`id_country` = '.(int) $idCountry)
+                    ->select('`format`')
+                    ->from(bqSQL(static::$definition['table']))
+                    ->where('`id_country` = '.(int) $idCountry)
             );
             $format = trim($format);
             Cache::store('AddressFormat::_getFormatDB'.$idCountry, $format);

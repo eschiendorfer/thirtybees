@@ -54,7 +54,7 @@ class AdminCartsControllerCore extends AdminController
         $this->allow_export = true;
         $this->_orderWay = 'DESC';
 
-        $this->_select = 'CONCAT(LEFT(c.`firstname`, 1), \'. \', c.`lastname`) `customer`, a.id_cart total, ca.name carrier,
+        $this->_select = 'CONCAT(LEFT(c.`firstname`, 1), \'. \', c.`lastname`) `customer`, a.id_cart total, ca.name carrier, o.id_order,
 		IF (IFNULL(o.id_order, \''.$this->l('Non ordered').'\') = \''.$this->l('Non ordered').'\', IF(TIME_TO_SEC(TIMEDIFF(\''.pSQL(date('Y-m-d H:i:00', time())).'\', a.`date_add`)) > 86400, \''.$this->l('Abandoned cart').'\', \''.$this->l('Non ordered').'\'), o.id_order) AS status, a.`date_upd`, IF(o.id_order, 1, 0) badge_success, IF(o.id_order, 0, 1) badge_danger, IF(co.id_guest, 1, 0) id_guest';
         $this->_join = 'LEFT JOIN '._DB_PREFIX_.'customer c ON (c.id_customer = a.id_customer)
 		LEFT JOIN '._DB_PREFIX_.'currency cu ON (cu.id_currency = a.id_currency)
@@ -171,7 +171,7 @@ class AdminCartsControllerCore extends AdminController
      * @throws PrestaShopException
      */
     public function initPageHeaderToolbar()
-	{
+    {
 		// Get the cookie lifetime setting in hours
 		$cookieLifetimeHours = (int) Configuration::get('PS_COOKIE_LIFETIME_FO');
 
@@ -180,21 +180,21 @@ class AdminCartsControllerCore extends AdminController
 
 		if (empty($this->display)) {
 			$this->page_header_toolbar_btn['export_cart'] = [
-				'href' => static::$currentIndex.'&exportcart&token='.$this->token,
-				'desc' => $this->l('Export carts', null, null, false),
-				'icon' => 'process-icon-export',
+			    'href' => static::$currentIndex.'&exportcart&token='.$this->token,
+			    'desc' => $this->l('Export carts', null, null, false),
+			    'icon' => 'process-icon-export',
 			];
 
 			$this->page_header_toolbar_btn['delete_empty_carts'] = [
-				'href' => static::$currentIndex.'&delete_empty_carts&token='.$this->token,
-				'desc' => $this->l('Delete empty carts', null, null, false),
-				'icon' => 'process-icon-delete',
+			    'href' => static::$currentIndex.'&delete_empty_carts&token='.$this->token,
+			    'desc' => $this->l('Delete empty carts', null, null, false),
+			    'icon' => 'process-icon-delete',
 			];
 
 			$this->page_header_toolbar_btn['delete_old_carts'] = [
-				'href' => self::$currentIndex.'&deleteoldcarts&token='.$this->token,
-				'desc' => $this->l(sprintf('Delete carts older than %d days', $cookieLifetimeDays), null, null, false),
-				'icon' => 'process-icon-delete',
+			    'href' => self::$currentIndex.'&deleteoldcarts&token='.$this->token,
+			    'desc' => $this->l(sprintf('Delete carts older than %d days', $cookieLifetimeDays), null, null, false),
+			    'icon' => 'process-icon-delete',
 			];
 		}
 
@@ -202,12 +202,11 @@ class AdminCartsControllerCore extends AdminController
 	}
 
     /**
-     * @return false|string
+     * @return HelperKpi[]
      *
      * @throws PrestaShopException
-     * @throws SmartyException
      */
-    public function renderKpis()
+    public function getKpis(): array
     {
         $time = time();
         $kpis = [];
@@ -228,7 +227,7 @@ class AdminCartsControllerCore extends AdminController
         }
         $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=conversion_rate';
         $helper->refresh = (bool) (ConfigurationKPI::get('CONVERSION_RATE_EXPIRE') < $time);
-        $kpis[] = $helper->generate();
+        $kpis[] = $helper;
 
         $helper = new HelperKpi();
         $helper->id = 'box-carts';
@@ -244,7 +243,7 @@ class AdminCartsControllerCore extends AdminController
         }
         $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=abandoned_cart';
         $helper->refresh = (bool) (ConfigurationKPI::get('ABANDONED_CARTS_EXPIRE') < $time);
-        $kpis[] = $helper->generate();
+        $kpis[] = $helper;
 
         $helper = new HelperKpi();
         $helper->id = 'box-average-order';
@@ -252,13 +251,13 @@ class AdminCartsControllerCore extends AdminController
         $helper->color = 'color3';
         $helper->title = $this->l('Average Order Value', null, null, false);
         $helper->subtitle = $this->l('30 days', null, null, false);
-        if (ConfigurationKPI::get('AVG_ORDER_VALUE') !== false) {
-            $helper->value = sprintf($this->l('%s tax excl.'), ConfigurationKPI::get('AVG_ORDER_VALUE'));
+        if (ConfigurationKPI::get('AVG_ORDER_VALUE', $this->context->employee->id_lang) !== false) {
+            $helper->value = ConfigurationKPI::get('AVG_ORDER_VALUE', $this->context->employee->id_lang);
         }
-        if (ConfigurationKPI::get('AVG_ORDER_VALUE_EXPIRE') < $time) {
+        if (ConfigurationKPI::get('AVG_ORDER_VALUE_EXPIRE', $this->context->employee->id_lang) < $time) {
             $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=average_order_value';
         }
-        $kpis[] = $helper->generate();
+        $kpis[] = $helper;
 
         $helper = new HelperKpi();
         $helper->id = 'box-net-profit-visitor';
@@ -266,17 +265,14 @@ class AdminCartsControllerCore extends AdminController
         $helper->color = 'color4';
         $helper->title = $this->l('Net Profit per Visitor', null, null, false);
         $helper->subtitle = $this->l('30 days', null, null, false);
-        if (ConfigurationKPI::get('NETPROFIT_VISITOR') !== false) {
-            $helper->value = ConfigurationKPI::get('NETPROFIT_VISITOR');
+        if (ConfigurationKPI::get('NETPROFIT_VISIT') !== false) {
+            $helper->value = ConfigurationKPI::get('NETPROFIT_VISIT');
         }
-        $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=netprofit_visitor';
-        $helper->refresh = (bool) (ConfigurationKPI::get('NETPROFIT_VISITOR_EXPIRE') < $time);
-        $kpis[] = $helper->generate();
+        $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=netprofit_visit';
+        $helper->refresh = (bool) (ConfigurationKPI::get('NETPROFIT_VISIT_EXPIRE') < $time);
+        $kpis[] = $helper;
 
-        $helper = new HelperKpiRow();
-        $helper->kpis = $kpis;
-
-        return $helper->generate();
+        return $kpis;
     }
 
     /**
@@ -339,22 +335,22 @@ class AdminCartsControllerCore extends AdminController
             if (isset($product['id_product_attribute']) && (int) $product['id_product_attribute']) {
                 $image = (int)$conn->getValue(
                     (new DbQuery())
-                    ->select('`id_image`')
-                    ->from('product_attribute_image')
-                    ->where('`id_product_attribute` = '.(int) $product['id_product_attribute'])
+                        ->select('`id_image`')
+                        ->from('product_attribute_image')
+                        ->where('`id_product_attribute` = '.(int) $product['id_product_attribute'])
                 );
             }
             if (! $image) {
                 $image = (int)$conn->getValue(
                     (new DbQuery())
-                    ->select('`id_image`')
-                    ->from('image')
-                    ->where('`id_product` = '.(int) $product['id_product'])
-                    ->where('`cover` = 1')
+                        ->select('`id_image`')
+                        ->from('image')
+                        ->where('`id_product` = '.(int) $product['id_product'])
+                        ->where('`cover` = 1')
                 );
             }
 
-            $product['qty_in_stock'] = StockAvailable::getQuantityAvailableByProduct($product['id_product'], isset($product['id_product_attribute']) ? $product['id_product_attribute'] : null, (int) $idShop);
+            $product['qty_in_stock'] = StockAvailable::getQuantityAvailableByProduct($product['id_product'], $product['id_product_attribute'] ?? null, (int) $idShop);
 
             if ($image) {
                 $product['image'] = ImageManager::getProductImageThumbnailTag($image);
@@ -1098,15 +1094,15 @@ class AdminCartsControllerCore extends AdminController
         $skipList = [];
 
         foreach ($this->_list as $row) {
-            if (isset($row['id_order']) && is_numeric($row['id_order'])) {
-                $skipList[] = $row['id_cart'];
+            if ((int)$row['id_order']) {
+                $skipList[] = (int)$row['id_cart'];
             }
         }
 
         if (array_key_exists('delete', $helper->list_skip_actions)) {
-            $helper->list_skip_actions['delete'] = array_merge($helper->list_skip_actions['delete'], (array) $skipList);
+            $helper->list_skip_actions['delete'] = array_merge($helper->list_skip_actions['delete'], $skipList);
         } else {
-            $helper->list_skip_actions['delete'] = (array) $skipList;
+            $helper->list_skip_actions['delete'] = $skipList;
         }
 
         $list = $helper->generateList($this->_list, $this->fields_list);
@@ -1120,13 +1116,13 @@ class AdminCartsControllerCore extends AdminController
      * @throws PrestaShopException
      */
     public function processDeleteEmptyCarts()
-	{
+    {
 		$sql = new DbQuery();
 		$sql->select('id_cart');
 		$sql->from('cart');
 		$sql->where('id_cart NOT IN (SELECT id_cart FROM '._DB_PREFIX_.'cart_product)');
 
-		$emptyCarts = Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($sql);
+		$emptyCarts = Db::getInstance(_PS_USE_SQL_SLAVE_)->getArray($sql);
 
 		$deletedCount = 0;
 
@@ -1168,7 +1164,7 @@ class AdminCartsControllerCore extends AdminController
 		$sql->from('cart');
 		$sql->where('date_add < "'.pSQL($cutoffDate).'" AND id_cart NOT IN (SELECT id_cart FROM '._DB_PREFIX_.'orders)');
 
-		$oldCarts = Db::getInstance(_PS_USE_SQL_SLAVE_)->executeS($sql);
+		$oldCarts = Db::getInstance(_PS_USE_SQL_SLAVE_)->getArray($sql);
 
 		$deletedCount = 0;
 
@@ -1194,7 +1190,7 @@ class AdminCartsControllerCore extends AdminController
      * @throws PrestaShopException
      */
     public function postProcess()
-	{
+    {
 		if (Tools::isSubmit('delete_empty_carts')) {
 			$this->processDeleteEmptyCarts();
             $this->redirect_after = Context::getContext()->link->getAdminLink('AdminCarts');

@@ -48,7 +48,7 @@ function tinySetup(config) {
 
   let defaultConfig = {
     selector: ".rte",
-    plugins: "colorpicker link image paste pagebreak table contextmenu filemanager table code media autoresize textcolor anchor directionality",
+    plugins: "colorpicker link image paste pagebreak table contextmenu filemanager table code media autoresize textcolor anchor directionality codemirror",
     browser_spellcheck: true,
     toolbar1: "code,|,bold,italic,underline,strikethrough,|,alignleft,aligncenter,alignright,alignfull,rtl,ltr,formatselect,|,blockquote,colorpicker,pasteword,|,bullist,numlist,|,outdent,indent,|,link,unlink,|,anchor,|,media,image",
     toolbar2: "",
@@ -67,6 +67,17 @@ function tinySetup(config) {
     extended_valid_elements: "em[class|name|id]",
     valid_children: "+*[*]",
     valid_elements: "*[*]",
+    video_template_callback: (data) =>
+      `<div class="embed-responsive embed-responsive-16by9"><video class="embed-responsive-item" width="${data.width}" height="${data.height}"${data.poster ? ` poster="${data.poster}"` : ''} preload="none" controls="controls">\n`
+      + `<source src="${data.source1}"${data.source1mime ? ` type="${data.source1mime}"` : ''}>\n`
+      + (data.source2 ? `<source src="${data.source2}"${data.source2mime ? ` type="${data.source2mime}"` : ''}>\n` : '')
+      + '</video></div>',
+    // Prevents empty <p></p> generation fix
+    forced_root_block: false,  // Prevents automatically wrapping content in <p> tags
+    force_br_newlines: false,  // Prevents <br> from being inserted when pressing Enter
+    force_p_newlines: true,  // Ensures that new lines are wrapped in <p> tags
+    convert_newlines_to_brs: false,  // Prevents new lines from being converted into <br>
+    
     menu: {
       edit: { title: 'Edit', items: 'undo redo | cut copy paste | selectall' },
       insert: { title: 'Insert', items: 'media image link | pagebreak' },
@@ -78,7 +89,22 @@ function tinySetup(config) {
       table: { title: 'Table', items: 'inserttable tableprops deletetable | cell row column' },
       tools: { title: 'Tools', items: 'code' }
     },
-    autoresize_min_height: 100
+    autoresize_min_height: 100,
+    codemirror: {
+      indentOnInit: true,
+      path: 'codemirror-5.65',
+      config: {
+        lineNumbers: true,
+      },
+      width: 1200,
+      height: 600,
+      saveCursorPosition: false,
+    },
+    init_instance_callback: function (editor) {
+      editor.on('PostProcess', function (e) {
+        e.content = e.content.replace(/\s*\/>/g, '>');
+      });
+    },
   };
 
   // allow extending default config

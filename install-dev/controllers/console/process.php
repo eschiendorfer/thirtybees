@@ -287,7 +287,10 @@ class InstallControllerConsoleProcess
                 'adminEmail'             => $this->datas->adminEmail,
                 'configurationAgreement' => true,
                 'sendInformations'       => true,
-            ]
+                'rewriteEngine'          => $this->datas->rewriteEngine,
+                'sslEnabled'             => $this->datas->sslEnabled,
+            ],
+            $this->datas->config
         );
     }
 
