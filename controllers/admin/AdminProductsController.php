@@ -839,10 +839,10 @@ class AdminProductsControllerCore extends AdminController
 	                // Set stock quantity
 	                $quantityAttributeOld = Db::readOnly()->getValue(
 		                (new DbQuery())
-			                ->select('`quantity`')
-			                ->from('stock_available')
-			                ->where('`id_product` = '.(int) $idProductOld)
-			                ->where('`id_product_attribute` = 0')
+		                    ->select('`quantity`')
+		                    ->from('stock_available')
+		                    ->where('`id_product` = '.(int) $idProductOld)
+		                    ->where('`id_product_attribute` = 0')
 	                );
 	                StockAvailable::setQuantity((int) $product->id, 0, (int) $quantityAttributeOld);
                 }
@@ -2343,7 +2343,7 @@ class AdminProductsControllerCore extends AdminController
     /**
      * @param Product $product
      *
-     * @return bool|string
+     * @return string|null
      *
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
@@ -2360,11 +2360,11 @@ class AdminProductsControllerCore extends AdminController
 
 
         if (!Validate::isLoadedObject($product) || !$product->id_category_default) {
-            return $this->l('Unable to determine the preview URL. This product has not been linked with a category, yet.');
+            return null;
         }
 
         if (!ShopUrl::getMainShopDomain()) {
-            return false;
+            return null;
         }
 
         $isRewriteActive = (bool) Configuration::get('PS_REWRITING_SETTINGS');
@@ -2994,7 +2994,11 @@ class AdminProductsControllerCore extends AdminController
                                 Tools::getValue('attribute_upc'),
                                 $this->isProductFieldUpdated('attribute_minimal_quantity') ? Tools::getValue('attribute_minimal_quantity') : null,
                                 $this->isProductFieldUpdated('available_date_attribute') ? Tools::getValue('available_date_attribute') : null,
-                                false
+                                false,
+                                [],
+                                $this->isProductFieldUpdated('attribute_width_impact') ? Tools::getNumberValue('attribute_width') * Tools::getNumberValue('attribute_width_impact') : null,
+                                $this->isProductFieldUpdated('attribute_height_impact') ? Tools::getNumberValue('attribute_height') * Tools::getNumberValue('attribute_height_impact') : null,
+                                $this->isProductFieldUpdated('attribute_depth_impact') ? Tools::getNumberValue('attribute_depth') * Tools::getNumberValue('attribute_depth_impact') : null
                             );
                             StockAvailable::setProductDependsOnStock((int) $product->id, $product->depends_on_stock, null, (int) $idProductAttribute);
                             StockAvailable::setProductOutOfStock((int) $product->id, $product->out_of_stock, null, (int) $idProductAttribute);
@@ -3415,14 +3419,11 @@ class AdminProductsControllerCore extends AdminController
     }
 
     /**
-     * Render KPIs
-     *
-     * @return false|string
+     * @return HelperKpi[]
      *
      * @throws PrestaShopException
-     * @throws SmartyException
      */
-    public function renderKpis()
+    public function getKpis(): array
     {
         $time = time();
         $kpis = [];
@@ -3442,7 +3443,7 @@ class AdminProductsControllerCore extends AdminController
             $helper->tooltip = $this->l('X% of your products for sale are out of stock.', null, null, false);
             $helper->refresh = (bool) (ConfigurationKPI::get('PERCENT_PRODUCT_OUT_OF_STOCK_EXPIRE') < $time);
             $helper->href = $this->context->link->getAdminLink('AdminProducts').'&productFilter_sav!quantity=0&productFilter_active=1&submitFilterproduct=1';
-            $kpis[] = $helper->generate();
+            $kpis[] = $helper;
         }
 
         $helper = new HelperKpi();
@@ -3456,7 +3457,7 @@ class AdminProductsControllerCore extends AdminController
         $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=product_avg_gross_margin';
         $helper->tooltip = $this->l('Gross margin expressed in percentage assesses how cost-effectively you sell your goods. Out of $100, you will retain $X to cover profit and expenses.', null, null, false);
         $helper->refresh = (bool) (ConfigurationKPI::get('PRODUCT_AVG_GROSS_MARGIN_EXPIRE') < $time);
-        $kpis[] = $helper->generate();
+        $kpis[] = $helper;
 
         $helper = new HelperKpi();
         $helper->id = 'box-8020-sales-catalog';
@@ -3464,16 +3465,16 @@ class AdminProductsControllerCore extends AdminController
         $helper->color = 'color3';
         $helper->title = $this->l('Purchased references', null, null, false);
         $helper->subtitle = $this->l('30 days', null, null, false);
-        if (ConfigurationKPI::get('8020_SALES_CATALOG') !== false) {
-            $helper->value = ConfigurationKPI::get('8020_SALES_CATALOG');
+        if (ConfigurationKPI::get('8020_SALES_CATALOG', $this->context->employee->id_lang) !== false) {
+            $helper->value = ConfigurationKPI::get('8020_SALES_CATALOG', $this->context->employee->id_lang);
         }
         $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=8020_sales_catalog';
         $helper->tooltip = $this->l('X% of your references have been purchased for the past 30 days', null, null, false);
-        $helper->refresh = (bool) (ConfigurationKPI::get('8020_SALES_CATALOG_EXPIRE') < $time);
+        $helper->refresh = (bool) (ConfigurationKPI::get('8020_SALES_CATALOG_EXPIRE', $this->context->employee->id_lang) < $time);
         if (Module::isInstalled('statsbestproducts')) {
             $helper->href = $this->context->link->getAdminLink('AdminStats').'&module=statsbestproducts&datepickerFrom='.date('Y-m-d', strtotime('-30 days')).'&datepickerTo='.date('Y-m-d');
         }
-        $kpis[] = $helper->generate();
+        $kpis[] = $helper;
 
         $helper = new HelperKpi();
         $helper->id = 'box-disabled-products';
@@ -3488,12 +3489,9 @@ class AdminProductsControllerCore extends AdminController
         $helper->refresh = (bool) (ConfigurationKPI::get('DISABLED_PRODUCTS_EXPIRE') < $time);
         $helper->tooltip = $this->l('X% of your products are disabled and not visible to your customers', null, null, false);
         $helper->href = $this->context->link->getAdminLink('AdminProducts').'&productFilter_active=0&submitFilterproduct=1';
-        $kpis[] = $helper->generate();
+        $kpis[] = $helper;
 
-        $helper = new HelperKpiRow();
-        $helper->kpis = $kpis;
-
-        return $helper->generate();
+        return $kpis;
     }
 
     /**
@@ -3759,6 +3757,13 @@ class AdminProductsControllerCore extends AdminController
             }
         }
 
+        Media::addJsDef([
+	        'packItemUrlTemplate' => $this->context->link->getAdminLink('AdminProducts', true, [
+                'id_product' => 'PLACEHOLDER_PRODUCT_ID',
+                'updateproduct' => 1
+            ])
+        ]);
+
         $parent = parent::renderForm();
         $this->addJqueryPlugin(['autocomplete', 'fancybox', 'typewatch']);
 
@@ -3944,7 +3949,8 @@ class AdminProductsControllerCore extends AdminController
     {
         $data = $this->createTemplate($this->tpl_form);
         $product = $obj;
-        if ($obj->id) {
+        $productId = (int)$obj->id;
+        if ($productId) {
             $shops = Shop::getShops();
             $countries = Country::getCountries($this->context->language->id);
             $groups = Group::getGroups($this->context->language->id, true);
@@ -3960,7 +3966,7 @@ class AdminProductsControllerCore extends AdminController
 
                 $combinations[$attribute['id_product_attribute']]['price'] = Tools::displayPrice(
                     Tools::convertPrice(
-                        Product::getPriceStatic((int) $obj->id, false, $attribute['id_product_attribute']),
+                        Product::getPriceStatic($productId, false, $attribute['id_product_attribute']),
                         $this->context->currency
                     ),
                     $this->context->currency
@@ -3977,6 +3983,14 @@ class AdminProductsControllerCore extends AdminController
             $data->assign('ecotax_tax_excl', (float) $obj->ecotax);
             $this->_applyTaxToEcotax($obj);
 
+            $packInfo = null;
+            if (Pack::isPack($productId)) {
+                $packInfo = [
+                    'itemsWholesalePriceSum' => Pack::noPackWholesalePrice($productId),
+                    'itemsPriceSum' => Pack::noPackPrice($productId),
+                ];
+            }
+
             $data->assign(
                 [
                     'shops'          => $shops,
@@ -3987,7 +4001,7 @@ class AdminProductsControllerCore extends AdminController
                     'combinations'   => $combinations,
                     'multi_shop'     => Shop::isFeatureActive(),
                     'link'           => new Link(),
-                    'pack'           => new Pack(),
+                    'packInfo'       => $packInfo
                 ]
             );
         } else {
@@ -4069,6 +4083,7 @@ class AdminProductsControllerCore extends AdminController
      *
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
+     * @throws SmartyException
      */
     protected function _displaySpecificPriceModificationForm($defaultCurrency, $shops, $currencies, $countries, $groups)
     {
@@ -4177,7 +4192,7 @@ class AdminProductsControllerCore extends AdminController
 						<td>'.($specificPrice['id_currency'] ? $currencies[$specificPrice['id_currency']]['name'] : $this->l('All currencies')).'</td>
 						<td>'.($specificPrice['id_country'] ? $countries[$specificPrice['id_country']]['name'] : $this->l('All countries')).'</td>
 						<td>'.($specificPrice['id_group'] ? $groups[$specificPrice['id_group']]['name'] : $this->l('All groups')).'</td>
-						<td title="'.$this->l('ID:').' '.$specificPrice['id_customer'].'">'.(isset($customerFullName) ? $customerFullName : $this->l('All customers')).'</td>
+						<td title="'.$this->l('ID:').' '.$specificPrice['id_customer'].'">'.($customerFullName ?? $this->l('All customers')).'</td>
 						<td>'.$fixedPrice.'</td>
 						<td>'.$impact.'</td>
 						<td>'.$period.'</td>
@@ -4227,66 +4242,21 @@ class AdminProductsControllerCore extends AdminController
         $content .= '
 		</script>';
 
-        // Not use id_customer
-        if ($specificPricePriorities[0] == 'id_customer') {
-            unset($specificPricePriorities[0]);
-        }
-        // Reindex array starting from 0
-        $specificPricePriorities = array_values($specificPricePriorities);
 
-        $content .= '<div class="panel">
-		<h3>'.$this->l('Priority management').'</h3>
-		<div class="alert alert-info">
-				'.$this->l('Sometimes one customer can fit into multiple price rules. Priorities allow you to define which rule applies to the customer.').'
-		</div>';
-
-        $content .= '
-		<div class="form-group">
-			<label class="control-label col-lg-3" for="specificPricePriority1">'.$this->l('Priorities').'</label>
-			<div class="input-group col-lg-9">
-				<select id="specificPricePriority1" name="specificPricePriority[]">
-					<option value="id_shop"'.($specificPricePriorities[0] == 'id_shop' ? ' selected="selected"' : '').'>'.$this->l('Shop').'</option>
-					<option value="id_currency"'.($specificPricePriorities[0] == 'id_currency' ? ' selected="selected"' : '').'>'.$this->l('Currency').'</option>
-					<option value="id_country"'.($specificPricePriorities[0] == 'id_country' ? ' selected="selected"' : '').'>'.$this->l('Country').'</option>
-					<option value="id_group"'.($specificPricePriorities[0] == 'id_group' ? ' selected="selected"' : '').'>'.$this->l('Group').'</option>
-				</select>
-				<span class="input-group-addon"><i class="icon-chevron-right"></i></span>
-				<select name="specificPricePriority[]">
-					<option value="id_shop"'.($specificPricePriorities[1] == 'id_shop' ? ' selected="selected"' : '').'>'.$this->l('Shop').'</option>
-					<option value="id_currency"'.($specificPricePriorities[1] == 'id_currency' ? ' selected="selected"' : '').'>'.$this->l('Currency').'</option>
-					<option value="id_country"'.($specificPricePriorities[1] == 'id_country' ? ' selected="selected"' : '').'>'.$this->l('Country').'</option>
-					<option value="id_group"'.($specificPricePriorities[1] == 'id_group' ? ' selected="selected"' : '').'>'.$this->l('Group').'</option>
-				</select>
-				<span class="input-group-addon"><i class="icon-chevron-right"></i></span>
-				<select name="specificPricePriority[]">
-					<option value="id_shop"'.($specificPricePriorities[2] == 'id_shop' ? ' selected="selected"' : '').'>'.$this->l('Shop').'</option>
-					<option value="id_currency"'.($specificPricePriorities[2] == 'id_currency' ? ' selected="selected"' : '').'>'.$this->l('Currency').'</option>
-					<option value="id_country"'.($specificPricePriorities[2] == 'id_country' ? ' selected="selected"' : '').'>'.$this->l('Country').'</option>
-					<option value="id_group"'.($specificPricePriorities[2] == 'id_group' ? ' selected="selected"' : '').'>'.$this->l('Group').'</option>
-				</select>
-				<span class="input-group-addon"><i class="icon-chevron-right"></i></span>
-				<select name="specificPricePriority[]">
-					<option value="id_shop"'.($specificPricePriorities[3] == 'id_shop' ? ' selected="selected"' : '').'>'.$this->l('Shop').'</option>
-					<option value="id_currency"'.($specificPricePriorities[3] == 'id_currency' ? ' selected="selected"' : '').'>'.$this->l('Currency').'</option>
-					<option value="id_country"'.($specificPricePriorities[3] == 'id_country' ? ' selected="selected"' : '').'>'.$this->l('Country').'</option>
-					<option value="id_group"'.($specificPricePriorities[3] == 'id_group' ? ' selected="selected"' : '').'>'.$this->l('Group').'</option>
-				</select>
-			</div>
-		</div>
-		<div class="form-group">
-			<div class="col-lg-9 col-lg-offset-3">
-				<p class="checkbox">
-					<label for="specificPricePriorityToAll"><input type="checkbox" name="specificPricePriorityToAll" id="specificPricePriorityToAll" />'.$this->l('Apply to all products').'</label>
-				</p>
-			</div>
-		</div>
-		<div class="panel-footer">
-				<a href="'.$this->context->link->getAdminLink('AdminProducts').($page > 1 ? '&submitFilter'.$this->table.'='.(int) $page : '').'" class="btn btn-default"><i class="process-icon-cancel"></i> '.$this->l('Cancel').'</a>
-				<button id="product_form_submit_btn"  type="submit" name="submitAddproduct" class="btn btn-default pull-right" disabled="disabled"><i class="process-icon-loading"></i> '.$this->l('Save').'</button>
-				<button id="product_form_submit_btn"  type="submit" name="submitAddproductAndStay" class="btn btn-default pull-right" disabled="disabled"><i class="process-icon-loading"></i> '.$this->l('Save and stay').'</button>
-			</div>
-		</div>
-		';
+        $template = $this->createTemplate('specific_price_priorities.tpl');
+        $template->assign([
+            'cancelUrl' => $this->context->link->getAdminLink('AdminProducts').($page > 1 ? '&submitFilter'.$this->table.'='.(int) $page : ''),
+            'priorities' => $specificPricePriorities,
+            'priorityOptions' => [
+                SpecificPrice::PRIORITY_QUANTITY_DISCOUNT => $this->l('Quantity discounts'),
+                SpecificPrice::PRIORITY_CUSTOMER => $this->l('Customer'),
+                SpecificPrice::PRIORITY_SHOP => $this->l('Shop'),
+                SpecificPrice::PRIORITY_CURRENCY => $this->l('Currency'),
+                SpecificPrice::PRIORITY_COUNTRY => $this->l('Country'),
+                SpecificPrice::PRIORITY_GROUP => $this->l('Group'),
+            ]
+        ]);
+        $content .= $template->fetch();
 
         return $content;
     }
@@ -5187,6 +5157,7 @@ class AdminProductsControllerCore extends AdminController
                 $images = Image::getImages($this->context->language->id, $product->id);
                 $data->assign('tax_exclude_option', Tax::excludeTaxeOption());
                 $data->assign('ps_weight_unit', Configuration::get('PS_WEIGHT_UNIT'));
+                $data->assign('ps_dimension_unit', Configuration::get('PS_DIMENSION_UNIT'));
                 $data->assign('ps_use_ecotax', Configuration::get('PS_USE_ECOTAX'));
                 $data->assign('field_value_unity', $this->getFieldValue($product, 'unity'));
                 $data->assign('reasons', StockMvtReason::getStockMvtReasons($this->context->language->id));
@@ -5278,7 +5249,7 @@ class AdminProductsControllerCore extends AdminController
                     $combArray[$combination['id_product_attribute']]['reference'] = $combination['reference'];
                     $combArray[$combination['id_product_attribute']]['ean13'] = $combination['ean13'];
                     $combArray[$combination['id_product_attribute']]['upc'] = $combination['upc'];
-                    $combArray[$combination['id_product_attribute']]['id_image'] = isset($combinationImages[$combination['id_product_attribute']][0]['id_image']) ? $combinationImages[$combination['id_product_attribute']][0]['id_image'] : 0;
+                    $combArray[$combination['id_product_attribute']]['id_image'] = $combinationImages[$combination['id_product_attribute']][0]['id_image'] ?? 0;
                     $combArray[$combination['id_product_attribute']]['available_date'] = strtotime($combination['available_date']);
                     $combArray[$combination['id_product_attribute']]['default_on'] = $combination['default_on'];
                 }
@@ -5375,9 +5346,9 @@ class AdminProductsControllerCore extends AdminController
                 if (Combination::isFeatureActive()) {
                     $data->assign('countAttributes', (int) Db::readOnly()->getValue(
                         (new DbQuery())
-                        ->select('COUNT(`id_product`)')
-                        ->from('product_attribute')
-                        ->where('`id_product` = '.(int) $obj->id)
+                            ->select('COUNT(`id_product`)')
+                            ->from('product_attribute')
+                            ->where('`id_product` = '.(int) $obj->id)
                     ));
                 } else {
                     $data->assign('countAttributes', false);
@@ -5845,9 +5816,9 @@ class AdminProductsControllerCore extends AdminController
     {
         $idModule = (int)Db::readOnly()->getValue(
             (new DbQuery())
-            ->select('`id_module`')
-            ->from('module')
-            ->where('`name` = \''.pSQL($this->tab_display_module).'\'')
+                ->select('`id_module`')
+                ->from('module')
+                ->where('`name` = \''.pSQL($this->tab_display_module).'\'')
         );
         $this->tpl_form_vars['custom_form'] = Hook::displayHook('displayAdminProductsExtra', [], $idModule);
     }
@@ -6002,19 +5973,16 @@ class AdminProductsControllerCore extends AdminController
      */
     public function displayPreviewLink($token, $id, $name = null)
     {
-        $tpl = $this->createTemplate('helpers/list/list_action_preview.tpl');
-        if (!array_key_exists('Bad SQL query', static::$cache_lang)) {
-            static::$cache_lang['Preview'] = $this->l('Preview', 'Helper');
+        $previewUrl = $this->getPreviewUrl(new Product((int) $id));
+        if ($previewUrl) {
+            $tpl = $this->createTemplate('helpers/list/list_action_preview.tpl');
+            $tpl->assign([
+                'href' => $previewUrl,
+                'action' => $this->l('Preview', 'Helper'),
+            ]);
+
+            return $tpl->fetch();
         }
-
-        $tpl->assign(
-            [
-                'href'   => $this->getPreviewUrl(new Product((int) $id)),
-                'action' => static::$cache_lang['Preview'],
-            ]
-        );
-
-        return $tpl->fetch();
     }
 
     /**

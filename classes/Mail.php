@@ -29,6 +29,8 @@
  *  PrestaShop is an internationally registered trademark & property of PrestaShop SA
  */
 
+use Thirtybees\Core\DependencyInjection\ServiceLocator;
+use Thirtybees\Core\Error\ErrorUtils;
 use Thirtybees\Core\Mail\MailAddress;
 use Thirtybees\Core\Mail\MailAttachement;
 use Thirtybees\Core\Mail\MailTemplate;
@@ -49,6 +51,7 @@ class MailCore extends ObjectModel
 
     const RECIPIENT_TYPE_TO = 'to';
     const RECIPIENT_TYPE_BCC = 'bcc';
+
     /**
      * @var array Object model definition
      */
@@ -62,6 +65,7 @@ class MailCore extends ObjectModel
             'template' => ['type' => self::TYPE_STRING, 'validate' => 'isTplName', 'copy_post' => false, 'required' => true, 'size' => 62],
             'subject' => ['type' => self::TYPE_STRING, 'validate' => 'isMailSubject', 'copy_post' => false, 'required' => true, 'size' => 254],
             'id_lang' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'copy_post' => false, 'required' => true],
+            'transport' => ['type' => self::TYPE_STRING, 'copy_post' => false, 'required' => false, 'size' => 100],
             'date_add' => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'copy_post' => false, 'required' => true, 'dbType' => 'timestamp', 'dbDefault' => ObjectModel::DEFAULT_CURRENT_TIMESTAMP],
         ],
         'keys' => [
@@ -100,6 +104,11 @@ class MailCore extends ObjectModel
      * @var int Language ID
      */
     public $id_lang;
+
+    /**
+     * @var string
+     */
+    public $transport;
 
     /**
      * @var string Timestamp
@@ -145,8 +154,7 @@ class MailCore extends ObjectModel
         $idShop = null,
         $bcc = null,
         $replyTo = null
-    )
-    {
+    ) {
         try {
             // allow hooks to modify input parameters
             $result = Hook::getResponses('actionEmailSendBefore', [
@@ -196,13 +204,17 @@ class MailCore extends ObjectModel
             $templateVars = static::getTemplateVars($template, $templateVars, $idShop, $idLang);
 
             // resolve subject
-            $subject = static::formatSubject($subject, $idShop);
+            $subject = static::formatSubject($subject, $idShop, $templateVars);
 
             $attachements = static::getFileAttachements($fileAttachment);
 
 
+            // get email transport
+            $transportId = static::getSelectedTransport();
+            $transport = static::getTransport($transportId);
+
             // send email via transport
-            $success = static::getTransport()->sendMail(
+            $success = $transport->sendMail(
                 $idShop,
                 $idLang,
                 $fromAddress,
@@ -217,10 +229,10 @@ class MailCore extends ObjectModel
 
             if ($success && Configuration::get(Configuration::LOG_EMAILS)) {
                 foreach ($toAddresses as $address) {
-                    static::logMail($fromAddress, static::RECIPIENT_TYPE_TO, $address, $template, $subject, $idLang);
+                    static::logMail($fromAddress, static::RECIPIENT_TYPE_TO, $address, $template, $subject, $idLang, $transportId);
                 }
                 foreach ($bccAddresses as $address) {
-                    static::logMail($fromAddress, static::RECIPIENT_TYPE_BCC, $address, $template, $subject, $idLang);
+                    static::logMail($fromAddress, static::RECIPIENT_TYPE_BCC, $address, $template, $subject, $idLang, $transportId);
                 }
             }
 
@@ -432,7 +444,7 @@ class MailCore extends ObjectModel
         }
 
         if (!$templates) {
-            throw new PrestaShopException("No template");
+            throw new PrestaShopException(sprintf("No templates found for email '%s' in language '%s'", $template, $iso));
         }
 
         return $templates;
@@ -470,7 +482,7 @@ class MailCore extends ObjectModel
 
         // return first template file in paths
         foreach ($paths as $path) {
-            if (file_exists($path)) {
+            if (file_exists($path) && filesize($path)) {
                 return $path;
             }
         }
@@ -526,7 +538,7 @@ class MailCore extends ObjectModel
             'Email template %s for language %s not found in [%s]',
             $filename,
             $iso,
-            join(', ', $localPaths)
+            implode(', ', $localPaths)
         ), 3);
     }
 
@@ -599,16 +611,21 @@ class MailCore extends ObjectModel
      * Format email subject using email subject template
      *
      * @param string $subject email subject
+     * @param int $idShop
+     * @param array $templateVars
      *
      * @return string
      *
      * @throws PrestaShopException
      */
-    protected static function formatSubject($subject, $idShop)
+    protected static function formatSubject($subject, int $idShop, array $templateVars)
     {
         if (!Validate::isMailSubject($subject)) {
             throw new PrestaShopException(Tools::displayError('Error: invalid e-mail subject'));
         }
+
+        // replace template vars inside subject
+        $subject = static::substituteTemplateVars($subject, $templateVars);
 
         $template = Configuration::get('TB_MAIL_SUBJECT_TEMPLATE', null, null, $idShop);
         if (!$template || strpos($template, '{subject}') === false) {
@@ -631,37 +648,34 @@ class MailCore extends ObjectModel
     }
 
     /**
+     * @param string $trasportId
+     *
      * @return MailTransport
+     *
      * @throws PrestaShopException
      */
-    public static function getTransport()
+    public static function getTransport(string $trasportId): MailTransport
     {
         $transports = static::getAvailableTransports();
-        return $transports[static::resolveSelectedTransport($transports)];
+        if (isset($transports[$trasportId])) {
+            return $transports[$trasportId];
+        } else {
+            throw new PrestaShopException("Mail transport $trasportId not found");
+        }
     }
 
     /**
      * Returns string identifier of selected email transport
      *
      * @return string
-     * @throws PrestaShopException
-     */
-    public static function getSelectedTransport()
-    {
-        return static::resolveSelectedTransport(static::getAvailableTransports());
-    }
-
-    /**
-     * Returns string identifier of selected email transport
      *
-     * @return string
      * @throws PrestaShopException
      */
-    protected static function resolveSelectedTransport(array $transports)
+    public static function getSelectedTransport(): string
     {
-        $transports = static::getAvailableTransports();
-        $selected = Configuration::get(Configuration::MAIL_TRANSPORT);
+        $selected = (string)Configuration::get(Configuration::MAIL_TRANSPORT);
         if ($selected) {
+            $transports = static::getAvailableTransports();
             if (isset($transports[$selected])) {
                 return $selected;
             } else {
@@ -737,7 +751,7 @@ class MailCore extends ObjectModel
      *
      * @throws PrestaShopException
      */
-    public static function l($string, $idLang = null, Context $context = null)
+    public static function l($string, $idLang = null, ?Context $context = null)
     {
         global $_LANGMAIL;
 
@@ -775,11 +789,19 @@ class MailCore extends ObjectModel
      * @param string $template
      * @param string $subject
      * @param int $idLang
+     * @param string $transportId
      *
      * @throws PrestaShopException
      */
-    protected static function logMail(MailAddress $fromAddress, string $recipientType, MailAddress $recipient, string $template, string $subject, int $idLang)
-    {
+    protected static function logMail(
+        MailAddress $fromAddress,
+        string $recipientType,
+        MailAddress $recipient,
+        string $template,
+        string $subject,
+        int $idLang,
+        string $transportId
+    ) {
         $mail = new static();
         $mail->recipient_type = $recipientType;
         $mail->recipient = mb_substr($recipient->getAddress(), 0, 126);
@@ -787,6 +809,7 @@ class MailCore extends ObjectModel
         $mail->template = mb_substr($template, 0, 62);
         $mail->subject = mb_substr($subject, 0, 254);
         $mail->id_lang = (int)$idLang;
+        $mail->transport = $transportId;
         $mail->add();
     }
 
@@ -847,7 +870,37 @@ class MailCore extends ObjectModel
                 throw new PrestaShopException("Failed to send email", 0, $e);
             }
         } else {
+            $errorHandler = ServiceLocator::getInstance()->getErrorHandler();
+            $errorHandler->logFatalError(ErrorUtils::describeException($e));
             return false;
         }
+    }
+
+    /**
+     * @param string $content
+     * @param array $templateVars
+     *
+     * @return string
+     *
+     * @throws PrestaShopException
+     */
+    public static function substituteTemplateVars(string $content, array $templateVars): string
+    {
+        // convert iamgeFile parameters to url. This is used, for example, by {shop_logo} parameter
+        $vars = [];
+        foreach ($templateVars as $name => $parameter) {
+            if (is_array($parameter) && isset($parameter['type']) && $parameter['type'] === 'imageFile') {
+                $filepath = $parameter['filepath'] ?? '';
+                $filepath = str_replace(_PS_ROOT_DIR_, '', $filepath);
+                $vars[$name] = Context::getContext()->link->getMediaLink($filepath);
+            } else {
+                $vars[$name] = $parameter;
+            }
+        }
+
+        $search = array_keys($vars);
+        $replace = array_values($vars);
+        return str_replace($search, $replace, $content);
+
     }
 }

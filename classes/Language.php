@@ -1,4 +1,6 @@
 <?php
+
+use GuzzleHttp\Client;
 /**
  * 2007-2016 PrestaShop
  *
@@ -34,6 +36,10 @@
  */
 class LanguageCore extends ObjectModel
 {
+    const LANG_CODE_IN_URL_WHEN_MULTI_LANGUAGES = 0;
+    const LANG_CODE_IN_URL_ALWAYS = 1;
+    const LANG_CODE_IN_URL_FOR_NON_DEFAULT_LANGUAGES = 2;
+
     /** @var array Languages cache */
     protected static $_checkedLangs;
 
@@ -52,19 +58,44 @@ class LanguageCore extends ObjectModel
      */
     protected static $_cache_language_installation = null;
 
-    /** @var string Name */
+    /**
+     * @var string Name
+     */
     public $name;
-    /** @var string 2-letter iso code */
+
+    /**
+     * @var string 2-letter iso code
+     */
     public $iso_code;
-    /** @var string 5-letter iso code */
+
+    /**
+     * @var string 5-letter iso code
+     */
     public $language_code;
-    /** @var string date format http://http://php.net/manual/en/function.date.php with the date only */
+
+    /**
+     * @var string friendly url code
+     */
+    public $url_code;
+
+    /**
+     * @var string date format http://http://php.net/manual/en/function.date.php with the date only
+     */
     public $date_format_lite = 'Y-m-d';
-    /** @var string date format http://http://php.net/manual/en/function.date.php with hours and minutes */
+
+    /**
+     * @var string date format http://http://php.net/manual/en/function.date.php with hours and minutes
+     */
     public $date_format_full = 'Y-m-d H:i:s';
-    /** @var bool true if this language is right to left language */
+
+    /**
+     * @var bool true if this language is right to left language
+     */
     public $is_rtl = false;
-    /** @var bool Status */
+
+    /**
+     * @var bool Status
+     */
     public $active = true;
 
     /**
@@ -78,6 +109,7 @@ class LanguageCore extends ObjectModel
             'active'           => ['type' => self::TYPE_BOOL, 'validate' => 'isBool', 'dbType' => 'tinyint(3) unsigned', 'dbDefault' => '0'],
             'iso_code'         => ['type' => self::TYPE_STRING, 'validate' => 'isLanguageIsoCode', 'required' => true, 'size' => 2, 'dbType' => 'char(2)'],
             'language_code'    => ['type' => self::TYPE_STRING, 'validate' => 'isLanguageCode', 'size' => 5, 'dbType' => 'char(5)', 'dbNullable' => false],
+            'url_code'         => ['type' => self::TYPE_STRING, 'validate' => 'isLinkRewrite', 'size' => 40, 'dbNullable' => true],
             'date_format_lite' => ['type' => self::TYPE_STRING, 'validate' => 'isPhpDateFormat', 'required' => true, 'size' => 32, 'dbType' => 'char(32)', 'dbDefault' => 'Y-m-d'],
             'date_format_full' => ['type' => self::TYPE_STRING, 'validate' => 'isPhpDateFormat', 'required' => true, 'size' => 32, 'dbType' => 'char(32)', 'dbDefault' => 'Y-m-d H:i:s'],
             'is_rtl'           => ['type' => self::TYPE_BOOL, 'validate' => 'isBool', 'dbType' => 'tinyint(1)', 'dbDefault' => '0'],
@@ -346,7 +378,7 @@ class LanguageCore extends ObjectModel
             }
         }
 
-        return (isset(static::$_cache_language_installation[$iso_code]) ? static::$_cache_language_installation[$iso_code] : false);
+        return (static::$_cache_language_installation[$iso_code] ?? false);
     }
 
     /**
@@ -394,7 +426,7 @@ class LanguageCore extends ObjectModel
      *
      * @throws PrestaShopException
      */
-    public static function updateModulesTranslations(Array $modulesList)
+    public static function updateModulesTranslations(array $modulesList)
     {
         $languages = Language::getLanguages(false);
         clearstatcache();
@@ -449,7 +481,7 @@ class LanguageCore extends ObjectModel
         $file = _PS_TRANSLATIONS_DIR_.$iso.'.gzip';
         $baseUri = "https://translations.thirtybees.com/packs/{$version}/";
 
-        $guzzle = new GuzzleHttp\Client([
+        $guzzle = new Client([
             'base_uri' => $baseUri,
             'timeout'  => 20,
             'verify'   => Configuration::getSslTrustStore(),
@@ -581,7 +613,7 @@ class LanguageCore extends ObjectModel
         // If the language pack has not been provided, retrieve it from translations.thirtybees.com
         if (!$langPack) {
             $version = implode('.', array_map('intval', explode('.', _TB_VERSION_, 3)));
-            $guzzle = new GuzzleHttp\Client([
+            $guzzle = new Client([
                 'base_uri' => "https://translations.thirtybees.com/packs/{$version}/",
                 'timeout'  => 20,
                 'verify'   => Configuration::getSslTrustStore(),
@@ -755,9 +787,13 @@ class LanguageCore extends ObjectModel
         $tables = $connection->getArray('SHOW TABLES LIKE \''.str_replace('_', '\\_', _DB_PREFIX_).'%\_lang\' ');
         $langTables = [];
 
+        $ignoredTables = [
+            _DB_PREFIX_.'configuration_lang',
+            _DB_PREFIX_.'configuration_kpi_lang'
+        ];
         foreach ($tables as $table) {
             foreach ($table as $t) {
-                if ($t != _DB_PREFIX_.'configuration_lang') {
+                if (! in_array($t, $ignoredTables)) {
                     $langTables[] = $t;
                 }
             }
@@ -1371,5 +1407,40 @@ class LanguageCore extends ObjectModel
         }
 
         return $themes;
+    }
+
+    /**
+     * @return string
+     */
+    public function getUrlCode(): string
+    {
+        $urlCode = (string)$this->url_code;
+        if ($urlCode) {
+            return $urlCode;
+        } else {
+            return (string)$this->iso_code;
+        }
+    }
+
+    /**
+     * @param int $languageId
+     *
+     * @return string
+     *
+     * @throws PrestaShopException
+     */
+    public static function getUrlCodeById(int $languageId): string
+    {
+        if (!static::$_LANGUAGES) {
+            static::loadLanguages();
+        }
+
+        if (isset(static::$_LANGUAGES[$languageId])) {
+            $language = new Language();
+            $language->hydrate(static::$_LANGUAGES[$languageId]);
+            return $language->getUrlCode();
+        }
+
+        return '';
     }
 }

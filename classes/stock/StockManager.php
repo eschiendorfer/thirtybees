@@ -238,7 +238,7 @@ class StockManagerCore implements StockManagerInterface
         $idOrder = null,
         $ignorePack = 0,
         $employee = null,
-        Stock $stock = null
+        ?Stock $stock = null
     ) {
         $removedProducts = [];
 
@@ -583,7 +583,7 @@ class StockManagerCore implements StockManagerInterface
             $productStockCriteria['product_id'],
             $productStockCriteria['product_attribute_id'],
             $productStockCriteria['warehouse_id'],
-            isset($productStockCriteria['usable']) ? $productStockCriteria['usable'] : false
+            $productStockCriteria['usable'] ?? false
         );
     }
 
@@ -929,7 +929,7 @@ class StockManagerCore implements StockManagerInterface
         $idProductAttribute,
         $idWarehouse = null,
         $priceTaxExcluded = null,
-        Stock $stock = null
+        ?Stock $stock = null
     ) {
         $stocks = new PrestaShopCollection('Stock');
         $stocks->where('id_product', '=', $idProduct);
@@ -1092,7 +1092,7 @@ class StockManagerCore implements StockManagerInterface
         $productId,
         $productAttributeId,
         $shouldHandleUsableQuantity,
-        Stock $stock = null
+        ?Stock $stock = null
     ) {
         $productStockCriteria = [
             'product_id'           => $productId,
@@ -1141,7 +1141,7 @@ class StockManagerCore implements StockManagerInterface
         $idProduct,
         $idProductAttribute,
         Warehouse $warehouse,
-        Stock $stock = null
+        ?Stock $stock = null
     ) {
         $stockLines = $this->getStockCollection($idProduct, $idProductAttribute, $warehouse->id, null, $stock);
         $stockLines->getAll();

@@ -32,6 +32,7 @@
 use Thirtybees\Core\DependencyInjection\ServiceLocator;
 use Thirtybees\Core\Error\ErrorUtils;
 use Thirtybees\Core\Error\Response\JSendErrorResponse;
+use GuzzleHttp\Client;
 
 /**
  * Class AdminControllerCore
@@ -699,6 +700,9 @@ class AdminControllerCore extends Controller
                     if (($type == 'date' || $type == 'datetime') && is_string($value)) {
                         $value = json_decode($value, true);
                     }
+                    if (array_key_exists('filter_key', $field) && (string)$field['filter_key']) {
+                        $tmpTab = explode('!', (string)$field['filter_key']);
+                    }
                     $key = isset($tmpTab[1]) ? $tmpTab[0].'.`'.$tmpTab[1].'`' : '`'.$tmpTab[0].'`';
 
                     // Assignment by reference
@@ -915,8 +919,7 @@ class AdminControllerCore extends Controller
         header('Content-type: text/csv');
         header('Content-Type: application/force-download; charset=UTF-8');
         header('Cache-Control: no-store, no-cache');
-        header('Content-disposition: attachment; filename="'.$this->table.'_'.date('Y-m-d_His').'.csv"');
-
+        header('Content-disposition: attachment; filename="' . $this->getExportFileName() . '"');
         $headers = [];
         foreach ($this->fields_list as $key => $datas) {
             if ($datas['title'] === 'PDF') {
@@ -974,6 +977,14 @@ class AdminControllerCore extends Controller
         );
 
         $this->layout = 'layout-export.tpl';
+    }
+
+    /**
+     * @return string
+     */
+    protected function getExportFileName(): string
+    {
+        return $this->table.'_'.date('Y-m-d_His').'.csv';
     }
 
     /**
@@ -1145,7 +1156,7 @@ class AdminControllerCore extends Controller
 			'.(isset($this->_join) ? $this->_join.' ' : '').'
 			'.$joinShop;
             $sqlWhere = ' '.(isset($this->_where) ? $this->_where.' ' : '').($this->deleted ? 'AND a.`deleted` = 0 ' : '').
-                (isset($this->_filter) ? $this->_filter : '').$whereShop.'
+                ($this->_filter ?? '').$whereShop.'
 			'.(isset($this->_group) ? $this->_group.' ' : '').'
 			'.$havingClause;
             $sqlOrderBy = ' ORDER BY '.((str_replace('`', '', $orderBy) == $this->identifier) ? 'a.' : '').$orderBy.' '.pSQL($orderWay).
@@ -1614,7 +1625,7 @@ class AdminControllerCore extends Controller
     /**
      * Gathering ObjectModel data and setting $fieldImageSettings as a multidimensional array
      */
-    private function cleanFieldImageSettings()
+    protected function cleanFieldImageSettings()
     {
         // Make sure, that fieldImageSettings is a multidimensional array
         if (isset($this->fieldImageSettings['name']) && isset($this->fieldImageSettings['dir'])) {
@@ -1627,7 +1638,8 @@ class AdminControllerCore extends Controller
                 if (!empty($definition['images'])) {
                     $this->fieldImageSettings = $definition['images'];
                 }
-            } catch (PrestaShopException $ignore) {}
+            } catch (PrestaShopException $ignore) {
+            }
         }
 
         if (!empty($this->fieldImageSettings)) {
@@ -1676,7 +1688,7 @@ class AdminControllerCore extends Controller
                 }
             }
         }
-        return !count($this->errors) ? true : false;
+        return !count($this->errors);
     }
 
     /**
@@ -1832,7 +1844,12 @@ class AdminControllerCore extends Controller
                 }
                 // Default behavior (save and back)
                 if (empty($this->redirect_after) && $this->redirect_after !== false) {
-                    $this->redirect_after = static::$currentIndex.($parentId ? '&'.$this->identifier.'='.$this->object->id : '').'&conf=3&token='.$this->token;
+                    // Specific back redirect
+                    if ($back = Tools::getValue('back')) {
+                        $this->redirect_after = urldecode($back).'&conf=3';
+                    } else {
+                        $this->redirect_after = static::$currentIndex.($parentId ? '&'.$this->identifier.'='.$this->object->id : '').'&conf=3&token='.$this->token;
+                    }
                 }
             }
         }
@@ -1968,7 +1985,7 @@ class AdminControllerCore extends Controller
     public function processResetFilters($listId = null)
     {
         if ($listId === null) {
-            $listId = isset($this->list_id) ? $this->list_id : $this->table;
+            $listId = $this->list_id ?? $this->table;
         }
 
         $prefix = $this->getCookieFilterPrefix();
@@ -2099,8 +2116,11 @@ class AdminControllerCore extends Controller
      */
     public function display()
     {
+        $supporterInfo = Configuration::getSupporterInfo();
         $this->context->smarty->assign(
             [
+                'supporterInfo'             => $supporterInfo,
+                'campaingClass'             => $this->getCampaignClasses($supporterInfo),
                 'display_header'            => $this->display_header,
                 'display_header_javascript' => $this->display_header_javascript,
                 'display_footer'            => $this->display_footer,
@@ -2322,7 +2342,7 @@ class AdminControllerCore extends Controller
             $boColor = empty($this->context->employee->bo_color) ? '#FFFFFF' : $this->context->employee->bo_color;
             $this->context->smarty->assign(
                 [
-                    'autorefresh_notifications' => false, Configuration::get('PS_ADMINREFRESH_NOTIFICATION'),
+                    'autorefresh_notifications' => false,
                     'notificationTypes'         => $notification->getTypes(),
                     'help_box'                  => Configuration::get('PS_HELPBOX'),
                     'round_mode'                => Configuration::get('PS_PRICE_ROUND_MODE'),
@@ -2376,7 +2396,7 @@ class AdminControllerCore extends Controller
                 'link'                      => $this->context->link,
                 'shop_name'                 => Configuration::get('PS_SHOP_NAME'),
                 'base_url'                  => $this->context->shop->getBaseURL(),
-                'tab'                       => isset($tab) ? $tab : null, // Deprecated, this tab is declared in the foreach, so it's the last tab in the foreach
+                'tab'                       => $tab ?? null, // Deprecated, this tab is declared in the foreach, so it's the last tab in the foreach
                 'current_parent_id'         => (int) Tab::getCurrentParentId(),
                 'tabs'                      => $tabs,
                 'install_dir_exists'        => file_exists(_PS_ADMIN_DIR_.'/../install'),
@@ -2636,6 +2656,42 @@ class AdminControllerCore extends Controller
                     ];
                 }
         }
+    }
+
+    /**
+     * @param array|null $supporterInfo
+     *
+     * @return string
+     */
+    public function getCampaignClasses($supporterInfo): string
+    {
+        $campaignClass = 'campaign-bar-on';
+        $employee = $this->context->employee;
+        if (Validate::isLoadedObject($employee)) {
+            $disabled = false;
+            if ($employee->campaign_disabled) {
+                try {
+                    $ts = DateTime::createFromFormat('Y-m-d H:i:s', $employee->campaign_disabled);
+                    if ($ts) {
+                        $months = $supporterInfo ? 6 : 1;
+                        $disabledUntil = $ts->add(new DateInterval('P' . $months . 'M'));
+                        $now = new DateTime();
+                        if ($disabledUntil > $now) {
+                            $disabled = true;
+                        }
+                    }
+                } catch (Throwable $ignored) {
+                }
+            }
+            if (! $disabled) {
+                $campaignClass .= ' show-campaign-bar';
+                $campaignClass .= ' show-campaign-slider';
+            }
+        }
+        if ($supporterInfo) {
+            $campaignClass .= ' ' . $supporterInfo['type'];
+        }
+        return $campaignClass;
     }
 
     /**
@@ -3117,7 +3173,11 @@ class AdminControllerCore extends Controller
     {
         $this->setHelperCommonDisplay($helper);
         if ($this->object && $this->object->id) {
-            $helper->id = $this->object->id;
+            if (strlen((string)$helper->id) ==0) {
+                $helper->id = (string)$this->object->id;
+            } else {
+                $helper->id .= '-' . $this->object->id;
+            }
         }
     }
 
@@ -3336,7 +3396,7 @@ class AdminControllerCore extends Controller
      */
     public function refresh($fileToRefresh, $externalFile)
     {
-        $guzzle = new GuzzleHttp\Client([
+        $guzzle = new Client([
             'timeout' => 5,
             'verify' => Configuration::getSslTrustStore(),
         ]);
@@ -3688,10 +3748,84 @@ class AdminControllerCore extends Controller
     }
 
     /**
-     * @return void
+     * @return string
+     *
+     * @throws PrestaShopException
+     * @throws SmartyException
      */
     public function renderKpis()
     {
+        $kpis = $this->getKpis();
+        $hookParams = [
+            'object' => $this,
+            'className' => get_class($this),
+            'display' => (string)($this->display ?? 'list')
+        ];
+        $responses = Hook::getResponses('actionGetKpis', $hookParams);
+        foreach ($responses as $response) {
+            if (is_array($response)) {
+                $kpis = array_merge($kpis, $response);
+            }
+        }
+        if ($kpis) {
+            $rendered = [];
+            foreach ($kpis as $kpi) {
+                if ($kpi instanceof HelperKpi) {
+                    if ($this->canDisplayKpi((string)$kpi->id)) {
+                        $rendered[] = $kpi->generate();
+                    }
+                } elseif (is_array($kpi) && array_key_exists('content', $kpi) && array_key_exists('id', $kpi)) {
+                    if ($this->canDisplayKpi((string)$kpi['id'])) {
+                        $rendered[] = (string)$kpi['content'];
+                    }
+                }
+            }
+
+            if ($rendered) {
+                $helper = new HelperKpiRow();
+                $helper->kpis = $rendered;
+                return $helper->generate();
+            }
+        }
+        return '';
+    }
+
+    /**
+     * @param string $id
+     *
+     * @return true
+     *
+     * @throws PrestaShopException
+     */
+    public function canDisplayKpi(string $id): bool
+    {
+        $hookParams = [
+            'object' => $this,
+            'className' => get_class($this),
+            'display' => (string)($this->display ?? 'list'),
+            'kpi' => $id,
+        ];
+        foreach (Hook::getResponses('actionCanDisplayKpi', $hookParams) as $response) {
+            if (is_bool($response)) {
+                if (! $response) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Returns KPIs for this controllers.
+     * Allowed returned values are
+     *      - HelperKPI object
+     *      - Array with keys ['id', 'title', 'content']
+     *
+     * @return array
+     */
+    public function getKpis(): array
+    {
+        return [];
     }
 
     /**
@@ -3829,6 +3963,7 @@ class AdminControllerCore extends Controller
         //Bootstrap
         $this->addCSS(__PS_BASE_URI__.$this->admin_webpath.'/themes/'.$this->bo_theme.'/css/'.$this->bo_css, 'all', 0);
         $this->addCSS(__PS_BASE_URI__.$this->admin_webpath.'/themes/'.$this->bo_theme.'/css/overrides.css', 'all', PHP_INT_MAX);
+        $this->addCSS(__PS_BASE_URI__.$this->admin_webpath.'/themes/'.$this->bo_theme.'/css/admin-campaign-bar/admin-campaign-bar.css', 'all', PHP_INT_MAX);
 
         $this->addJquery();
         $this->addjQueryPlugin(['scrollTo', 'alerts', 'chosen', 'autosize', 'fancybox']);
@@ -3851,6 +3986,7 @@ class AdminControllerCore extends Controller
         $this->addJS(__PS_BASE_URI__.$this->admin_webpath.'/themes/'.$this->bo_theme.'/js/vendor/enquire.min.js');
         $this->addJS(__PS_BASE_URI__.$this->admin_webpath.'/themes/'.$this->bo_theme.'/js/vendor/moment-with-langs.min.js');
         $this->addJS(__PS_BASE_URI__.$this->admin_webpath.'/themes/'.$this->bo_theme.'/js/admin-theme.js');
+        $this->addJS(__PS_BASE_URI__.$this->admin_webpath.'/themes/'.$this->bo_theme.'/js/admin-campaign-bar/admin-campaign-bar.js');
 
         if (!$this->lite_display) {
             $this->addJS(__PS_BASE_URI__.$this->admin_webpath.'/themes/'.$this->bo_theme.'/js/help.js');
@@ -4293,7 +4429,7 @@ class AdminControllerCore extends Controller
 
         $languages = Language::getLanguages(false);
 
-        $hideMultishopCheckbox = (Shop::getTotalShops(false, null) < 2) ? true : false;
+        $hideMultishopCheckbox = Shop::getTotalShops(false, null) < 2;
         foreach ($this->fields_options as $categoryData) {
             if (!isset($categoryData['fields'])) {
                 continue;
@@ -4417,7 +4553,7 @@ class AdminControllerCore extends Controller
                                 }
                             }
                         }
-                        Configuration::updateValue($key, $list, isset($values['validation']) && isset($options['validation']) && $options['validation'] == 'isCleanHtml' ? true : false);
+                        Configuration::updateValue($key, $list, isset($values['validation']) && isset($options['validation']) && $options['validation'] == 'isCleanHtml');
                     } else {
                         $isCodeField = $options['type'] === 'code';
                         $val = $isCodeField ? Tools::getValueRaw($key) : Tools::getValue($key);
@@ -4551,11 +4687,7 @@ class AdminControllerCore extends Controller
             $this->errors[] = Tools::displayError('You must select at least one element to delete.');
         }
 
-        if (isset($result)) {
-            return $result;
-        } else {
-            return false;
-        }
+        return $result ?? false;
     }
 
     /**
@@ -4706,7 +4838,7 @@ class AdminControllerCore extends Controller
 
     /**
      * Method that allows controllers to define their own custom permissions. To be overridden by subclasses
-
+     *
      * Returns array of permission definitions. Example entry:
      *
      *  [
@@ -4786,7 +4918,7 @@ class AdminControllerCore extends Controller
                 $className = $controllerName . 'Controller';
                 try {
                     $reflection = new ReflectionMethod($className, 'getPermDefinitions');
-                    if ($reflection->getDeclaringClass()->getName() != AdminControllerCore::class) {
+                    if ($reflection->getDeclaringClass()->getName() != 'AdminControllerCore') {
                         /** @var AdminControllerCore $instance - subclass of admin controller */
                         $instance = new $className();
                         $permissions[$controllerName] = $instance->getPermDefinitions();

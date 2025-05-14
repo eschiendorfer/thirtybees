@@ -100,20 +100,20 @@ class InstallControllerHttpConfigure extends InstallControllerHttp
         // Check shop name
         if ($this->session->shopName && !Validate::isGenericName($this->session->shopName)) {
             $this->errors['shopName'] = $this->l('Invalid shop name');
-        } elseif (strlen($this->session->shopName) > 64) {
+        } elseif (strlen($this->session->shopName ?? '') > 64) {
             $this->errors['shopName'] = $this->l('The field %s is limited to %d characters', $this->l('shop name'), 64);
         }
 
         // Check admin name
         if ($this->session->adminFirstname && !Validate::isName($this->session->adminFirstname)) {
             $this->errors['adminFirstname'] = $this->l('Your firstname contains some invalid characters');
-        } elseif (strlen($this->session->adminFirstname) > 32) {
+        } elseif (strlen($this->session->adminFirstname ?? '') > 32) {
             $this->errors['adminFirstname'] = $this->l('The field %s is limited to %d characters', $this->l('firstname'), 32);
         }
 
         if ($this->session->adminLastname && !Validate::isName($this->session->adminLastname)) {
             $this->errors['adminLastname'] = $this->l('Your lastname contains some invalid characters');
-        } elseif (strlen($this->session->adminLastname) > 32) {
+        } elseif (strlen($this->session->adminLastname ?? '') > 32) {
             $this->errors['adminLastname'] = $this->l('The field %s is limited to %d characters', $this->l('lastname'), 32);
         }
 
@@ -131,7 +131,7 @@ class InstallControllerHttpConfigure extends InstallControllerHttp
             $this->errors['adminEmail'] = $this->l('This e-mail address is invalid');
         }
 
-        return count($this->errors) ? false : true;
+        return !count($this->errors);
     }
 
     /**
@@ -152,7 +152,7 @@ class InstallControllerHttpConfigure extends InstallControllerHttp
     public function processTimezoneByIso()
     {
         $timezone = $this->getTimezoneByIso(Tools::getValue('iso'));
-        $this->ajaxJsonAnswer(($timezone) ? true : false, $timezone);
+        $this->ajaxJsonAnswer((bool)$timezone, $timezone);
     }
 
     /**
@@ -176,7 +176,7 @@ class InstallControllerHttpConfigure extends InstallControllerHttp
             }
         }
 
-        return isset($timezones[$iso]) ? $timezones[$iso] : '';
+        return $timezones[$iso] ?? '';
     }
 
     /**
@@ -260,7 +260,7 @@ class InstallControllerHttpConfigure extends InstallControllerHttp
         if (!$this->session->shopCountry) {
             $detectLanguage = $this->language->detectLanguage();
             if (isset($detectLanguage['primarytag'])) {
-                $this->session->shopCountry = strtolower(isset($detectLanguage['subtag']) ? $detectLanguage['subtag'] : $detectLanguage['primarytag']);
+                $this->session->shopCountry = strtolower($detectLanguage['subtag'] ?? $detectLanguage['primarytag']);
                 $this->session->shopTimezone = $this->getTimezoneByIso($this->session->shopCountry);
             }
         }

@@ -27,8 +27,12 @@
 
 {block name="override_tpl"}
 	<script type="text/javascript">
-		$(document).ready(function()
-		{
+		$(document).ready(function() {
+			checkFiles();
+			runTests();
+		});
+
+		function checkFiles() {
 			$.ajax({
 				type: 'GET',
 				url: '{$link->getAdminLink('AdminInformation')|addslashes}',
@@ -39,46 +43,104 @@
 				dataType: 'json',
 				success: function(json)
 				{
-					var tab = {
+					const tab = {
 						'missing': '{l s='Missing files'}',
-            'updated': '{l s='Updated files'}',
-            'obsolete': '{l s='Obsolete files'}'
+						'updated': '{l s='Updated files'}',
+						'obsolete': '{l s='Obsolete files'}'
 					};
 
-          if (json.missing.length || json.updated.length
-              || json.obsolete.length || json.listMissing) {
-            var text = '<div class="alert alert-warning">';
-            if (json.isDevelopment) {
-              text += '{l s='This is a development installation, so the following is not unexpected: '}';
-            }
-            if (json.listMissing) {
-              text += '{l s='File @s1 missing, can\'t check any files.'}'.replace('@s1', json.listMissing);
-            } else {
-              text += '{l s='Changed/missing/obsolete files have been detected.'}';
-            }
-            text += '</div>';
-            $('#changedFiles').html(text);
-          } else {
+					if (json.missing.length || json.updated.length || json.obsolete.length || json.listMissing) {
+						let text = '<div class="alert alert-warning">';
+						if (json.isDevelopment) {
+							text += '{l s='This is a development installation, so the following is not unexpected: '}';
+						}
+						if (json.listMissing) {
+							text += '{l s='File @s1 missing, can\'t check any files.'}'.replace('@s1', json.listMissing);
+						} else {
+							text += '{l s='Changed/missing/obsolete files have been detected.'}';
+						}
+						text += '</div>';
+						$('#changedFiles').html(text);
+					} else {
 						$('#changedFiles').html('<div class="alert alert-success">{l s='No change has been detected in your files.'}</div>');
-          }
+					}
 
-					$.each(tab, function(key, lang)
-					{
-						if (json[key].length)
-						{
-							var html = $('<ul>').attr('id', key+'_files');
-							$(json[key]).each(function(key, file)
-							{
+					$.each(tab, function (key, lang) {
+						if (json[key].length) {
+							let html = $('<ul>').attr('id', key + '_files');
+							$(json[key]).each(function (key, file) {
 								html.append($('<li>').html(file))
 							});
 							$('#changedFiles')
-								.append($('<h4>').html(lang+' ('+json[key].length+')'))
+								.append($('<h4>').html(lang + ' (' + json[key].length + ')'))
 								.append(html);
 						}
 					});
 				}
 			});
-		});
+		}
+
+		function runTests() {
+			$.ajax({
+				type: 'GET',
+				url: '{$link->getAdminLink('AdminInformation')|addslashes}',
+				data: {
+					'action': 'runTests',
+					'ajax': 1
+				},
+				dataType: 'json',
+				success: function(json)
+				{
+					if (json.status === 'success') {
+						const data = json.data;
+						const required = data.required;
+						const optional = data.optional;
+						if (required.length === 0 && optional.length === 0) {
+							$('#testResults').html('<div class="alert alert-success">{l s='All tests passed successfully'|escape:'javascript':'UTF-8'}<div>');
+						} else {
+							$('#testResults').html(
+								renderTestResults(required, 'danger', '{l s='Some required tests failed'}') +
+								renderTestResults(optional, 'warning', '{l s='Some optional tests failed'}')
+							);
+						}
+					} else {
+						$('#testResults').html('<div class="alert alert-danger">'+json.message+'<div>');
+					}
+				},
+				error: function(response, message, c) {
+					console.log(response, message, c);
+					if (response.responseJSON) {
+						$('#testResults').html('<div class="alert alert-danger">'+response.responseJSON.message+'<div>');
+					} else {
+						$('#testResults').html('<div class="alert alert-danger">{l s='Error: '}' + message + '<div>');
+					}
+				}
+			});
+		}
+
+		function renderTestResults(tests, clazz, label) {
+			let content = '';
+			if (tests.length > 0) {
+				content += '<div class="alert alert-' + clazz + '"><strong>' + label + '</strong>';
+				content += '<ul>';
+				for (let i = 0; i < tests.length; i++) {
+					const entry = tests[i];
+					let message = entry.message;
+					if (entry.extra && entry.extra.length > 0) {
+						message += '<ul>';
+						for (j = 0; j < entry.extra.length; j++) {
+							message += '<li>' + entry.extra[j] + '</li>';
+						}
+						message += '</ul>';
+					}
+					content += '<li>' + message + '</li>';
+				}
+				content += '</ul>';
+				content += '</div>'
+			}
+			return content;
+		}
+
 	</script>
 	<div class="row">
 		<div class="col-lg-6">
@@ -87,7 +149,7 @@
 					<i class="icon-info"></i>
 					{l s='Configuration information'}
 				</h3>
-				<p>{l s='This information must be provided when you report an issue on our bug tracker or forum.'}</p>
+				<p>{l s='This information must be provided when you report an [1]issue[/1] on github or [2]forum[/2].' tags=['<a href="https://github.com/thirtybees/thirtybees/issues" target="_blank" rel="noreferrer">', '<a href="https://forum.thirtybees.com/" target="_blank" rel="noreferrer">']}</p>
 			</div>
 			<div class="panel">
 				<h3>
@@ -154,7 +216,7 @@
 				</p>
 				<p>
 					<strong>{l s='Thirty bees revision:'}</strong>
-					<a target="_blank" href="https://github.com/thirtybees/thirtybees{if $shop.revision != 'development'}/tree/{$shop.revision}{/if}">
+					<a target="_blank" rel="noreferrer" href="https://github.com/thirtybees/thirtybees{if $shop.revision != 'development'}/tree/{$shop.revision}{/if}">
 						{$shop.revision|escape:'html':'UTF-8'}
 					</a>
 				</p>
@@ -176,6 +238,9 @@
 					</a>
 				</p>
 				<p>
+					<strong>{l s='Shop Root Directory:'}</strong> {$shop.rootDir|escape:'html':'UTF-8'}
+				</p>
+				<p>
 					<strong>{l s='Current theme in use:'}</strong> {$shop.theme|escape:'html':'UTF-8'}
 				</p>
 			</div>
@@ -195,40 +260,7 @@
 					<i class="icon-info"></i>
 					{l s='Check your configuration'}
 				</h3>
-				<p>
-					<strong>{l s='Required parameters:'}</strong>
-				{if !$failRequired}
-					<span class="text-success">{l s='OK'}</span>
-				</p>
-				{else}
-					<span class="text-danger">{l s='Please fix the following error(s)'}</span>
-				</p>
-				<ul>
-					{foreach from=$testsRequired item='value' key='key'}
-						{if $value eq 'fail' && isset($testsErrors[$key])}
-							<li>{$testsErrors[$key]}</li>
-						{/if}
-					{/foreach}
-				</ul>
-				{/if}
-				{if isset($failOptional)}
-					<p>
-						<strong>{l s='Optional parameters:'}</strong>
-					{if !$failOptional}
-						<span class="text-success">{l s='OK'}</span>
-					</p>
-					{else}
-						<span class="text-danger">{l s='Please fix the following error(s)'}</span>
-					</p>
-					<ul>
-						{foreach from=$testsOptional item='value' key='key'}
-							{if $value eq 'fail' && isset($testsErrors[$key])}
-								<li>{$testsErrors[$key]}</li>
-							{/if}
-						{/foreach}
-					</ul>
-					{/if}
-				{/if}
+				<div id="testResults"><i class="icon-spin icon-refresh"></i> {l s='Running configuration tests, please wait...'}</div>
 			</div>
 		</div>
 	</div>

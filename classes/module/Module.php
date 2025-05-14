@@ -29,8 +29,10 @@
  *  PrestaShop is an internationally registered trademark & property of PrestaShop SA
  */
 
+use GuzzleHttp\Client;
 use Thirtybees\Core\DependencyInjection\ServiceLocator;
 use Thirtybees\Core\Error\ErrorUtils;
+use GuzzleHttp\Promise\Utils;
 
 /**
  * Class ModuleCore
@@ -166,7 +168,7 @@ abstract class ModuleCore
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public function __construct($name = null, Context $context = null)
+    public function __construct($name = null, ?Context $context = null)
     {
         if (isset($this->ps_versions_compliancy) && !isset($this->ps_versions_compliancy['min'])) {
             $this->ps_versions_compliancy['min'] = '1.4.0.0';
@@ -795,7 +797,7 @@ abstract class ModuleCore
             }
 
             $xmlExist = (file_exists($configFile));
-            $needNewConfigFile = $xmlExist ? (@filemtime($configFile) < @filemtime(_PS_MODULE_DIR_.$module.'/'.$module.'.php')) : true;
+            $needNewConfigFile = !$xmlExist || @filemtime($configFile) < @filemtime(_PS_MODULE_DIR_ . $module . '/' . $module . '.php');
 
             // If config.xml exists and that the use config flag is at true
             if ($useConfig && $xmlExist && !$needNewConfigFile) {
@@ -951,15 +953,12 @@ abstract class ModuleCore
 
         // This array gets filled with requested module images to download (key = module code, value = guzzle promise)
         $imagePromises = [];
-        $guzzle = new \GuzzleHttp\Client([
+        $guzzle = new Client([
             'verify'      => Configuration::getSslTrustStore(),
             'timeout'     => 20,
         ]);
 
         if ($modules = static::getApiModulesInfo()) {
-
-            $supporterPlan = Configuration::getSupporterInfo();
-            $supporterType = (string)($supporterPlan['type'] ?? '');
 
             foreach ($modules as $name => $module) {
 
@@ -967,8 +966,7 @@ abstract class ModuleCore
                     $moduleFromList = $modulesNameToCursor[mb_strtolower(strval($name))];
                     $moduleFromList->premium = $module['premium'] ?? false;
                     if ($moduleFromList->canInstall && $moduleFromList->premium) {
-                        $allowedTypes = array_column($moduleFromList->premium, 'type');
-                        $moduleFromList->canInstall = in_array($supporterType, $allowedTypes, true);
+                        $moduleFromList->canInstall = (bool)$module['binary'];
                     }
 
                     if ($moduleFromList->author
@@ -993,10 +991,10 @@ abstract class ModuleCore
                     'type'                => 'native',
                     'name'                => $name,
                     'version'             => $module['version'],
-                    'tab'                 => isset($module['tab']) ? $module['tab'] : 'administration',
-                    'displayName'         => isset($module['displayName'][$languageCode]) ? $module['displayName'][$languageCode] : (isset($module['displayName']['en-us']) ? $module['displayName']['en-us'] : 'Unknown module'),
-                    'description'         => isset($module['description'][$languageCode]) ? $module['description'][$languageCode] : (isset($module['description']['en-us']) ? $module['description']['en-us'] : ''),
-                    'description_full'    => isset($module['description_full'][$languageCode]) ? $module['description_full'][$languageCode] : (isset($module['description_full']['en-us']) ? $module['description_full']['en-us'] : ''),
+                    'tab'                 => $module['tab'] ?? 'administration',
+                    'displayName'         => $module['displayName'][$languageCode] ?? ($module['displayName']['en-us'] ?? 'Unknown module'),
+                    'description'         => $module['description'][$languageCode] ?? ($module['description']['en-us'] ?? ''),
+                    'description_full'    => $module['description_full'][$languageCode] ?? ($module['description_full']['en-us'] ?? ''),
                     'author'              => $module['author'] ?? 'thirty bees',
                     'limited_countries'   => [],
                     'parent_class'        => '',
@@ -1023,7 +1021,7 @@ abstract class ModuleCore
         }
         // Download images simultaneously
         if ($imagePromises) {
-            GuzzleHttp\Promise\Utils::settle($imagePromises)->wait();
+            Utils::settle($imagePromises)->wait();
         }
 
         foreach ($moduleList as &$module) {
@@ -1198,8 +1196,8 @@ abstract class ModuleCore
     public static function getModulesInstalled($position = 0)
     {
         $sql = (new DbQuery())
-                ->select('m.*')
-                ->from('module', 'm');
+            ->select('m.*')
+            ->from('module', 'm');
         if ($position) {
             $sql->leftJoin('hook_module', 'hm', 'm.`id_module` = hm.`id_module`');
             $sql->leftJoin('hook', 'h', 'h.`id_hook` = hm.`id_hook`');
@@ -1591,7 +1589,7 @@ abstract class ModuleCore
     {
         $map = static::getModulesNameToIdMap();
         $key = strtolower($name);
-        return isset($map[$key]) ? $map[$key] : 0;
+        return $map[$key] ?? 0;
     }
 
     /**
@@ -1687,8 +1685,15 @@ abstract class ModuleCore
         try {
             $path = PrestaShopAutoload::getInstance()->getClassPath($classname . 'Core');
             if (!$path) {
+                // override for module
                 $path = 'modules' . DIRECTORY_SEPARATOR . $classname . DIRECTORY_SEPARATOR . $classname . '.php';
+                $classname = $classname . 'Override';
+                $tmpClassSuffix = '';
+            } else {
+                // override for core file
+                $tmpClassSuffix = 'Override';
             }
+
             $pathOverride = $this->getLocalPath() . 'override' . DIRECTORY_SEPARATOR . $path;
 
             if (!file_exists($pathOverride)) {
@@ -1714,10 +1719,10 @@ abstract class ModuleCore
 
                 // Make a reflection of the override class and the module override class
                 $overrideFile = $this->loadOverrideFile($overridePath);
-                $overrideClass = $this->getOverrideFileReflectionClass($classname, $overrideFile, 'OverrideOriginal', $overridePath);
+                $overrideClass = $this->getOverrideFileReflectionClass($classname, $overrideFile, $tmpClassSuffix . 'Original', $overridePath);
 
                 $moduleFile = $this->loadOverrideFile($pathOverride);
-                $moduleClass = $this->getOverrideFileReflectionClass($classname, $moduleFile, 'Override', $pathOverride);
+                $moduleClass = $this->getOverrideFileReflectionClass($classname, $moduleFile, $tmpClassSuffix, $pathOverride);
 
                 // Check if none of the methods already exists in the override class
                 foreach ($moduleClass->getMethods() as $method) {
@@ -1787,7 +1792,7 @@ abstract class ModuleCore
 
                 // Load module override file
                 $moduleFile = $this->loadOverrideFile($overrideSrc);
-                $moduleClass = $this->getOverrideFileReflectionClass($classname, $moduleFile, 'Override', $overrideSrc);
+                $moduleClass = $this->getOverrideFileReflectionClass($classname, $moduleFile, $tmpClassSuffix, $overrideSrc);
 
                 // For each method found in the override, prepend a comment with the module name and version
                 foreach ($moduleClass->getMethods() as $method) {
@@ -2962,11 +2967,11 @@ abstract class ModuleCore
 
         return Db::readOnly()->getValue(
             (new DbQuery())
-            ->select('COUNT(*)')
-            ->FROM('hook_module', 'hm')
-            ->leftJoin('hook', 'h', 'h.`id_hook` = hm.`id_hook`')
-            ->where('h.`name` = \''.pSQL($hook).'\'')
-            ->where('hm.`id_module` = '.(int) $this->id)
+                ->select('COUNT(*)')
+                ->FROM('hook_module', 'hm')
+                ->leftJoin('hook', 'h', 'h.`id_hook` = hm.`id_hook`')
+                ->where('h.`name` = \''.pSQL($hook).'\'')
+                ->where('hm.`id_module` = '.(int) $this->id)
         );
     }
 
@@ -3447,20 +3452,20 @@ abstract class ModuleCore
                 $limitedCountries = $this->limited_countries[0];
             }
 
-            foreach ([
-                         'name' => $this->name,
-                         'displayName' => $this->displayName,
-                         'version' => $this->version,
-                         'description' => $this->description,
-                         'author' => $this->author,
-                         'author_uri' => $authorUri,
-                         'tab' => $this->tab,
-                         'confirmUninstall' => $this->confirmUninstall,
-                         'is_configurable' => $this->isModuleConfigurable(),
-                         'need_instance' => $this->need_instance,
-                         'limited_countries' => $limitedCountries,
-                     ] as $node => $value)
-            {
+            $nodeData = [
+                'name' => $this->name,
+                'displayName' => $this->displayName,
+                'version' => $this->version,
+                'description' => $this->description,
+                'author' => $this->author,
+                'author_uri' => $authorUri,
+                'tab' => $this->tab,
+                'confirmUninstall' => $this->confirmUninstall,
+                'is_configurable' => $this->isModuleConfigurable(),
+                'need_instance' => $this->need_instance,
+                'limited_countries' => $limitedCountries,
+            ];
+            foreach ($nodeData as $node => $value) {
                 if (is_bool($value)) {
                     $value = (int)$value;
                 }
@@ -3533,12 +3538,8 @@ abstract class ModuleCore
             implode('', $fileLines)
         );
 
-
-
         try {
             eval($overrideContent);
-        } catch (Exception $e) {
-            throw new PrestaShopException(sprintf(Tools::displayError("Failed to evaluate override file %s"), $filename), 0, $e);
         } catch (Throwable $e) {
             $message = $e->getMessage() . " at line " . $e->getLine();
             throw new PrestaShopException(sprintf(Tools::displayError("Failed to evaluate override file %s: %s"), $filename, $message));
@@ -3547,6 +3548,7 @@ abstract class ModuleCore
         if (! class_exists($overrideClassName, false)) {
             throw new PrestaShopException(sprintf(Tools::displayError('Override file %s does not contain class %s'), $filename, $classname));
         }
+
         try {
             return new ReflectionClass($overrideClassName);
         } catch (ReflectionException $e) {
@@ -3629,7 +3631,7 @@ abstract class ModuleCore
         if ($force || $lastCheck < (time() - $checkInterval) || !file_exists(static::MODULES_CACHE_FILE)) {
             Configuration::updateGlobalValue(static::LAST_MODULES_CHECK, time());
 
-            $guzzle = new GuzzleHttp\Client([
+            $guzzle = new Client([
                 'base_uri' => Configuration::getApiServer(),
                 'verify'   => Configuration::getSslTrustStore(),
             ]);
@@ -3726,23 +3728,19 @@ abstract class ModuleCore
     }
 
     /**
-     * @param string|null $supporterType
-     *
      * @return void
      *
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public static function processPremiumModules($supporterType)
+    public static function processPremiumModules()
     {
+        Module::checkApiModulesUpdates(true);
         foreach (static::getModulesOnDisk(true) as $module) {
-            if ($module->id && $module->premium) {
-                $allowedTypes = array_column($module->premium, 'type');
-                if (! in_array((string)$supporterType, $allowedTypes, true)) {
-                    $instance = static::getInstanceById($module->id);
-                    if (Validate::isLoadedObject($instance)) {
-                        $instance->disable(true);
-                    }
+            if ($module->id && $module->premium && !$module->canInstall) {
+                $instance = static::getInstanceById($module->id);
+                if (Validate::isLoadedObject($instance)) {
+                    $instance->disable(true);
                 }
             }
         }
