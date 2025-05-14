@@ -20,7 +20,6 @@
 namespace Thirtybees\Core\Error\Response;
 
 use Configuration;
-use PrestaShopException;
 use Thirtybees\Core\Error\ErrorDescription;
 use Throwable;
 
@@ -63,7 +62,8 @@ class ProductionErrorPageCore extends AbstractErrorPage
             if ($email) {
                 return $email;
             }
-        } catch (Throwable $ignored) {}
+        } catch (Throwable $ignored) {
+        }
         return 'contact@thirtybees.com';
     }
 

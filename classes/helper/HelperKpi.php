@@ -45,7 +45,7 @@ class HelperKpiCore extends Helper
     public $base_tpl = 'kpi.tpl';
 
     /**
-     * @var int $id
+     * @var string $id
      */
     public $id;
 
@@ -75,7 +75,7 @@ class HelperKpiCore extends Helper
     public $subtitle;
 
     /**
-     * @var int|float
+     * @var int|float|string|null
      */
     public $value;
 

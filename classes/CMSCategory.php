@@ -139,7 +139,7 @@ class CMSCategoryCore extends ObjectModel
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public static function getRecurseCategory($idLang = null, $current = 1, $active = 1, $links = 0, Link $link = null)
+    public static function getRecurseCategory($idLang = null, $current = 1, $active = 1, $links = 0, ?Link $link = null)
     {
         if (!$link) {
             $link = Context::getContext()->link;
@@ -474,6 +474,7 @@ class CMSCategoryCore extends ObjectModel
                 ->leftJoin('lang', 'l', 'c.`id_lang` = l.`id_lang`')
                 ->where('c.`id_cms_category` = '.(int) $idCategory)
                 ->where('l.`active` = 1')
+                ->addCurrentShopRestriction('c')
         );
     }
 
@@ -601,7 +602,7 @@ class CMSCategoryCore extends ObjectModel
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public function recurseLiteCategTree($maxDepth = 3, $currentDepth = 0, $idLang = null, $excludedIdsArray = null, Link $link = null)
+    public function recurseLiteCategTree($maxDepth = 3, $currentDepth = 0, $idLang = null, $excludedIdsArray = null, ?Link $link = null)
     {
         if (!$link) {
             $link = Context::getContext()->link;
@@ -790,7 +791,7 @@ class CMSCategoryCore extends ObjectModel
      *
      * @throws PrestaShopException
      */
-    public function getLink(Link $link = null)
+    public function getLink(?Link $link = null)
     {
         if (!$link) {
             $link = Context::getContext()->link;
@@ -817,7 +818,7 @@ class CMSCategoryCore extends ObjectModel
             }
         }
 
-        return isset($this->name[$idLang]) ? $this->name[$idLang] : '';
+        return $this->name[$idLang] ?? '';
     }
 
     /**

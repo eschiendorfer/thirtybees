@@ -261,7 +261,7 @@ class TabCore extends ObjectModel
             return $arrayAll;
         }
 
-        return (isset(static::$_cache_tabs[$idLang][$idParent]) ? static::$_cache_tabs[$idLang][$idParent] : []);
+        return (static::$_cache_tabs[$idLang][$idParent] ?? []);
     }
 
     /**
@@ -559,7 +559,7 @@ class TabCore extends ObjectModel
      * @throws PrestaShopException
      * @todo    this should not be public static but protected
      */
-    public static function initAccess($idTab, Context $context = null)
+    public static function initAccess($idTab, ?Context $context = null)
     {
         if (!$context) {
             $context = Context::getContext();

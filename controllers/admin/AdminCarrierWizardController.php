@@ -936,7 +936,7 @@ class AdminCarrierWizardControllerCore extends AdminController
         $allowedImageExtensions = implode('|', ImageManager::getAllowedImageExtensions());
         $imageExtension = ImageManager::getDefaultImageExtension();
 
-        $logo = (isset($_FILES['carrier_logo_input']) ? $_FILES['carrier_logo_input'] : false);
+        $logo = ($_FILES['carrier_logo_input'] ?? false);
         if ($logo && !empty($logo['tmp_name']) && $logo['tmp_name'] != 'none'
             && (!isset($logo['error']) || !$logo['error'])
             && preg_match('/\.('.$allowedImageExtensions.')$/', $logo['name'])
@@ -1079,13 +1079,13 @@ class AdminCarrierWizardControllerCore extends AdminController
     public function duplicateLogo($newId, $oldId)
     {
         if ($sourceImageOldLogo = ImageManager::getSourceImage(_PS_SHIP_IMG_DIR_, $oldId)) {
-            $imageExtension = explode('.', $sourceImageOldLogo)[1];
+            $imageExtension = ImageManager::getImageExtension($sourceImageOldLogo);
             @copy($sourceImageOldLogo, _PS_SHIP_IMG_DIR_.'/'.(int) $newId.'.'.$imageExtension);
         }
 
         if ($sourceImageOldTmpLogo = ImageManager::getSourceImage(_PS_TMP_IMG_DIR_, '/carrier_mini_'.(int) $oldId)) {
             if (!isset($_FILES['logo'])) {
-                $imageExtension = explode('.', $sourceImageOldTmpLogo)[1];
+                $imageExtension = ImageManager::getImageExtension($sourceImageOldTmpLogo);
                 @copy($sourceImageOldTmpLogo, _PS_TMP_IMG_DIR_.'/carrier_mini_'.$newId.'.'.$imageExtension);
             }
             unlink($sourceImageOldTmpLogo);

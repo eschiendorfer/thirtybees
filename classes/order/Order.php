@@ -398,13 +398,13 @@ class OrderCore extends ObjectModel
         foreach ($products as &$product) {
             $product['id_product_attribute'] = $product['product_attribute_id'];
             $product['cart_quantity'] = $product['product_quantity'];
-            $productIdList[] = $this->id_address_delivery.'_'.$product['product_id'].'_'.$product['product_attribute_id'].'_'.(isset($product['id_customization']) ? $product['id_customization'] : '0');
+            $productIdList[] = $this->id_address_delivery.'_'.$product['product_id'].'_'.$product['product_attribute_id'].'_'.($product['id_customization'] ?? '0');
         }
         unset($product);
 
         $productList = [];
         foreach ($products as $product) {
-            $key = $this->id_address_delivery.'_'.$product['id_product'].'_'.(isset($product['id_product_attribute']) ? $product['id_product_attribute'] : '0').'_'.(isset($product['id_customization']) ? $product['id_customization'] : '0');
+            $key = $this->id_address_delivery.'_'.$product['id_product'].'_'.($product['id_product_attribute'] ?? '0').'_'.($product['id_customization'] ?? '0');
 
             if (in_array($key, $productIdList)) {
                 $productList[] = $product;
@@ -1077,7 +1077,7 @@ class OrderCore extends ObjectModel
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public static function getCustomerOrders($idCustomer, $showHiddenStatus = false, Context $context = null)
+    public static function getCustomerOrders($idCustomer, $showHiddenStatus = false, ?Context $context = null)
     {
         if (!$context) {
             $context = Context::getContext();
@@ -1110,7 +1110,7 @@ class OrderCore extends ObjectModel
             );
 
             if ($res2) {
-                $res[$key] = array_merge($res[$key], $res2[0]);
+                $res[$key] = array_merge($val, $res2[0]);
             }
         }
 
@@ -1157,7 +1157,7 @@ class OrderCore extends ObjectModel
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public static function getOrdersWithInformations($limit = null, Context $context = null)
+    public static function getOrdersWithInformations($limit = null, ?Context $context = null)
     {
         if (!$context) {
             $context = Context::getContext();
@@ -1328,7 +1328,7 @@ class OrderCore extends ObjectModel
                 ->where('`id_customer` = '.(int) $idCustomer.' '.Shop::addSqlRestriction())
         );
 
-        return isset($result['nb']) ? $result['nb'] : 0;
+        return $result['nb'] ?? 0;
     }
 
     /**
@@ -1343,14 +1343,13 @@ class OrderCore extends ObjectModel
      */
     public static function getOrderByCartId($idCart)
     {
-        $result = Db::readOnly()->getRow(
+        return (int)Db::readOnly()->getValue(
             (new DbQuery())
                 ->select('`id_order`')
                 ->from('orders')
-                ->where('`id_cart` = '.(int) $idCart.' '.Shop::addSqlRestriction())
+                ->where('`id_cart` = '.(int) $idCart)
+                ->orderBy('`id_order`')
         );
-
-        return isset($result['id_order']) ? (int)$result['id_order'] : 0;
     }
 
     /**
@@ -1409,7 +1408,6 @@ class OrderCore extends ObjectModel
      *
      * @return bool
      *
-     * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
     public function getNumberOfDays()
@@ -1418,17 +1416,21 @@ class OrderCore extends ObjectModel
         if (!$nbReturnDays) {
             return true;
         }
-        $days = (int)Db::readOnly()->getValue(
-            (new DbQuery())
-                ->select('TO_DAYS("'.date('Y-m-d').' 00:00:00") - TO_DAYS(`delivery_date`)')
-                ->from('orders')
-                ->where('`id_order` = '.(int) $this->id)
-        );
-        if ($days <= $nbReturnDays) {
-            return true;
+
+        $deliveryDate = $this->getDeliveryDate();
+        if (! $deliveryDate) {
+            return false;
         }
 
-        return false;
+        try {
+            $threshold = $deliveryDate
+                ->add(new DateInterval('P' . $nbReturnDays . 'D'))
+                ->setTime(23, 59, 59);
+            $now = new DateTime();
+            return $now < $threshold;
+        } catch (Throwable $e) {
+            return false;
+        }
     }
 
     /**
@@ -1931,23 +1933,23 @@ class OrderCore extends ObjectModel
     public function getWsOrderRows()
     {
         $sql = (new DbQuery())
-                ->select('od.`id_order_detail` AS `id`')
-                ->select('od.`product_id`')
-                ->select('od.`product_price`')
-                ->select('od.`id_order`')
-                ->select('od.`product_attribute_id`')
-                ->select('od.`product_quantity`')
-                ->select('od.`product_name`')
-                ->select('od.`product_reference`')
-                ->select('od.`product_ean13`')
-                ->select('od.`product_upc`')
-                ->select('od.`unit_price_tax_incl`')
-                ->select('od.`unit_price_tax_excl`')
-                ->select('(CASE WHEN COUNT(odp.id_order_detail_pack) > 0 THEN 1 ELSE 0 END) as is_pack')
-                ->from('order_detail', 'od')
-                ->leftJoin('order_detail_pack', 'odp', 'od.id_order_detail = odp.id_order_detail')
-                ->where('`id_order` = '.(int) $this->id)
-                ->groupBy('od.id_order_detail');
+            ->select('od.`id_order_detail` AS `id`')
+            ->select('od.`product_id`')
+            ->select('od.`product_price`')
+            ->select('od.`id_order`')
+            ->select('od.`product_attribute_id`')
+            ->select('od.`product_quantity`')
+            ->select('od.`product_name`')
+            ->select('od.`product_reference`')
+            ->select('od.`product_ean13`')
+            ->select('od.`product_upc`')
+            ->select('od.`unit_price_tax_incl`')
+            ->select('od.`unit_price_tax_excl`')
+            ->select('(CASE WHEN COUNT(odp.id_order_detail_pack) > 0 THEN 1 ELSE 0 END) as is_pack')
+            ->from('order_detail', 'od')
+            ->leftJoin('order_detail_pack', 'odp', 'od.id_order_detail = odp.id_order_detail')
+            ->where('`id_order` = '.(int) $this->id)
+            ->groupBy('od.id_order_detail');
         return Db::readOnly()->getArray($sql);
     }
 
@@ -2936,8 +2938,6 @@ class OrderCore extends ObjectModel
 
         $orderDetailTaxRows = [];
 
-        $breakdown = [];
-
         foreach ($this->getCartRules() as $orderCartRule) {
             if ($orderCartRule['free_shipping'] && $freeShippingTax === 0) {
                 $freeShippingTax = $this->total_shipping_tax_incl - $this->total_shipping_tax_excl;
@@ -2945,21 +2945,27 @@ class OrderCore extends ObjectModel
             }
 
             $cartRule = new CartRule($orderCartRule['id_cart_rule']);
-            if ($cartRule->product_restriction) {
-                if (!isset($productSpecificDiscounts[(int) $cartRule->reduction_product]) || empty($productSpecificDiscounts[(int) $cartRule->reduction_product])) {
-                    $productSpecificDiscounts[(int) $cartRule->reduction_product] = 0;
-                }
 
-                $productSpecificDiscounts[(int) $cartRule->reduction_product] += $orderCartRule['value_tax_excl'];
+            if ($cartRule->applyDiscountToSpecificProduct()) {
+                $reductionProduct = $cartRule->getSpecificProductId();
+                if (array_key_exists($reductionProduct, $productSpecificDiscounts)) {
+                    $productSpecificDiscounts[$reductionProduct] = 0;
+                }
+                $productSpecificDiscounts[$reductionProduct] += $orderCartRule['value_tax_excl'];
                 $orderDiscountTaxExcl -= $orderCartRule['value_tax_excl'];
             }
-            if ($cheapestProduct = json_decode($cartRule->description)) {
-                if (!isset($cheapestProductDiscounts[(int) $cheapestProduct->id_product]) || empty($cheapestProductDiscounts[(int) $cheapestProduct->id_product])) {
-                    $cheapestProductDiscounts[(int) $cheapestProduct->id_product] = ['tax_amount' => 0, 'tax_base'  => 0];
+
+            if ($cartRule->isCheapestProductSystemRule()) {
+                $cheapestProductId = $cartRule->getCheapestProductId();
+                if (! isset($cheapestProductDiscounts[$cheapestProductId])) {
+                    $cheapestProductDiscounts[$cheapestProductId] = [
+                        'tax_amount' => 0,
+                        'tax_base'  => 0
+                    ];
                 }
 
-                $cheapestProductDiscounts[(int) $cheapestProduct->id_product]['tax_amount'] += ($orderCartRule['value'] - $orderCartRule['value_tax_excl']);
-                $cheapestProductDiscounts[(int) $cheapestProduct->id_product]['tax_base'] += ($orderCartRule['value_tax_excl']);
+                $cheapestProductDiscounts[$cheapestProductId]['tax_amount'] += (float)($orderCartRule['value'] - $orderCartRule['value_tax_excl']);
+                $cheapestProductDiscounts[$cheapestProductId]['tax_base'] += (float)($orderCartRule['value_tax_excl']);
             }
         }
 
@@ -2996,13 +3002,6 @@ class OrderCore extends ObjectModel
                     $totalTaxBase -= $cheapestProductDiscounts[$orderDetail['product_id']]['tax_base'];
                     $totalAmount -= $cheapestProductDiscounts[$orderDetail['product_id']]['tax_amount'];
                 }
-
-                if (!isset($breakdown[$idTax])) {
-                    $breakdown[$idTax] = ['tax_base' => 0, 'tax_amount' => 0];
-                }
-
-                $breakdown[$idTax]['tax_base'] += $totalTaxBase;
-                $breakdown[$idTax]['tax_amount'] += $totalAmount;
 
                 $orderDetailTaxRows[] = [
                     'id_order_detail' => $idOrderDetail,
@@ -3115,5 +3114,22 @@ class OrderCore extends ObjectModel
         // this should be the only place in the core that modifies this deprecated property
         /** @noinspection PhpDeprecationInspection */
         $this->total_paid_real += $amountOrderCurrency;
+    }
+
+    /**
+     * @return DateTime|null
+     */
+    public function getDeliveryDate(): ?DateTime
+    {
+        $deliveryDate = DateTime::createFromFormat('Y-m-d H:i:s', (string)$this->delivery_date);
+        if (! $deliveryDate) {
+            return null;
+        }
+        // filter out invalid date 0000-00-00
+        $threshold = DateTime::createFromFormat('Y-m-d', '1980-01-01');
+        if ($deliveryDate > $threshold) {
+            return $deliveryDate;
+        }
+        return null;
     }
 }

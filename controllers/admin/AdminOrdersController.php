@@ -863,38 +863,47 @@ class AdminOrdersControllerCore extends AdminController
         } /* Partial refund from order */
         elseif (Tools::isSubmit('partialRefund') && isset($order)) {
             if ($this->hasEditPermission()) {
-                if (Tools::isSubmit('partialRefundProduct') && ($refunds = Tools::getValue('partialRefundProduct')) && is_array($refunds)) {
+                if (Tools::isSubmit('partialRefundProduct') &&
+                    ($refunds = Tools::getArrayValue('partialRefundProduct', [])) &&
+                    ($quantitites = Tools::getArrayValue('partialRefundProductQuantity'))
+                ) {
                     $amount = 0;
                     $orderDetailList = [];
                     $fullQuantityList = [];
-                    foreach ($refunds as $idOrderDetail => $amountDetail) {
-                        $quantity = Tools::getValue('partialRefundProductQuantity');
-                        if (!$quantity[$idOrderDetail]) {
-                            continue;
-                        }
 
-                        $fullQuantityList[$idOrderDetail] = (int) $quantity[$idOrderDetail];
+                    foreach ($refunds as $idOrderDetail => $providedAmountStr) {
+                        $idOrderDetail = (int)$idOrderDetail;
+                        $quantity = (int)($quantitites[$idOrderDetail] ?? 0);
+                        if ($quantity > 0) {
+                            $orderDetail = new OrderDetail($idOrderDetail);
 
-                        $orderDetailList[$idOrderDetail] = [
-                            'quantity'        => (int) $quantity[$idOrderDetail],
-                            'id_order_detail' => (int) $idOrderDetail,
-                        ];
+                            $resume = OrderSlip::getProductSlipResume($idOrderDetail);
+                            $quantityRefundable = (int)$orderDetail->product_quantity - (int)$resume['product_quantity'];
+                            if ($quantity <= $quantityRefundable) {
+                                $amountRefundableTaxIncl = Tools::roundPrice($orderDetail->total_price_tax_incl - $resume['amount_tax_incl']);
 
-                        $orderDetail = new OrderDetail((int) $idOrderDetail);
-                        if (empty($amountDetail)) {
-                            $orderDetailList[$idOrderDetail]['unit_price'] = (!Tools::getValue('TaxMethod') ? $orderDetail->unit_price_tax_excl : $orderDetail->unit_price_tax_incl);
-                            $orderDetailList[$idOrderDetail]['amount'] = $orderDetail->unit_price_tax_incl * $orderDetailList[$idOrderDetail]['quantity'];
-                        } else {
-                            $orderDetailList[$idOrderDetail]['amount'] = Tools::parseNumber($amountDetail);
-                            $orderDetailList[$idOrderDetail]['unit_price'] = round(
-                                $orderDetailList[$idOrderDetail]['amount']
-                                / $orderDetailList[$idOrderDetail]['quantity'],
-                                _TB_PRICE_DATABASE_PRECISION_
-                            );
-                        }
-                        $amount += $orderDetailList[$idOrderDetail]['amount'];
-                        if (!$order->hasBeenDelivered() || ($order->hasBeenDelivered() && Tools::isSubmit('reinjectQuantities')) && $orderDetailList[$idOrderDetail]['quantity'] > 0) {
-                            $this->reinjectQuantity($orderDetail, $orderDetailList[$idOrderDetail]['quantity']);
+                                $fullQuantityList[$idOrderDetail] = $quantity;
+
+                                if (empty($providedAmountStr)) {
+                                    $refundAmount = Tools::roundPrice($orderDetail->unit_price_tax_incl * $quantity);
+                                } else {
+                                    $refundAmount = Tools::parseNumber($providedAmountStr);
+                                }
+                                $refundAmount = min($refundAmount, $amountRefundableTaxIncl);
+
+                                $amount += $refundAmount;
+
+                                $orderDetailList[$idOrderDetail] = [
+                                    'id_order_detail' => $idOrderDetail,
+                                    'quantity' => $quantity,
+                                    'amount' => $refundAmount,
+                                    'unit_price' => Tools::roundPrice($refundAmount / $quantity),
+                                ];
+
+                                if (Tools::isSubmit('reinjectQuantities')) {
+                                    $this->reinjectQuantity($orderDetail, $quantity);
+                                }
+                            }
                         }
                     }
 
@@ -913,10 +922,12 @@ class AdminOrdersControllerCore extends AdminController
                     $voucher = 0;
 
                     if (Tools::getIntValue('refund_voucher_off') === 1) {
-                        $amount -= $voucher = Tools::getNumberValue('order_discount_price');
+                        $voucher = Tools::getNumberValue('order_discount_price');
+                        $amount -= $voucher;
                     } elseif (Tools::getIntValue('refund_voucher_off') === 2) {
                         $chosen = true;
-                        $amount = $voucher = Tools::getNumberValue('refund_voucher_choose');
+                        $voucher = Tools::getNumberValue('refund_voucher_choose');
+                        $amount = $voucher;
                     }
 
                     if ($shippingCostAmount > 0) {
@@ -1149,7 +1160,7 @@ class AdminOrdersControllerCore extends AdminController
                                 $qtyCancelProduct = abs($qtyList[$key]);
                                 $orderDetail = new OrderDetail((int) ($idOrderDetail));
 
-                                if (!$order->hasBeenDelivered() || ($order->hasBeenDelivered() && Tools::isSubmit('reinjectQuantities')) && $qtyCancelProduct > 0) {
+                                if (Tools::isSubmit('reinjectQuantities') && $qtyCancelProduct > 0) {
                                     $this->reinjectQuantity($orderDetail, $qtyCancelProduct);
                                 }
 
@@ -1211,7 +1222,7 @@ class AdminOrdersControllerCore extends AdminController
                                     'id_order_detail' => $idOrderDetail,
                                     'quantity'        => $fullQuantityList[$idOrderDetail],
                                     'unit_price'      => $orderDetail->unit_price_tax_excl,
-                                    'amount'          => isset($amount) ? $amount : $orderDetail->unit_price_tax_incl * $fullQuantityList[$idOrderDetail],
+                                    'amount'          => $amount ?? $orderDetail->unit_price_tax_incl * $fullQuantityList[$idOrderDetail],
                                 ];
                             }
 
@@ -1386,16 +1397,12 @@ class AdminOrdersControllerCore extends AdminController
             } else {
                 $this->errors[] = Tools::displayError('The invoice for edit note was unable to load. ');
             }
-        } elseif (Tools::isSubmit('submitAddOrder') && ($idCart = Tools::getIntValue('id_cart')) &&
-            ($moduleName = Tools::getValue('payment_module_name')) &&
-            ($idOrderState = Tools::getIntValue('id_order_state')) && Validate::isModuleName($moduleName)
+        } elseif (Tools::isSubmit('submitAddOrder') &&
+            ($idCart = Tools::getIntValue('id_cart')) &&
+            ($idOrderState = Tools::getIntValue('id_order_state'))
         ) {
             if ($this->hasEditPermission()) {
-                if (!Configuration::get('PS_CATALOG_MODE')) {
-                    $paymentModule = Module::getInstanceByName($moduleName);
-                } else {
-                    $paymentModule = new BoOrder();
-                }
+                $paymentModule = $this->getPaymentModule();
 
                 $cart = new Cart((int) $idCart);
                 $this->context->currency = new Currency((int) $cart->id_currency);
@@ -1810,14 +1817,11 @@ class AdminOrdersControllerCore extends AdminController
     }
 
     /**
-     * Render KPIs
-     *
-     * @return false|string
+     * @return HelperKpi[]
      *
      * @throws PrestaShopException
-     * @throws SmartyException
      */
-    public function renderKpis()
+    public function getKpis(): array
     {
         $time = time();
         $kpis = [];
@@ -1839,7 +1843,7 @@ class AdminOrdersControllerCore extends AdminController
         }
         $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=conversion_rate';
         $helper->refresh = (bool) (ConfigurationKPI::get('CONVERSION_RATE_EXPIRE') < $time);
-        $kpis[] = $helper->generate();
+        $kpis[] = $helper;
 
         $helper = new HelperKpi();
         $helper->id = 'box-carts';
@@ -1853,7 +1857,7 @@ class AdminOrdersControllerCore extends AdminController
         }
         $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=abandoned_cart';
         $helper->refresh = (bool) (ConfigurationKPI::get('ABANDONED_CARTS_EXPIRE') < $time);
-        $kpis[] = $helper->generate();
+        $kpis[] = $helper;
 
         $helper = new HelperKpi();
         $helper->id = 'box-average-order';
@@ -1861,12 +1865,12 @@ class AdminOrdersControllerCore extends AdminController
         $helper->color = 'color3';
         $helper->title = $this->l('Average Order Value', null, null, false);
         $helper->subtitle = $this->l('30 days', null, null, false);
-        if (ConfigurationKPI::get('AVG_ORDER_VALUE') !== false) {
-            $helper->value = sprintf($this->l('%s tax excl.'), ConfigurationKPI::get('AVG_ORDER_VALUE'));
+        if (ConfigurationKPI::get('AVG_ORDER_VALUE', $this->context->employee->id_lang) !== false) {
+            $helper->value = ConfigurationKPI::get('AVG_ORDER_VALUE', $this->context->employee->id_lang);
         }
         $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=average_order_value';
-        $helper->refresh = (bool) (ConfigurationKPI::get('AVG_ORDER_VALUE_EXPIRE') < $time);
-        $kpis[] = $helper->generate();
+        $helper->refresh = (bool) (ConfigurationKPI::get('AVG_ORDER_VALUE_EXPIRE', $this->context->employee->id_lang) < $time);
+        $kpis[] = $helper;
 
         $helper = new HelperKpi();
         $helper->id = 'box-net-profit-visit';
@@ -1879,12 +1883,9 @@ class AdminOrdersControllerCore extends AdminController
         }
         $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=netprofit_visit';
         $helper->refresh = (bool) (ConfigurationKPI::get('NETPROFIT_VISIT_EXPIRE') < $time);
-        $kpis[] = $helper->generate();
+        $kpis[] = $helper;
 
-        $helper = new HelperKpiRow();
-        $helper->kpis = $kpis;
-
-        return $helper->generate();
+        return $kpis;
     }
 
     /**
@@ -1902,7 +1903,15 @@ class AdminOrdersControllerCore extends AdminController
         if (!Validate::isLoadedObject($order)) {
             $this->errors[] = Tools::displayError('The order cannot be found within your database.');
         }
-
+        
+        $shopActive = Shop::isFeatureActive();
+        if ($shopActive) {
+            $shop = new Shop((int)$order->id_shop);
+            $this->tpl_view_vars['shop_name'] = $shop->name;
+        }
+        $this->tpl_view_vars['shop_feature_active'] = $shopActive;
+        $this->context->smarty->assign($this->tpl_view_vars);
+        
         $customer = new Customer($order->id_customer);
         $carrier = new Carrier($order->id_carrier);
         $products = $this->getProducts($order);
@@ -2014,6 +2023,14 @@ class AdminOrdersControllerCore extends AdminController
                 $product['warehouse_name'] = '--';
                 $product['warehouse_location'] = false;
             }
+            if (OrderDetailPack::isPack((int) $product['id_order_detail'])) {
+                $productPackItems = OrderDetailPack::getItems((int) $product['id_order_detail'], $this->context->language->id);
+                $namePackItems = '';
+                foreach ($productPackItems as $packItem) {
+                    $namePackItems .= $packItem->pack_quantity.' x <b>'.$packItem->reference.'</b> '.$packItem->name.'<br>';
+                }
+                $product['pack_items'] = $namePackItems;
+            }
         }
 
         $gender = new Gender((int) $customer->id_gender, $this->context->language->id);
@@ -2033,9 +2050,9 @@ class AdminOrdersControllerCore extends AdminController
             'customer_addresses'           => $customer->getAddresses($this->context->language->id),
             'addresses'                    => [
                 'delivery'      => $addressDelivery,
-                'deliveryState' => isset($deliveryState) ? $deliveryState : null,
+                'deliveryState' => $deliveryState ?? null,
                 'invoice'       => $addressInvoice,
-                'invoiceState'  => isset($invoiceState) ? $invoiceState : null,
+                'invoiceState'  => $invoiceState ?? null,
             ],
             'customerStats'                => $customer->getStats(),
             'products'                     => $products,
@@ -2284,11 +2301,7 @@ class AdminOrdersControllerCore extends AdminController
         }
 
         $productInformations = $_POST['add_product'];
-        if (isset($_POST['add_invoice'])) {
-            $invoiceInformations = $_POST['add_invoice'];
-        } else {
-            $invoiceInformations = [];
-        }
+        $invoiceInformations = $_POST['add_invoice'] ?? [];
         $product = new Product($productInformations['product_id'], false, $order->id_lang);
         if (!Validate::isLoadedObject($product)) {
             $this->ajaxDie(
@@ -2357,7 +2370,7 @@ class AdminOrdersControllerCore extends AdminController
         $updateQuantity = $cart->updateQty(
             $productInformations['product_quantity'],
             $product->id,
-            isset($productInformations['product_attribute_id']) ? $productInformations['product_attribute_id'] : null,
+            $productInformations['product_attribute_id'] ?? null,
             isset($combination) ? $combination->id : null,
             'up',
             0,
@@ -2662,7 +2675,7 @@ class AdminOrdersControllerCore extends AdminController
      *
      * @throws PrestaShopException
      */
-    public function sendChangedNotification(Order $order = null)
+    public function sendChangedNotification(?Order $order = null)
     {
         if (is_null($order)) {
             $order = new Order(Tools::getIntValue('id_order'));
@@ -2778,7 +2791,7 @@ class AdminOrdersControllerCore extends AdminController
 
 
         // Check fields validity
-        $this->doEditProductValidation($orderDetail, $order, isset($orderInvoice) ? $orderInvoice : null);
+        $this->doEditProductValidation($orderDetail, $order, $orderInvoice ?? null);
 
         // If multiple product_quantity, the order details concern a product customized
         $productQuantity = 0;
@@ -3133,7 +3146,7 @@ class AdminOrdersControllerCore extends AdminController
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    protected function doEditProductValidation(OrderDetail $orderDetail, Order $order, OrderInvoice $orderInvoice = null)
+    protected function doEditProductValidation(OrderDetail $orderDetail, Order $order, ?OrderInvoice $orderInvoice = null)
     {
         if (!Validate::isLoadedObject($orderDetail)) {
             $this->ajaxDie(json_encode([
@@ -3471,5 +3484,22 @@ class AdminOrdersControllerCore extends AdminController
             return 0.0;
         }
         return $value;
+    }
+
+    /**
+     * @return PaymentModule
+     *
+     * @throws PrestaShopException
+     */
+    public function getPaymentModule(): PaymentModule
+    {
+        $moduleName = Tools::getValue('payment_module_name');
+        if ($moduleName && Validate::isModuleName($moduleName)) {
+            $paymentModule = Module::getInstanceByName($moduleName);
+            if ($paymentModule instanceof PaymentModule) {
+                return $paymentModule;
+            }
+        }
+        return new BoOrder();
     }
 }

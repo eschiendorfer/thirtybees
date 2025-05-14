@@ -36,13 +36,6 @@
  */
 class AdminRequestSqlControllerCore extends AdminController
 {
-    /**
-     * @var array : List of encoding type for a file
-     */
-    public static $encoding_file = [
-        ['value' => 1, 'name' => 'utf-8'],
-        ['value' => 2, 'name' => 'iso-8859-1'],
-    ];
 
     /**
      * AdminRequestSqlControllerCore constructor.
@@ -62,23 +55,6 @@ class AdminRequestSqlControllerCore extends AdminController
             'id_request_sql' => ['title' => $this->l('ID'), 'class' => 'fixed-width-xs'],
             'name'           => ['title' => $this->l('SQL query Name')],
             'sql'            => ['title' => $this->l('SQL query')],
-        ];
-
-        $this->fields_options = [
-            'general' => [
-                'title'  => $this->l('Settings'),
-                'fields' => [
-                    'PS_ENCODING_FILE_MANAGER_SQL' => [
-                        'title'      => $this->l('Select your default file encoding'),
-                        'cast'       => 'intval',
-                        'type'       => 'select',
-                        'identifier' => 'value',
-                        'list'       => static::$encoding_file,
-                        'visibility' => Shop::CONTEXT_ALL,
-                    ],
-                ],
-                'submit' => ['title' => $this->l('Save')],
-            ],
         ];
 
         $this->bulk_actions = [
@@ -300,20 +276,6 @@ class AdminRequestSqlControllerCore extends AdminController
     }
 
     /**
-     * Initialize processing
-     *
-     * @return void
-     */
-    public function initProcess()
-    {
-        parent::initProcess();
-        if (Tools::getValue('export'.$this->table)) {
-            $this->display = 'export';
-            $this->action = 'export';
-        }
-    }
-
-    /**
      * Initialize content
      *
      * @return void
@@ -339,8 +301,6 @@ class AdminRequestSqlControllerCore extends AdminController
                 $this->loadObject(true);
             }
             $this->content .= $this->renderView();
-        } elseif ($this->display == 'export') {
-            $this->generateExport();
         } elseif (!$this->ajax) {
             $this->content .= $this->renderList();
             $this->content .= $this->renderOptions();
@@ -491,56 +451,67 @@ class AdminRequestSqlControllerCore extends AdminController
     /**
      * Generating a export file
      *
+     * @param string $textDelimiter
      * @return void
      *
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public function generateExport()
+    public function processExport($textDelimiter = '"')
     {
-        $id = Tools::getValue($this->identifier);
+        $id = Tools::getIntValue($this->identifier);
+        $sql = RequestSql::getRequestSqlById($id);
+        if (! $sql) {
+            $this->errors[] =Tools::displayError("SQL with not found");
+            $this->redirect_after = Context::getContext()->link->getAdminLink('AdminRequestSql');
+            return;
+        }
+
+        // export settings
         $exportDir = _PS_ADMIN_DIR_.'/export/';
-        if (!Validate::isFileName($id)) {
-            throw new PrestaShopException(sprintf(Tools::displayError("Invalid filename [%s]"), Tools::safeOutput($id)));
-        }
         $file = 'request_sql_'.$id.'.csv';
-        if ($csv = fopen($exportDir.$file, 'w')) {
-            $sql = RequestSql::getRequestSqlById($id);
+        $separator = Configuration::get('TB_EXPORT_FIELD_DELIMITER') ? Configuration::get('TB_EXPORT_FIELD_DELIMITER') : ',';
+        $enclosure = '"';
+        $escape = "";
 
-            if ($sql) {
-                $results = Db::readOnly()->getArray($sql[0]['sql']);
-                foreach (array_keys($results[0]) as $key) {
-                    $tabKey[] = $key;
-                    fputs($csv, $key.';');
-                }
-                foreach ($results as $result) {
-                    fputs($csv, "\n");
-                    foreach ($tabKey as $name) {
-                        fputs($csv, '"'.strip_tags($result[$name]).'";');
-                    }
-                }
-                if (file_exists($exportDir.$file)) {
-                    $filesize = filesize($exportDir.$file);
-                    $uploadMaxFilesize = Tools::convertBytes(ini_get('upload_max_filesize'));
-                    if ($filesize < $uploadMaxFilesize) {
-                        if (Configuration::get('PS_ENCODING_FILE_MANAGER_SQL')) {
-                            $charset = Configuration::get('PS_ENCODING_FILE_MANAGER_SQL');
-                        } else {
-                            $charset = static::$encoding_file[0]['name'];
-                        }
-
-                        header('Content-Type: text/csv; charset='.$charset);
-                        header('Cache-Control: no-store, no-cache');
-                        header('Content-Disposition: attachment; filename="'.$file.'"');
-                        header('Content-Length: '.$filesize);
-                        readfile($exportDir.$file);
-                        exit;
-                    } else {
-                        $this->errors[] = Tools::DisplayError('The file is too large and can not be downloaded. Please use the LIMIT clause in this query.');
-                    }
-                }
-            }
+        $conn = Db::readOnly();
+        try {
+            $results = $conn->getArray($sql);
+        } catch (PrestaShopDatabaseException $e) {
+            $this->errors[] = $e->getMessage();
+            $this->redirect_after = Context::getContext()->link->getAdminLink('AdminRequestSql');
+            return;
         }
+
+        if (! $results) {
+            $this->errors[] =Tools::displayError('This SQL query has no result.');
+            $this->redirect_after = Context::getContext()->link->getAdminLink('AdminRequestSql');
+            return;
+        }
+
+        $filepath = $exportDir . $file;
+        $csv = fopen($filepath, 'w');
+        if (! $csv) {
+            $this->errors[] = sprintf(Tools::displayError('Failed to create export file: %s'), $filepath);
+            $this->redirect_after = Context::getContext()->link->getAdminLink('AdminRequestSql');
+            return;
+        }
+
+        // export csv
+        $keys = array_keys($results[0]);
+        fputcsv($csv, $keys, $separator, $enclosure, $escape);
+        foreach ($results as $result) {
+            fputcsv($csv, $result, $separator, $enclosure, $escape);
+        }
+        fclose($csv);
+        $filesize = filesize($filepath);
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Cache-Control: no-store, no-cache');
+        header('Content-Disposition: attachment; filename="'.$file.'"');
+        header('Content-Length: '.$filesize);
+        readfile($filepath);
+        exit;
     }
 
     /**
@@ -562,10 +533,11 @@ class AdminRequestSqlControllerCore extends AdminController
             '
 		<strong>'.$this->l('How do I create a new SQL query?').'</strong><br />
 		<ul>
-			<li>'.$this->l('Click "Add New".').'</li>
+			<li>'.$this->l('Click "Add new SQL query".').'</li>
 			<li>'.$this->l('Fill in the fields and click "Save".').'</li>
-			<li>'.$this->l('You can then view the query results by clicking on the Edit action in the dropdown menu: ').' <i class="icon-pencil"></i></li>
-			<li>'.$this->l('You can also export the query results as a CSV file by clicking on the Export button: ').' <i class="icon-cloud-upload"></i></li>
+			<li>'.$this->l('You can then view the query results by clicking on the query in the list or the View action in the dropdown menu: ').' <i class="icon-search-plus"></i></li>
+			<li>'.$this->l('You can edit the query by clicking on the Edit action in the dropdown menu: ').' <i class="icon-pencil"></i></li>
+            <li>'.$this->l('You can also export the query results as a CSV file by clicking on the Export button: ').' <i class="icon-cloud-upload"></i></li>
 		</ul>'
         );
 
