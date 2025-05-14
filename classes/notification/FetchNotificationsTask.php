@@ -22,6 +22,7 @@ namespace Thirtybees\Core\Notification;
 use Configuration;
 use Context;
 use Db;
+use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Module;
 use PrestaShopException;
@@ -103,16 +104,15 @@ class FetchNotificationsTaskCore implements WorkQueueTaskCallable, Initializatio
                 $supporter = $installationInfo['supporter'];
                 Configuration::updateGlobalValue(Configuration::SUPPORTER_TYPE, $supporter['type']);
                 Configuration::updateGlobalValue(Configuration::SUPPORTER_TYPE_NAME, $supporter['name']);
-                Module::processPremiumModules($supporter['type']);
             } else {
                 Configuration::deleteByName(Configuration::SUPPORTER_TYPE);
                 Configuration::deleteByName(Configuration::SUPPORTER_TYPE_NAME);
-                Module::processPremiumModules(null);
             }
             Configuration::updateGlobalValue(Configuration::CONNECTED, $installationInfo['connected'] ? 1 : 0);
             if ($installationInfo['sid'] !== Configuration::getServerTrackingId()) {
                 Configuration::updateGlobalValue(Configuration::TRACKING_ID, $installationInfo['sid']);
             }
+            Module::processPremiumModules();
 
         }
         return "Retrieved $cnt notifications";
@@ -125,7 +125,7 @@ class FetchNotificationsTaskCore implements WorkQueueTaskCallable, Initializatio
      */
     protected function fetch($lastUuid)
     {
-        $guzzle = new \GuzzleHttp\Client([
+        $guzzle = new Client([
             'base_uri'    => Configuration::getApiServer(),
             'timeout'     => 15,
             'verify'      => Configuration::getSslTrustStore()

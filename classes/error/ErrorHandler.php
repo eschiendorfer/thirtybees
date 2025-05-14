@@ -70,7 +70,7 @@ class ErrorHandlerCore
         $this->errorResponse = $errorResponse;
 
         @ini_set('display_errors', 'off');
-        @error_reporting(E_ALL | E_STRICT);
+        @error_reporting(E_ALL);
 
         // Set uncaught exception handler
         set_exception_handler([$this, 'uncaughtExceptionHandler']);
@@ -80,6 +80,23 @@ class ErrorHandlerCore
 
         // register shutdown handler to catch fatal errors
         register_shutdown_function([$this, 'shutdown']);
+    }
+
+    /**
+     * @param BootstrapErrorHandler $bootstrapErrorHandler
+     *
+     * @return void
+     */
+    public function replay(BootstrapErrorHandler $bootstrapErrorHandler)
+    {
+        foreach ($bootstrapErrorHandler->getCollectedErrors() as $error) {
+            $this->errorHandler(
+                $error['errno'],
+                $error['errstr'],
+                $error['errfile'],
+                $error['errline'],
+            );
+        }
     }
 
     /**
@@ -198,7 +215,7 @@ class ErrorHandlerCore
         $realLine = 0;
         $errno = (int)$errno;
 
-        if (SmartyCustom::isCompiledTemplate($file)) {
+        if (class_exists('SmartyCustom') && SmartyCustom::isCompiledTemplate($file)) {
             $realFile = ErrorUtils::getRelativeFile($errfile);
             $realLine = $errline;
             $file = SmartyCustom::getCurrentTemplate();
@@ -398,7 +415,8 @@ class ErrorHandlerCore
      *
      * @return boolean
      */
-    public static function displayErrorEnabled() {
+    public static function displayErrorEnabled()
+    {
         $value = @ini_get('display_errors');
         switch (strtolower($value)) {
             case 'on':

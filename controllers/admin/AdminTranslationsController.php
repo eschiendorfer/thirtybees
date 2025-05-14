@@ -29,6 +29,8 @@
  *  PrestaShop is an internationally registered trademark & property of PrestaShop SA
  */
 
+use GuzzleHttp\Client;
+
 /**
  * Class AdminTranslationsControllerCore
  */
@@ -169,7 +171,7 @@ class AdminTranslationsControllerCore extends AdminController
             'theme'               => $this->theme_selected,
             'url_submit'          => static::$currentIndex.'&submitTranslations'.ucfirst($this->type_selected).'=1&token='.$this->token,
             'toggle_button'       => $this->displayToggleButton(),
-            'textarea_sized'      => AdminTranslationsControllerCore::TEXTAREA_SIZED,
+            'textarea_sized'      => static::TEXTAREA_SIZED,
         ];
 
         // Call method initForm for a type
@@ -218,7 +220,7 @@ class AdminTranslationsControllerCore extends AdminController
         $fileName = "{$this->link_lang_pack}/{$version}/index.json";
 
         $langPacks = false;
-        $guzzle = new \GuzzleHttp\Client([
+        $guzzle = new Client([
             'verify'      => Configuration::getSslTrustStore(),
             'timeout'     => 20,
         ]);
@@ -261,12 +263,11 @@ class AdminTranslationsControllerCore extends AdminController
     }
 
     /**
-     * @return false|string
+     * @return HelperKpi[]
      *
      * @throws PrestaShopException
-     * @throws SmartyException
      */
-    public function renderKpis()
+    public function getKpis(): array
     {
         $time = time();
         $kpis = [];
@@ -284,7 +285,7 @@ class AdminTranslationsControllerCore extends AdminController
         }
         $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=enabled_languages';
         $helper->refresh = (bool) (ConfigurationKPI::get('ENABLED_LANGUAGES_EXPIRE') < $time);
-        $kpis[] = $helper->generate();
+        $kpis[] = $helper;
 
         $helper = new HelperKpi();
         $helper->id = 'box-country';
@@ -297,7 +298,7 @@ class AdminTranslationsControllerCore extends AdminController
         }
         $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=main_country';
         $helper->refresh = (bool) (ConfigurationKPI::get('MAIN_COUNTRY_EXPIRE', $this->context->language->id) < $time);
-        $kpis[] = $helper->generate();
+        $kpis[] = $helper;
 
         $helper = new HelperKpi();
         $helper->id = 'box-translations';
@@ -309,12 +310,9 @@ class AdminTranslationsControllerCore extends AdminController
         }
         $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=frontoffice_translations';
         $helper->refresh = (bool) (ConfigurationKPI::get('FRONTOFFICE_TRANSLATIONS_EXPIRE') < $time);
-        $kpis[] = $helper->generate();
+        $kpis[] = $helper;
 
-        $helper = new HelperKpiRow();
-        $helper->kpis = $kpis;
-
-        return $helper->generate();
+        return $kpis;
     }
 
     /**
@@ -667,7 +665,7 @@ class AdminTranslationsControllerCore extends AdminController
                 $arrReplace[$value] = str_replace($themeFrom, $themeTo, $value);
             }
             $content = str_replace(array_keys($arrReplace), array_values($arrReplace), $content);
-            $boolFlag = (file_put_contents($path, $content) === false) ? false : true;
+            $boolFlag = !((file_put_contents($path, $content) === false));
         }
 
         return $boolFlag;
@@ -872,7 +870,7 @@ class AdminTranslationsControllerCore extends AdminController
                                 }
                             }
                         }
-                        $this->redirect(false, (isset($conf) ? $conf : '15'));
+                        $this->redirect(false, ($conf ?? '15'));
                     }
                 }
                 $this->errors[] = Tools::displayError('The archive cannot be extracted.');
@@ -1189,7 +1187,7 @@ class AdminTranslationsControllerCore extends AdminController
     {
         $arrImportLang = explode('|', Tools::getValue('params_import_language')); /* 0 = Language ISO code, 1 = PS version */
         if (Validate::isLangIsoCode($arrImportLang[0])) {
-            $guzzle = new \GuzzleHttp\Client([
+            $guzzle = new Client([
                 'base_uri' => $this->link_lang_pack,
                 'timeout'  => 20,
                 'verify'   => Configuration::getSslTrustStore(),
@@ -1225,7 +1223,7 @@ class AdminTranslationsControllerCore extends AdminController
                         if (!unlink($file)) {
                             $this->errors[] = sprintf(Tools::displayError('Cannot delete the archive %s.'), $file);
                         }
-                        $this->redirect(false, (isset($conf) ? $conf : '15'));
+                        $this->redirect(false, ($conf ?? '15'));
                     }
                 } else {
                     $this->errors[] = sprintf(Tools::displayError('Cannot decompress the translation file for the following language: %s'), $arrImportLang[0]);
@@ -1413,17 +1411,19 @@ class AdminTranslationsControllerCore extends AdminController
                         $content = preg_replace('/<title>.*<\/title>/', '<title>'.$title.'</title>', $content);
                     }
 
-                    if (Validate::isCleanHTML($content)) {
-                        $path = $arrMailPath[$groupName];
-                        if ($moduleName) {
-                            $path = str_replace('{module}', $moduleName, $path);
+                    if ($content) {
+                        if (Validate::isCleanHTML($content)) {
+                            $path = $arrMailPath[$groupName];
+                            if ($moduleName) {
+                                $path = str_replace('{module}', $moduleName, $path);
+                            }
+                            if (!file_exists($path) && !mkdir($path, 0777, true)) {
+                                throw new PrestaShopException(sprintf(Tools::displayError('Directory "%s" cannot be created'), dirname($path)));
+                            }
+                            file_put_contents($path . $mailName . '.' . $typeContent, $content);
+                        } else {
+                            throw new PrestaShopException(Tools::displayError('Your HTML email templates cannot contain JavaScript code.'));
                         }
-                        if (!file_exists($path) && !mkdir($path, 0777, true)) {
-                            throw new PrestaShopException(sprintf(Tools::displayError('Directory "%s" cannot be created'), dirname($path)));
-                        }
-                        file_put_contents($path.$mailName.'.'.$typeContent, $content);
-                    } else {
-                        throw new PrestaShopException(Tools::displayError('Your HTML email templates cannot contain JavaScript code.'));
                     }
                 }
             }
@@ -2961,7 +2961,7 @@ class AdminTranslationsControllerCore extends AdminController
                                 continue;
                             }
                             $topicAlreadyDisplayed[] = $subjectKey;
-                            $valueSubjectMail = isset($mails['subject'][$subjectMail]) ? $mails['subject'][$subjectMail] : '';
+                            $valueSubjectMail = $mails['subject'][$subjectMail] ?? '';
                             $strReturn .= '
                             <div class="label-subject row">
                                 <label class="control-label col-lg-3">'. $this->l('Email subject');
@@ -3054,8 +3054,8 @@ class AdminTranslationsControllerCore extends AdminController
                         <div class="form-group">
                             <label class="control-label col-lg-3">'.$this->l('HTML "title" tag').'</label>
                             <div class="col-lg-9">
-                                <input class="form-control" type="text" name="title_'.$groupName.'_'.$mailName.'" value="'.(isset($title[$lang]) ? $title[$lang] : '').'" />
-                                <p class="help-block">'.(isset($title['en']) ? $title['en'] : '').'</p>
+                                <input class="form-control" type="text" name="title_'.$groupName.'_'.$mailName.'" value="'.($title[$lang] ?? '').'" />
+                                <p class="help-block">'.($title['en'] ?? '').'</p>
                             </div>
                         </div>
                         <div class="thumbnail email-html-frame" data-email-src="'.$url.'"></div>
@@ -3168,7 +3168,7 @@ class AdminTranslationsControllerCore extends AdminController
                 [
                     'count'                => $this->total_expression,
                     'mod_security_warning' => Tools::apacheModExists('mod_security'),
-                    'textarea_sized'       => AdminTranslationsControllerCore::TEXTAREA_SIZED,
+                    'textarea_sized'       => static::TEXTAREA_SIZED,
                     'cancel_url'           => $this->context->link->getAdminLink('AdminTranslations'),
                     'theme_translations'   => $this->modules_translations[$this->theme_selected] ?? [],
                     'missing_translations' => $this->missing_translations,

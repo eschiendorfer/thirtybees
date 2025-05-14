@@ -112,6 +112,9 @@
           {l s='Order'}
           <span class="badge">{$order->reference}</span>
           <span class="badge">{l s="#"}{$order->id}</span>
+          {if $shop_feature_active|default:false}
+            <span class="badge">{$shop_name}</span>
+          {/if}
           <div class="panel-heading-action">
             <div class="btn-group">
               <a class="btn btn-default{if !$previousOrder} disabled{/if}" href="{$link->getAdminLink('AdminOrders')|escape:'html':'UTF-8'}&amp;vieworder&amp;id_order={$previousOrder|intval}">
@@ -1166,7 +1169,7 @@
           </div>
           <div style="display: none;" class="standard_refund_fields form-horizontal panel">
             <div class="form-group">
-              {if ($order->hasBeenDelivered() && Configuration::get('PS_ORDER_RETURN'))}
+              {if Configuration::get('PS_ORDER_RETURN')}
                 <p class="checkbox">
                   <label for="reinjectQuantities">
                     <input type="checkbox" id="reinjectQuantities" name="reinjectQuantities"/>

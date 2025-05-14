@@ -499,10 +499,17 @@ class DispatcherCore
         }
 
         // remove language from uri
-        if ($this->use_routes && Language::isMultiLanguageActivated()) {
-            if (preg_match('#^/([a-z]{2})(?:/.*)?$#', $requestUri, $m)) {
-                $_GET['isolang'] = $m[1];
-                $requestUri = substr($requestUri, 3);
+        if ($this->use_routes) {
+
+            $urlLanguage = $this->getLanguageFromUri($requestUri);
+            if ($urlLanguage) {
+                $requestUri = substr($requestUri, strlen($urlLanguage->getUrlCode()) + 1);
+                $_GET['isolang'] = $urlLanguage->iso_code;
+            } elseif (! Tools::getValue('isolang')) {
+                if (! $this->isPhpScriptUrl($requestUri)) {
+                    // no iso code in url, we will fallback to default language
+                    $_GET['isolang'] = $this->getDefaultLanguageIsoCode();
+                }
             }
         }
 
@@ -597,7 +604,7 @@ class DispatcherCore
                     $route['controller'],
                     $lang['id_lang'],
                     $route['keywords'],
-                    isset($route['params']) ? $route['params'] : [],
+                    $route['params'] ?? [],
                     $idShop
                 );
             }
@@ -773,15 +780,19 @@ class DispatcherCore
                     $module = Module::getInstanceByName($moduleName);
                     if (Validate::isLoadedObject($module) && $module->active) {
                         $controllers = Dispatcher::getControllers(_PS_MODULE_DIR_ . $moduleName . '/controllers/front/');
-                        if (isset($controllers[strtolower($this->controller)])) {
-                            include_once(_PS_MODULE_DIR_ . $moduleName . '/controllers/front/' . $this->controller . '.php');
-                            $controllerClass = $moduleName . $this->controller . 'ModuleFrontController';
+                        if ($controllerFileName = $controllers[strtolower($this->controller)] ?? null) {
+                            if (file_exists(_PS_MODULE_DIR_ . $moduleName . '/controllers/front/' . $controllerFileName . '.php')) {
+                                include_once(_PS_MODULE_DIR_ . $moduleName . '/controllers/front/' . $controllerFileName . '.php');
+                                $controllerClass = $moduleName . $this->controller . 'ModuleFrontController';
+                            }
                         }
 
                         $ajaxControllers = Dispatcher::getControllers(_PS_MODULE_DIR_ . $moduleName . '/controllers/ajax/');
-                        if (isset($ajaxControllers[strtolower($this->controller)])) {
-                            include_once(_PS_MODULE_DIR_ . $moduleName . '/controllers/ajax/' . $this->controller . '.php');
-                            $controllerClass = $moduleName . $this->controller . 'ModuleAjaxController';
+                        if ($ajaxControllerFileName = $ajaxControllers[strtolower($this->controller)] ?? null) {
+                            if (file_exists(_PS_MODULE_DIR_ . $moduleName . '/controllers/ajax/' . $ajaxControllerFileName . '.php')) {
+                                include_once(_PS_MODULE_DIR_ . $moduleName . '/controllers/ajax/' . $ajaxControllerFileName . '.php');
+                                $controllerClass = $moduleName . $this->controller . 'ModuleAjaxController';
+                            }
                         }
                     }
                 }
@@ -1131,9 +1142,7 @@ class DispatcherCore
             $idShop = (int) Context::getContext()->shop->id;
         }
 
-        return isset($this->routes[$idShop][$idLang][$routeId])
-            ? $this->routes[$idShop][$idLang][$routeId]
-            : null;
+        return $this->routes[$idShop][$idLang][$routeId] ?? null;
     }
 
     /**
@@ -1194,7 +1203,7 @@ class DispatcherCore
             }
         }
 
-        return (count($errors)) ? false : true;
+        return !count($errors);
     }
 
     /**
@@ -1240,7 +1249,7 @@ class DispatcherCore
         }
         $route = $this->routes[$idShop][$idLang][$routeId];
         // Check required fields
-        $queryParams = isset($route['params']) ? $route['params'] : [];
+        $queryParams = $route['params'] ?? [];
         // Skip if we are not using routes
         // Build an url which match a route
         if ($this->use_routes || $forceRoutes) {
@@ -1250,7 +1259,7 @@ class DispatcherCore
                     continue;
                 }
 
-                $alias = isset($aliases[$key]) ? $aliases[$key] : null;
+                $alias = $aliases[$key] ?? null;
                 if ($alias && array_key_exists($alias, $params)) {
                     $params[$key] = $params[$alias];
                     unset($params[$alias]);
@@ -1743,12 +1752,15 @@ class DispatcherCore
     /**
      * Returns parameters names required by route with id $routeId
      *
+     * @param string $routeId
+     * @param int|null $langId
+     *
      * @return array
      */
-    public function getRouteRequiredParams($routeId)
+    public function getRouteRequiredParams(string $routeId, int $langId)
     {
         $params = [];
-        $route = $this->getRoute($routeId);
+        $route = $this->getRoute($routeId, $langId);
         if ($route) {
             $aliases = array_flip($route['aliases']);
             foreach ($route['keywords'] as $keyword => $info) {
@@ -1779,5 +1791,74 @@ class DispatcherCore
             return rawurldecode((string)$_SERVER['HTTP_X_REWRITE_URL']);
         }
         return '';
+    }
+
+    /**
+     * @param string $requestUri
+     *
+     * @return Language|null
+     *
+     * @throws PrestaShopException
+     */
+    protected function getLanguageFromUri(string $requestUri): ?Language
+    {
+        $languages = Language::getLanguages(true, Context::getContext()->shop->id);
+        if (! $languages) {
+            return null;
+        }
+
+        $codes = [];
+        foreach ($languages as $data) {
+            $lang = new Language();
+            $lang->hydrate($data);
+            $urlCode = $lang->getUrlCode();
+            $codes[$urlCode] = $lang;
+        }
+
+        $regexpCodes = implode('|', array_map('preg_quote', array_keys($codes)));
+        if (preg_match('#^/('.$regexpCodes.')(?:/.*)?$#', $requestUri, $m)) {
+            $urlCode = strtolower((string)$m[1]);
+            return $codes[$urlCode];
+        }
+        return null;
+    }
+
+    /**
+     * @return string
+     *
+     * @throws PrestaShopException
+     */
+    protected function getDefaultLanguageIsoCode(): string
+    {
+        return (string)Language::getIsoById((int)Configuration::get('PS_LANG_DEFAULT'));
+    }
+
+    /**
+     * Returns true, if $requestUri points to PHP script file
+     *
+     * This means that php script included thirty bees core and triggered dispatcher
+     *
+     * @param string $requestUri
+     * @return bool
+     */
+    protected function isPhpScriptUrl(string $requestUri): bool
+    {
+        $path = (string)parse_url($requestUri, PHP_URL_PATH);
+        $path = '/' . ltrim($path, '/');
+
+        if (str_ends_with($path, '/')) {
+            $path .= 'index.php';
+        }
+
+        // remove extra path that after actual php script file, for example /index.php/extra/path => /index.php
+        $path = preg_replace("#\.php\/.*$#", ".php", $path);
+
+        // special handling for root index.php, we will consider this to be
+        // php script file only for non GET requests
+        if ($path === '/index.php') {
+            return Tools::getRequestMethod() !== 'GET';
+        }
+
+        return file_exists(_PS_ROOT_DIR_ . $path);
     }
 }

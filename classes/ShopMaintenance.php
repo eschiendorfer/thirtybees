@@ -1,6 +1,6 @@
 <?php
 /**
- * Copyright (C) 2017-2024 thirty bees
+ * Copyright (C) 2017-2025 thirty bees
  *
  * NOTICE OF LICENSE
  *
@@ -13,7 +13,7 @@
  * to license@thirtybees.com so we can send you a copy immediately.
  *
  * @author    thirty bees <contact@thirtybees.com>
- * @copyright 2017-2024 thirty bees
+ * @copyright 2017-2025 thirty bees
  * @license   Open Software License (OSL 3.0)
  */
 
@@ -26,6 +26,11 @@
  */
 class ShopMaintenanceCore
 {
+    /**
+     * Database lock name.
+     */
+    const BACKUP_LOCK_NAME = 'TB_AUTO_BACKUP_LOCK';
+
     /**
      * Run tasks as needed. Should take care of running tasks not more often
      * than needed and that one run takes not longer than a few seconds.
@@ -46,6 +51,8 @@ class ShopMaintenanceCore
             static::cleanAdminControllerMessages();
             static::cleanOldLogFiles();
             static::cleanOldThemeCacheFiles();
+            static::autoDbBackup();
+            static::deleteOldDbBackupFiles();
 
             Configuration::updateGlobalValue('SHOP_MAINTENANCE_LAST_RUN', $now);
         }
@@ -167,6 +174,100 @@ class ShopMaintenanceCore
                         if ($now - filemtime($filePath) > $themecachedeleteperiod) {
                             unlink($filePath);
                         }
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * Automatically create a database backup if the automatic backup feature is enabled.
+     *
+     * @return void
+     * @throws PrestaShopException
+     */
+    public static function autoDbBackup()
+    {
+        if (!Configuration::get('TB_DB_AUTO_BACKUP')) {
+            return;
+        }
+
+        if (!self::lock()) {
+            throw new PrestaShopException('Automatic backup skipped - lock not acquired');
+        }
+
+        try {
+            $backup = new PrestaShopBackup();
+            if (!$backup->add()) {
+                throw new PrestaShopException('Automatic backup failed: backup->add() returned false');
+            }
+        } finally {
+            self::releaseLock();
+        }
+    }
+
+    /**
+     * Attempts to acquire the MySQL lock defined by static::LOCK_NAME.
+     *
+     * @return bool True if the lock was acquired, false otherwise.
+     */
+    protected static function lock()
+    {
+        try {
+            $connection = Db::getInstance();
+            return (bool)(int)$connection->getValue("SELECT GET_LOCK('" . static::BACKUP_LOCK_NAME . "', 3)");
+        } catch (Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Releases the MySQL lock identified by static::LOCK_NAME.
+     *
+     * @return void
+     */
+    protected static function releaseLock()
+    {
+        try {
+            $connection = Db::getInstance();
+            $connection->execute("SELECT RELEASE_LOCK('" . static::BACKUP_LOCK_NAME . "')");
+        } catch (Throwable $ignored) {
+        }
+    }
+    
+    /**
+     * Delete backup files older than the configured retention period.
+     *
+     * @return void
+     * @throws PrestaShopException
+     */
+    public static function deleteOldDbBackupFiles()
+    {
+        $retentionDays = (int) Configuration::get('TB_DB_BACKUP_RETENTION_PERIOD');
+        if ($retentionDays <= 0) {
+            return;
+        }
+
+        $backupDir = realpath(_PS_ADMIN_DIR_.PrestaShopBackup::$backupDir);
+        if ($backupDir === false) {
+            PrestaShopLogger::addLog('Backup directory not found.', 3, null, 'ShopMaintenance', null, true);
+            return;
+        }
+        $now = time();
+        $files = glob($backupDir . DIRECTORY_SEPARATOR . '*');
+
+        // Only process files that match the expected backup filename pattern:
+        // e.g. 1618821234-abc123.sql, 1618821234-abc123.sql.gz or 1618821234-abc123.sql.bz2
+        $pattern = '/^\d+\-[a-f0-9]+\.sql(\.gz|\.bz2)?$/i';
+
+        foreach ($files as $file) {
+            if (is_file($file) && preg_match($pattern, basename($file))) {
+                $ageDays = ($now - filemtime($file)) / 86400;
+                if ($ageDays > $retentionDays) {
+                    if (unlink($file)) {
+                        PrestaShopLogger::addLog('Deleted old backup file: ' . basename($file), 1, null, 'ShopMaintenance', null, true);
+                    } else {
+                        PrestaShopLogger::addLog('Error deleting backup file: ' . basename($file), 3, null, 'ShopMaintenance', null, true);
                     }
                 }
             }

@@ -586,7 +586,7 @@ class AdminShopControllerCore extends AdminController
         $this->fields_value = [
             'id_shop_group'    => $idShopGroup,
             'id_category'      => $idCategory,
-            'id_theme_checked' => (int)(isset($obj->id_theme) ? $obj->id_theme : $idTheme),
+            'id_theme_checked' => (int)($obj->id_theme ?? $idTheme),
         ];
 
         $idsCategory = [];
@@ -597,7 +597,7 @@ class AdminShopControllerCore extends AdminController
 
         $this->tpl_form_vars = [
             'disabled'     => $disabled,
-            'checked'      => (Tools::getValue('addshop') !== false) ? true : false,
+            'checked'      => Tools::getValue('addshop') !== false,
             'defaultShop'  => (int) Configuration::get('PS_SHOP_DEFAULT'),
             'ids_category' => $idsCategory,
         ];

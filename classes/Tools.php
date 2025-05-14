@@ -29,8 +29,9 @@
  *  PrestaShop is an internationally registered trademark & property of PrestaShop SA
  */
 
-use Jaybizzle\CrawlerDetect\CrawlerDetect;
+use GuzzleHttp\Client;
 use PHPSQLParser\PHPSQLParser;
+use Thirtybees\Core\DependencyInjection\ServiceLocator;
 use Thirtybees\Core\Error\ErrorUtils;
 
 /**
@@ -146,7 +147,8 @@ class ToolsCore
         if ($length > 0) {
             try {
                 return random_bytes($length);
-            } catch (Exception $e) {}
+            } catch (Exception $e) {
+            }
         }
 
         return '';
@@ -162,7 +164,7 @@ class ToolsCore
      *
      * @throws PrestaShopException
      */
-    public static function redirect($url, $baseUri = __PS_BASE_URI__, Link $link = null, $headers = null)
+    public static function redirect($url, $baseUri = __PS_BASE_URI__, ?Link $link = null, $headers = null)
     {
         $url = (string)$url;
 
@@ -427,7 +429,7 @@ class ToolsCore
             return false;
         }
 
-        return isset($_POST[$key]) ? true : (isset($_GET[$key]) ? true : false);
+        return isset($_POST[$key]) || ((isset($_GET[$key]) ? true : false));
     }
 
     /**
@@ -439,7 +441,7 @@ class ToolsCore
      *
      * @throws PrestaShopException
      */
-    public static function setCookieLanguage(Cookie $cookie = null)
+    public static function setCookieLanguage(?Cookie $cookie = null)
     {
         if (!$cookie) {
             $cookie = Context::getContext()->cookie;
@@ -505,7 +507,7 @@ class ToolsCore
             return false;
         }
 
-        return (isset($_POST[$key]) ? $_POST[$key] : (isset($_GET[$key]) ? $_GET[$key] : $defaultValue));
+        return ($_POST[$key] ?? ($_GET[$key] ?? $defaultValue));
     }
 
     /**
@@ -606,7 +608,7 @@ class ToolsCore
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public static function switchLanguage(Context $context = null)
+    public static function switchLanguage(?Context $context = null)
     {
         if (!$context) {
             $context = Context::getContext();
@@ -794,7 +796,7 @@ class ToolsCore
      *              For them, the auto option is now available.
      * @throws PrestaShopException
      */
-    public static function displayPrice($price, $tbCurrency = null, $noUtf8 = false, Context $context = null, $auto = null)
+    public static function displayPrice($price, $tbCurrency = null, $noUtf8 = false, ?Context $context = null, $auto = null)
     {
         if (!is_numeric($price)) {
             return $price;
@@ -1033,7 +1035,7 @@ class ToolsCore
      *
      * @throws PrestaShopException
      */
-    public static function convertPrice($price, $currency = null, $toCurrency = true, Context $context = null)
+    public static function convertPrice($price, $currency = null, $toCurrency = true, ?Context $context = null)
     {
         static $defaultCurrency = null;
 
@@ -1089,7 +1091,7 @@ class ToolsCore
      *
      * @throws PrestaShopException
      */
-    public static function convertPriceFull($amount, Currency $currencyFrom = null, Currency $currencyTo = null, $round = true)
+    public static function convertPriceFull($amount, ?Currency $currencyFrom = null, ?Currency $currencyTo = null, $round = true)
     {
         if ($round !== true) {
             static::displayParameterAsDeprecated('round');
@@ -1136,7 +1138,7 @@ class ToolsCore
      */
     public static function dateFormat($params, $smarty)
     {
-        return Tools::displayDate($params['date'], null, (isset($params['full']) ? $params['full'] : false));
+        return Tools::displayDate($params['date'], null, ($params['full'] ?? false));
     }
 
     /**
@@ -1543,7 +1545,7 @@ class ToolsCore
      * @deprecated 1.0.0
      * @throws PrestaShopException
      */
-    public static function completeMetaTags($metaTags, $defaultValue, Context $context = null)
+    public static function completeMetaTags($metaTags, $defaultValue, ?Context $context = null)
     {
         Tools::displayAsDeprecated();
 
@@ -1582,7 +1584,7 @@ class ToolsCore
      *
      * @return string
      */
-    public static function getToken($page = true, Context $context = null)
+    public static function getToken($page = true, ?Context $context = null)
     {
         if (!$context) {
             $context = Context::getContext();
@@ -1625,7 +1627,7 @@ class ToolsCore
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public static function getAdminTokenLite($tab, Context $context = null)
+    public static function getAdminTokenLite($tab, ?Context $context = null)
     {
         if (!$context) {
             $context = Context::getContext();
@@ -1710,7 +1712,7 @@ class ToolsCore
      */
     public static function getHttpHost($http = false, $entities = false, $ignore_port = false)
     {
-        $host = (isset($_SERVER['HTTP_X_FORWARDED_HOST']) ? $_SERVER['HTTP_X_FORWARDED_HOST'] : $_SERVER['HTTP_HOST']);
+        $host = ($_SERVER['HTTP_X_FORWARDED_HOST'] ?? $_SERVER['HTTP_HOST']);
         if ($ignore_port && $pos = strpos($host, ':')) {
             $host = substr($host, 0, $pos);
         }
@@ -1748,7 +1750,7 @@ class ToolsCore
      * @return string
      * @throws PrestaShopException
      */
-    public static function getFullPath($idCategory, $end, $typeCat = 'products', Context $context = null)
+    public static function getFullPath($idCategory, $end, $typeCat = 'products', ?Context $context = null)
     {
         if (!$context) {
             $context = Context::getContext();
@@ -1788,7 +1790,7 @@ class ToolsCore
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public static function getPath($idCategory, $path = '', $linkOnTheItem = false, $categoryType = 'products', Context $context = null)
+    public static function getPath($idCategory, $path = '', $linkOnTheItem = false, $categoryType = 'products', ?Context $context = null)
     {
         if (!$context) {
             $context = Context::getContext();
@@ -1883,7 +1885,7 @@ class ToolsCore
      *
      * @return string
      */
-    public static function displayError($string = 'Fatal error', $htmlentities = true, Context $context = null)
+    public static function displayError($string = 'Fatal error', $htmlentities = true, ?Context $context = null)
     {
         global $_ERRORS;
 
@@ -2195,7 +2197,7 @@ class ToolsCore
             return false;
         }
 
-        return mb_strlen($str, $encoding);
+        return mb_strlen((string)$str, $encoding);
     }
 
     /**
@@ -2620,7 +2622,9 @@ class ToolsCore
             stream_context_set_option($streamContext, ['http' => $opts['http']]);
         }
 
-        if (!preg_match('/^https?:\/\//', $url)) {
+        if (preg_match('/^(file|php|zlib|ftp|data|glob|phar):\/\//', $url)) {
+            return file_get_contents($url, $useIncludePath, $streamContext);
+        } elseif (!preg_match('/^https?:\/\//', $url)) {
             if (file_exists($url)) {
                 return @file_get_contents($url, $useIncludePath, $streamContext);
             } else {
@@ -2667,7 +2671,7 @@ class ToolsCore
     {
         $cache_id = 'Tools::simplexml_load_file'.$url;
         if (!Cache::isStored($cache_id)) {
-            $guzzle = new \GuzzleHttp\Client([
+            $guzzle = new Client([
                 'verify' => Configuration::getSslTrustStore(),
                 'timeout' => 20,
             ]);
@@ -2688,18 +2692,26 @@ class ToolsCore
      * @param string $source
      * @param string $destination
      * @param resource|null $streamContext
+     * @param string $copyError
      * @return bool
      *
      * @throws PrestaShopException
      */
-    public static function copy($source, $destination, $streamContext = null)
+    public static function copy($source, $destination, $streamContext = null, &$copyError = null)
     {
         if ($streamContext) {
             Tools::displayParameterAsDeprecated('streamContext');
         }
 
         if ( ! preg_match('/^https?:\/\//', $source)) {
-            return @copy($source, $destination);
+            if (copy($source, $destination)) {
+                return true;
+            }
+            $error = error_get_last();
+            if (isset($error['message'])) {
+                $copyError = $error['message'];
+            }
+            return false;
         }
 
         $timeout = ini_get('max_execution_time');
@@ -2708,7 +2720,7 @@ class ToolsCore
         }
         $timeout -= 5; // Room for other processing.
 
-        $guzzle = new \GuzzleHttp\Client([
+        $guzzle = new Client([
             'verify'   => Configuration::getSslTrustStore(),
             'timeout'  => $timeout,
         ]);
@@ -2716,6 +2728,7 @@ class ToolsCore
         try {
             $guzzle->get($source, ['sink' => $destination]);
         } catch (Throwable $e) {
+            $copyError = $e->getMessage();
             return false;
         }
 
@@ -3480,7 +3493,7 @@ FileETag none
      *
      * @throws PrestaShopException
      */
-    public static function enableCache($level = 1, Context $context = null)
+    public static function enableCache($level = 1, ?Context $context = null)
     {
         if (!$context) {
             $context = Context::getContext();
@@ -3502,7 +3515,7 @@ FileETag none
     /**
      * @param Context|null $context
      */
-    public static function restoreCacheSettings(Context $context = null)
+    public static function restoreCacheSettings(?Context $context = null)
     {
         if (!$context) {
             $context = Context::getContext();
@@ -3726,10 +3739,11 @@ FileETag none
      */
     public static function display404Error()
     {
+        Tools::displayAsDeprecated();
         header('HTTP/1.1 404 Not Found');
         header('Status: 404 Not Found');
-        include(dirname(__FILE__).'/../404.php');
-        die;
+        header('Content-Type: text/plain');
+        die('Not Found');
     }
 
     /**
@@ -5115,13 +5129,16 @@ FileETag none
      */
     public static function getDateFromDateFormat($format, $date, $resultFormat = 'Y-m-d H:i:s')
     {
-        $d = DateTime::createFromFormat($format, $date);
-        if ($d && $d->format($format) == $date) {
-            if ($resultFormat === 'Y-m-d H:i:s') {
-                $d->setTime(0, 0, 0);
-            }
+        $date = (string)$date;
+        if ($date) {
+            $d = DateTime::createFromFormat($format, $date);
+            if ($d && $d->format($format) == $date) {
+                if ($resultFormat === 'Y-m-d H:i:s') {
+                    $d->setTime(0, 0, 0);
+                }
 
-            return $d->format($resultFormat);
+                return $d->format($resultFormat);
+            }
         }
 
         return null;
@@ -5196,7 +5213,7 @@ FileETag none
 
                 // find out all separators
                 preg_match_all("/[^0-9]/", $s, $matches);
-                $separators = isset($matches[0]) ? $matches[0] : [];
+                $separators = $matches[0] ?? [];
                 $unique = array_count_values($separators);
 
                 // if there is only unique separator, it s considered thousand separator.
@@ -5373,7 +5390,7 @@ FileETag none
             $timestamp = date_create('@' . $timestamp);
             if ($timestamp) {
                 try {
-                    $timestamp->setTimezone(new DateTimezone(date_default_timezone_get()));
+                    $timestamp->setTimezone(new DateTimeZone(date_default_timezone_get()));
                 } catch (Exception $e) {
                     throw new PrestaShopException('Failed to resolve timezone', 0, $e);
                 }
@@ -5556,7 +5573,7 @@ FileETag none
         if ($cast) {
             // this allows us to override build-in casts ('stringval', 'intval')
             // or define new cast types without polluting global namespace 'priceval'
-            $method = 'cast' . ucFirst($cast);
+            $method = 'cast' . ucfirst($cast);
             if (method_exists(static::class, $method)) {
                 return static::$method($input);
             }
@@ -5603,13 +5620,39 @@ FileETag none
      */
     public static function isCrawler(): bool
     {
-        try {
-            $detect = new CrawlerDetect();
-            return $detect->isCrawler();
-        } catch (Throwable $e) {
-            return false;
+        static $crawler = null;
+        if (is_null($crawler)) {
+            $crawler = false;
+            try {
+                $responses = Hook::getResponses('actionDetectBot');
+                foreach ($responses as $response) {
+                    if ($response) {
+                        $crawler = true;
+                    }
+                }
+            } catch (Throwable $e) {
+                $errorHandler = ServiceLocator::getInstance()->getErrorHandler();
+                $errorHandler->logFatalError(ErrorUtils::describeException($e));
+            }
         }
+        return $crawler;
     }
+
+    /**
+     * @return string[]
+     * @throws PrestaShopException
+     */
+    public static function getMaintenanceIPAddresses(): array
+    {
+        $ips = explode(',', (string)Configuration::getGlobalValue(Configuration::MAINTENANCE_IP_ADDRESSES));
+        $ips = array_map('trim', $ips);
+        $ips = array_filter($ips);
+        $ips = array_filter($ips, [Validate::class, 'isIPAddress']);
+        sort($ips);
+        $ips = array_unique($ips);
+        return $ips;
+    }
+
 }
 
 /**

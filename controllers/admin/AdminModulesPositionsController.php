@@ -528,7 +528,7 @@ class AdminModulesPositionsControllerCore extends AdminController
                 'display_key'        => $this->display_key,
                 'hooks'              => $hooks,
                 'url_submit'         => static::$currentIndex.'&token='.$this->token,
-                'can_move'           => (Shop::isFeatureActive() && Shop::getContext() != Shop::CONTEXT_SHOP) ? false : true,
+                'can_move'           => !((Shop::isFeatureActive() && Shop::getContext() != Shop::CONTEXT_SHOP)),
             ]
         );
 
@@ -662,8 +662,8 @@ class AdminModulesPositionsControllerCore extends AdminController
             $hookableModulesList = [];
             $modules = Db::readOnly()->getArray(
                 (new DbQuery())
-                ->select('`id_module`, `name`')
-                ->from('module')
+                    ->select('`id_module`, `name`')
+                    ->from('module')
             );
             foreach ($modules as $module) {
                 if (!Validate::isModuleName($module['name'])) {

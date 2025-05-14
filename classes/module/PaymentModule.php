@@ -83,7 +83,7 @@ abstract class PaymentModuleCore extends Module
         $values = [];
         if (count($idModuleList) == 0) {
             // fetch all installed module ids
-            $modules = PaymentModuleCore::getInstalledPaymentModules();
+            $modules = static::getInstalledPaymentModules();
             foreach ($modules as $module) {
                 $idModuleList[] = $module['id_module'];
             }
@@ -386,7 +386,7 @@ abstract class PaymentModuleCore extends Module
         $currencySpecial = null,
         $dontTouchAmount = false,
         $secureKey = false,
-        Shop $shop = null
+        ?Shop $shop = null
     ) {
         $idCart = (int)$idCart;
 
@@ -478,7 +478,7 @@ abstract class PaymentModuleCore extends Module
                             }
                             Tools::redirect('index.php?controller=order&submitAddDiscount=1&discount_name='.urlencode($rule->code));
                         } else {
-                            $ruleName = isset($rule->name[(int) $this->context->cart->id_lang]) ? $rule->name[(int) $this->context->cart->id_lang] : $rule->code;
+                            $ruleName = $rule->name[(int)$this->context->cart->id_lang] ?? $rule->code;
                             $error = sprintf(Tools::displayError('CartRule ID %1s (%2s) used in this cart is not valid and has been withdrawn from cart. Reason: '.$error), (int) $rule->id, $ruleName);
                             Logger::addLog($error, 3, '0000002', 'Cart', (int) $this->context->cart->id);
                         }
@@ -617,11 +617,7 @@ abstract class PaymentModuleCore extends Module
                 // $order is the last order loop in the foreach
                 // The method addOrderPayment of the class Order make a create a paymentOrder
                 // linked to the order reference and not to the order id
-                if (isset($extraVars['transaction_id'])) {
-                    $transactionId = $extraVars['transaction_id'];
-                } else {
-                    $transactionId = null;
-                }
+                $transactionId = $extraVars['transaction_id'] ?? null;
 
                 if (!isset($order) || !Validate::isLoadedObject($order) || !$order->addOrderPayment($amountPaid, null, $transactionId)) {
                     Logger::addLog('PaymentModule::validateOrder - Cannot save Order Payment', 3, null, 'Cart', (int) $idCart, true);
@@ -801,7 +797,10 @@ abstract class PaymentModuleCore extends Module
                                 $voucher->reduction_amount -= $order->total_shipping_tax_excl;
                             }
                         }
-                        if ($voucher->reduction_amount <= 0) {
+
+                        $voucher->reduction_amount = Tools::roundPrice((float)$voucher->reduction_amount);
+
+                        if ($voucher->reduction_amount <= 0.0) {
                             continue;
                         }
 
@@ -850,7 +849,7 @@ abstract class PaymentModuleCore extends Module
 
                     // Copy a cart rule in case the cheapest product that meets the requirements gets a discount
                     // The copied cart rule is converted into a product specific cart rule
-                    if ($cartRule->product_restriction) {
+                    if ($cartRule->product_restriction && $cartRule->reduction_percent && $cartRule->applyDiscountToCheapestProductFromSelection()) {
                         // Create a new voucher from the original
                         $voucher = new CartRule((int) $cartRule->id); // We need to instantiate the CartRule without lang parameter to allow saving it
                         if ($cheapestProduct = $voucher->findCheapestProduct($package)) {
@@ -874,12 +873,8 @@ abstract class PaymentModuleCore extends Module
                             $voucher->quantity_per_user = 0;
                             $voucher->active = 0;
                             $voucher->product_restriction = 1;
-                            $voucher->reduction_product = 0;
-                            $voucher->description = json_encode([
-                                'id_product'           => $cheapestProduct[0],
-                                'id_product_attribute' => $cheapestProduct[1],
-                                'type'                 => 'cheapest_product',
-                            ]);
+                            $voucher->reduction_product = CartRule::APPLY_DISCOUNT_TO_ORDER_WITHOUT_SHIPPING;
+                            $voucher->setCheapestProductSystemRule((int)$cheapestProduct[0], (int)$cheapestProduct[1]);
                             $voucher->add();
 
                             // load new cart rule in single language context

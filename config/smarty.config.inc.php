@@ -188,7 +188,7 @@ function smartyTruncate($params, $smarty)
         ? strip_tags($params['text'])
         : $params['text'];
     $length = $params['length'];
-    $sep = isset($params['sep']) ? $params['sep'] : '...';
+    $sep = $params['sep'] ?? '...';
 
     if (mb_strlen($text) > $length + mb_strlen($sep)) {
         $text = mb_substr($text, 0, $length).$sep;
@@ -408,7 +408,7 @@ function smartyTranslate($params, $smarty)
  * @param string $format strftime format for output
  * @param string $defaultDate default date if $string is empty
  * @param string $formatter either 'strftime' or 'auto'
-
+ *
  * @return string|void
  * @throws PrestaShopException
  */
@@ -537,7 +537,7 @@ class SmartyLazyRegister
     public static function getInstance()
     {
         if (!self::$instance) {
-            self::$instance = new SmartyLazyRegister();
+            self::$instance = new static();
         }
         return self::$instance;
     }
