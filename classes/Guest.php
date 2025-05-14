@@ -157,10 +157,12 @@ class GuestCore extends ObjectModel
      */
     public static function setNewGuest($cookie)
     {
-        $guest = new Guest(static::getFromCustomer($cookie->id_customer));
-        $guest->userAgent();
-        $guest->save();
-        $cookie->id_guest = (int) ($guest->id);
+        if (! Tools::isCrawler()) {
+            $guest = new Guest(static::getFromCustomer($cookie->id_customer));
+            $guest->userAgent();
+            $guest->save();
+            $cookie->id_guest = (int)($guest->id);
+        }
     }
 
     /**
@@ -200,8 +202,8 @@ class GuestCore extends ObjectModel
      */
     public function userAgent()
     {
-        $userAgent = isset($_SERVER['HTTP_USER_AGENT']) ? $_SERVER['HTTP_USER_AGENT'] : '';
-        $acceptLanguage = isset($_SERVER['HTTP_ACCEPT_LANGUAGE']) ? $_SERVER['HTTP_ACCEPT_LANGUAGE'] : '';
+        $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        $acceptLanguage = $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? '';
         $this->accept_language = $this->getLanguage($acceptLanguage);
         $this->id_operating_system = $this->getOs($userAgent);
         $this->id_web_browser = $this->getBrowser($userAgent);

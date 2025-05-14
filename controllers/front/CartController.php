@@ -220,7 +220,7 @@ class CartControllerCore extends FrontController
 
             if (!$this->errors) {
                 $cartRules = $this->context->cart->getCartRules();
-                $availableCartRules = CartRule::getCustomerCartRules($this->context->language->id, (isset($this->context->customer->id) ? $this->context->customer->id : 0), true, true, true, $this->context->cart, false, true);
+                $availableCartRules = CartRule::getCustomerCartRules($this->context->language->id, ($this->context->customer->id ?? 0), true, true, true, $this->context->cart, false, true);
                 $updateQuantity = $this->context->cart->updateQty($this->qty, $this->id_product, $this->id_product_attribute, $this->customization_id, Tools::getValue('op', 'up'), $this->id_address_delivery);
                 if ($updateQuantity < 0) {
                     // If product has attribute, minimal quantity is set with minimal quantity of attribute
@@ -245,7 +245,7 @@ class CartControllerCore extends FrontController
                             }
                         }
                     } else {
-                        $availableCartRules2 = CartRule::getCustomerCartRules($this->context->language->id, (isset($this->context->customer->id) ? $this->context->customer->id : 0), true, true, true, $this->context->cart, false, true);
+                        $availableCartRules2 = CartRule::getCustomerCartRules($this->context->language->id, ($this->context->customer->id ?? 0), true, true, true, $this->context->cart, false, true);
                         if (count($availableCartRules2) != count($availableCartRules)) {
                             $this->ajax_refresh = true;
                         } elseif (count($availableCartRules2)) {
@@ -356,10 +356,21 @@ class CartControllerCore extends FrontController
             return;
         }
 
+        $cart = $this->context->cart;
+
         $oldIdAddressDelivery = Tools::getIntValue('old_id_address_delivery');
         $newIdAddressDelivery = Tools::getIntValue('new_id_address_delivery');
 
-        if (!count(Carrier::getAvailableCarrierList(new Product($this->id_product), null, $newIdAddressDelivery))) {
+        $carrierList = Carrier::getAvailableCarrierList(
+            new Product((int)$this->id_product),
+            0,
+            $newIdAddressDelivery,
+            null,
+            $cart,
+            $error,
+            (int)$this->id_product_attribute
+        );
+        if (! $carrierList) {
             $this->ajaxDie(
                 json_encode(
                     [
@@ -370,7 +381,7 @@ class CartControllerCore extends FrontController
             );
         }
 
-        $this->context->cart->setProductAddressDelivery(
+        $cart->setProductAddressDelivery(
             $this->id_product,
             $this->id_product_attribute,
             $oldIdAddressDelivery,

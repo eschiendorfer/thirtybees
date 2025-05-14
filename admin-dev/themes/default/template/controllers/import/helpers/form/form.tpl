@@ -254,6 +254,23 @@
 						</label>
 					</div>
 				</div>
+				<div class="form-group" style="display: none">
+					<label for="only_file_product" class="control-label col-lg-4">
+						<span data-toggle="tooltip" class="label-tooltip" data-original-title="{l s='If enabled, delete combinations for products referenced in CSV file'}">
+							{l s='Delete combinations for products referenced in CSV file'}
+						</span>
+					</label>
+					<div class="col-lg-8">
+						<label class="switch-light prestashop-switch fixed-width-lg">
+							<input id="only_file_product" name="only_file_product" type="checkbox" />
+							<span>
+								<span>{l s='Yes'}</span>
+								<span>{l s='No'}</span>
+							</span>
+							<a class="slide-button btn"></a>
+						</label>
+					</div>
+				</div>
 				<div class="form-group">
 					<label for="regenerate" class="control-label col-lg-4">{l s='Skip thumbnails regeneration'}</label>
 					<div class="col-lg-8">
@@ -519,8 +536,13 @@
 		$('#preview_import').submit(function(e) {
 			if ($('#truncate').get(0).checked) {
 				if (truncateAuthorized) {
-					if (!confirm('{l s='Are you sure that you would like to delete this entity: ' js=1}' + ' ' + $.trim($('#entity > option:selected').text().toLowerCase()) + '?'))
+					const entityName = $.trim($('#entity > option:selected').text().toLowerCase());
+					if (! confirm('{l s='Are you sure you want to delete all %s?' js=1}'.replace('%s', entityName))) {
 						e.preventDefault();
+						return false;
+					} else {
+						return true;
+					}
 				}
 				else {
 					jAlert('{l s='You do not have permission to delete this. When the MultiStore mode is enabled, only a SuperAdmin can delete all items before an import.' js=1}');
@@ -551,6 +573,13 @@
 				$("#match_ref").closest('.form-group').show();
 			} else {
 				$("#match_ref").closest('.form-group').hide();
+			}
+
+			if (entityType === '{AdminImportController::ENTITY_TYPE_COMBINATIONS}'
+			) {
+				$("#only_file_product").closest('.form-group').show();
+			} else {
+				$("#only_file_product").closest('.form-group').hide();
 			}
 
 			if (entityType === '{AdminImportController::ENTITY_TYPE_PRODUCTS}' ||

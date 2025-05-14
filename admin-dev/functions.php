@@ -99,7 +99,8 @@ function includeDatepicker($id, $time = false)
  *
  * @return float Casted price, rounded to _TB_PRICE_DATABASE_PRECISION_.
  */
-function priceval($price) {
+function priceval($price)
+{
     Tools::displayAsDeprecated(sprintf("Function '%s' will be removed in thirty bees 1.6.0", __FUNCTION__));
 
     return Tools::parseNumber($price);
@@ -127,7 +128,7 @@ function rewriteSettingsFile($base_urls = null, $theme = null, $array_db = null)
  * @param string $sql_date Date in SQL format (YYYY-MM-DD HH:mm:ss)
  * @param bool $with_time Display both date and time
  * @deprecated 1.4.0 Use Tools::displayDate instead
-*/
+ */
 function displayDate($sql_date, $with_time = false)
 {
     Tools::displayAsDeprecated(sprintf("Function '%s' will be removed in thirty bees 1.6.0", __FUNCTION__));

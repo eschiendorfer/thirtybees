@@ -29,6 +29,7 @@
  *  PrestaShop is an internationally registered trademark & property of PrestaShop SA
  */
 
+use CoreUpdater\TableSchema;
 use Thirtybees\Core\InitializationCallback;
 
 /**
@@ -411,7 +412,7 @@ class CategoryCore extends ObjectModel implements InitializationCallback
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public static function getRootCategory($idLang = null, Shop $shop = null)
+    public static function getRootCategory($idLang = null, ?Shop $shop = null)
     {
         $context = Context::getContext();
         if (is_null($idLang)) {
@@ -609,7 +610,7 @@ class CategoryCore extends ObjectModel implements InitializationCallback
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public static function getChildrenWithNbSelectedSubCat($idParent, $selectedCat, $idLang, Shop $shop = null, $useShopContext = true)
+    public static function getChildrenWithNbSelectedSubCat($idParent, $selectedCat, $idLang, ?Shop $shop = null, $useShopContext = true)
     {
         if (!$shop) {
             $shop = Context::getContext()->shop;
@@ -929,6 +930,7 @@ class CategoryCore extends ObjectModel implements InitializationCallback
                 ->leftJoin('lang', 'l', 'c.`id_lang` = l.`id_lang`')
                 ->where('c.`id_category` = '.(int) $idCategory)
                 ->where('l.`active` = 1')
+                ->addCurrentShopRestriction('c')
         );
     }
 
@@ -940,7 +942,7 @@ class CategoryCore extends ObjectModel implements InitializationCallback
      *
      * @throws PrestaShopException
      */
-    public static function inShopStatic($idCategory, Shop $shop = null)
+    public static function inShopStatic($idCategory, ?Shop $shop = null)
     {
         if (!$shop || !is_object($shop)) {
             $shop = Context::getContext()->shop;
@@ -1835,7 +1837,7 @@ class CategoryCore extends ObjectModel implements InitializationCallback
      *
      * @throws PrestaShopException
      */
-    public function getProducts($idLang, $p, $n, $orderBy = null, $orderWay = null, $getTotal = false, $active = true, $random = false, $randomNumberProducts = 1, $checkAccess = true, Context $context = null)
+    public function getProducts($idLang, $p, $n, $orderBy = null, $orderWay = null, $getTotal = false, $active = true, $random = false, $randomNumberProducts = 1, $checkAccess = true, ?Context $context = null)
     {
         if (!$context) {
             $context = Context::getContext();
@@ -1850,8 +1852,7 @@ class CategoryCore extends ObjectModel implements InitializationCallback
 
         $subcats = $this->getAllSubcategories();
         $catsToSearchIn = [$this->id];
-        if($subcats && $this->display_from_sub)
-        {
+        if($subcats && $this->display_from_sub) {
             foreach ($subcats as $scat) {
                 $catsToSearchIn[] = $scat['id_category'];
             }
@@ -2056,7 +2057,7 @@ class CategoryCore extends ObjectModel implements InitializationCallback
      *
      * @throws PrestaShopException
      */
-    public function getLink(Link $link = null, $idLang = null)
+    public function getLink(?Link $link = null, $idLang = null)
     {
         if (!$link) {
             $link = Context::getContext()->link;
@@ -2121,7 +2122,7 @@ class CategoryCore extends ObjectModel implements InitializationCallback
             }
         }
 
-        return isset($nameArray[$idLang]) ? $nameArray[$idLang] : '';
+        return $nameArray[$idLang] ?? '';
     }
 
     /**
@@ -2321,7 +2322,7 @@ class CategoryCore extends ObjectModel implements InitializationCallback
      *
      * @throws PrestaShopException
      */
-    public function inShop(Shop $shop = null)
+    public function inShop(?Shop $shop = null)
     {
         if (!$shop) {
             $shop = Context::getContext()->shop;
@@ -2560,7 +2561,7 @@ class CategoryCore extends ObjectModel implements InitializationCallback
     }
 
     /**
-     * @param \CoreUpdater\TableSchema $table
+     * @param TableSchema $table
      */
     public static function processTableSchema($table)
     {

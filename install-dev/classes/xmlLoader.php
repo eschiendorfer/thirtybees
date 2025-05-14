@@ -422,7 +422,7 @@ class InstallXmlLoader
             foreach (Db::readOnly()->getArray('SHOW TABLES') as $row) {
                 $table = current($row);
                 if (preg_match('#^'._DB_PREFIX_.'(.+?)(_lang)?$#i', $table, $m)) {
-                    $tables[$m[1]] = (isset($m[2]) && $m[2]) ? true : false;
+                    $tables[$m[1]] = isset($m[2]) && $m[2];
                 }
             }
         }
@@ -480,7 +480,7 @@ class InstallXmlLoader
         }
 
         if (preg_match('#^varchar\(([0-9]+)\)$#i', $type, $m)) {
-            return intval($m[1]) >= 64 ? true : false;
+            return intval($m[1]) >= 64;
         }
 
         return false;
@@ -519,7 +519,7 @@ class InstallXmlLoader
      */
     public function retrieveId($entity, $identifier)
     {
-        return isset($this->ids[$entity.':'.$identifier]) ? $this->ids[$entity.':'.$identifier] : 0;
+        return $this->ids[$entity . ':' . $identifier] ?? 0;
     }
 
     /**
@@ -548,7 +548,7 @@ class InstallXmlLoader
             if ($dataLang) {
                 $object->hydrate($dataLang);
             }
-            $object->add(true, (isset($xml->fields['null'])) ? true : false);
+            $object->add(true, isset($xml->fields['null']));
             $entityId = $object->id;
             unset($object);
         } else {
@@ -1379,7 +1379,7 @@ class InstallXmlLoader
                 if ($isMultilang && $row['id_lang']) {
                     $node = [];
                     foreach ($multilangColumns as $column => $is_text) {
-                        $node[$column] = $row[isset($aliasMultilang[$column]) ? $aliasMultilang[$column] : $column];
+                        $node[$column] = $row[$aliasMultilang[$column] ?? $column];
                     }
                     $nodesLang[$row['id_lang']][$id] = $node;
                 }

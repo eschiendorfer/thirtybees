@@ -134,7 +134,7 @@ class CMSCore extends ObjectModel
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public static function getLinks($idLang, $selection = null, $active = true, Link $link = null)
+    public static function getLinks($idLang, $selection = null, $active = true, ?Link $link = null)
     {
         if (!$link) {
             $link = Context::getContext()->link;
@@ -251,6 +251,7 @@ class CMSCore extends ObjectModel
                 ->leftJoin('lang', 'l', 'c.`id_lang` = l.`id_lang`')
                 ->where('c.`id_cms` = '.(int) $idCms)
                 ->where('l.`active` = 1')
+                ->addCurrentShopRestriction('c')
         );
     }
 

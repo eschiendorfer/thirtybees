@@ -111,8 +111,7 @@ class ImageEntityCore extends ObjectModel
     public static function rebuildImageEntities($classname, $images)
     {
         // Adding images from themes
-        /** @var Theme $theme */
-        foreach (Theme::getThemes() as $theme) {
+        foreach (Theme::getUsedThemes() as $theme) {
             $xml = $theme->loadConfigFile();
 
             foreach ($xml->images->image as $imageDefinition) {
@@ -213,7 +212,8 @@ class ImageEntityCore extends ObjectModel
             if ($imageEntityId && !empty($imageEntity['imageTypes']) && is_array($imageEntity['imageTypes'])) {
                 foreach ($imageEntity['imageTypes'] as $imageType) {
 
-                    $imageTypeObj = ImageType::getInstanceByName($imageType['name']);
+                    $imageTypeNameFormated = ImageType::getFormatedName($imageType['name']);
+                    $imageTypeObj = ImageType::getInstanceByName($imageTypeNameFormated);
 
                     // Adding missing image types
                     if (!$imageTypeObj->id) {

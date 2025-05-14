@@ -480,10 +480,27 @@ class CartCore extends ObjectModel
         $productsIds = [];
         $paIds = [];
         if ($result) {
+            $idGroup = null;
+            if ($this->id_customer) {
+                $idGroup = (int)Customer::getDefaultGroupId((int) $this->id_customer);
+            }
+            if (!$idGroup) {
+                $idGroup = (int) Group::getCurrent()->id;
+            }
             foreach ($result as $key => $row) {
                 $productsIds[] = $row['id_product'];
                 $paIds[] = $row['id_product_attribute'];
-                $specificPrice = SpecificPrice::getSpecificPrice($row['id_product'], $this->id_shop, $this->id_currency, $idCountry, $this->id_shop_group, $row['cart_quantity'], $row['id_product_attribute'], $this->id_customer, $this->id);
+                $specificPrice = SpecificPrice::getSpecificPrice(
+                    $row['id_product'],
+                    $this->id_shop,
+                    $this->id_currency,
+                    $idCountry,
+                    $idGroup,
+                    (int)$row['cart_quantity'],
+                    $row['id_product_attribute'],
+                    $this->id_customer,
+                    $this->id
+                );
                 if ($specificPrice) {
                     $reductionTypeRow = ['reduction_type' => $specificPrice['reduction_type']];
                 } else {
@@ -780,7 +797,7 @@ class CartCore extends ObjectModel
             throw new PrestaShopException(sprintf(Tools::displayError('Cart with ID %s not found'), (int)$idCart));
         }
 
-        $withTaxes = $useTaxDisplay ? $cart->_taxCalculationMethod !== PS_TAX_EXC : true;
+        $withTaxes = !$useTaxDisplay || $cart->_taxCalculationMethod !== PS_TAX_EXC;
 
         return Tools::displayPrice($cart->getOrderTotal($withTaxes, $type), Currency::getCurrencyInstance((int) $cart->id_currency), false);
     }
@@ -1136,7 +1153,7 @@ class CartCore extends ObjectModel
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public function getTotalShippingCost($deliveryOption = null, $useTax = true, Country $defaultCountry = null)
+    public function getTotalShippingCost($deliveryOption = null, $useTax = true, ?Country $defaultCountry = null)
     {
         if (isset(Context::getContext()->cookie->id_country)) {
             $defaultCountry = new Country(Context::getContext()->cookie->id_country);
@@ -1306,7 +1323,7 @@ class CartCore extends ObjectModel
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public function getDeliveryOptionList(Country $defaultCountry = null, $flush = false)
+    public function getDeliveryOptionList(?Country $defaultCountry = null, $flush = false)
     {
         $countryId = $defaultCountry ? $defaultCountry->id : 0;
         $cacheKey = "Cart::getDeliveryOptionList_" . $this->id . '_' . $countryId;
@@ -1326,7 +1343,7 @@ class CartCore extends ObjectModel
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    protected function calculateDeliveryOptionList(Country $defaultCountry = null)
+    protected function calculateDeliveryOptionList(?Country $defaultCountry = null)
     {
         $deliveryOptionList = [];
         $carriersPrice = [];
@@ -1511,9 +1528,9 @@ class CartCore extends ObjectModel
         if ($this->id) {
             $result = Db::readOnly()->getArray(
                 (new DbQuery())
-                ->select('*')
-                ->from('cart_cart_rule')
-                ->where('`id_cart` = '.(int) $this->id)
+                    ->select('*')
+                    ->from('cart_cart_rule')
+                    ->where('`id_cart` = '.(int) $this->id)
             );
             foreach ($result as $row) {
                 $cartRulesInCart[] = $row['id_cart_rule'];
@@ -1584,7 +1601,7 @@ class CartCore extends ObjectModel
                 }
                 $deliveryOptionList[$idAddress][$key]['total_price_with_tax'] = $totalPriceWithTax;
                 $deliveryOptionList[$idAddress][$key]['total_price_without_tax'] = $totalPriceWithoutTax;
-                $deliveryOptionList[$idAddress][$key]['is_free'] = !$totalPriceWithoutTaxWithRules ? true : false;
+                $deliveryOptionList[$idAddress][$key]['is_free'] = !$totalPriceWithoutTaxWithRules;
                 $deliveryOptionList[$idAddress][$key]['position'] = $position / count($value['carrier_list']);
             }
         }
@@ -1711,7 +1728,16 @@ class CartCore extends ObjectModel
             $idWarehouse = 0;
             foreach ($warehouseCountByAddress[$product['id_address_delivery']] as $idWar => $val) {
                 if (array_key_exists((int) $idWar, $product['warehouse_list'])) {
-                    $product['carrier_list'] = array_replace($product['carrier_list'], Carrier::getAvailableCarrierList(new Product($product['id_product']), $idWar, $product['id_address_delivery'], null, $this));
+                    $carrierList = Carrier::getAvailableCarrierList(
+                        new Product((int)$product['id_product']),
+                        (int)$idWar,
+                        (int)$product['id_address_delivery'],
+                        null,
+                        $this,
+                        $error,
+                        (int)$product['id_product_attribute']
+                    );
+                    $product['carrier_list'] = array_replace($product['carrier_list'], $carrierList);
                     if (!$idWarehouse) {
                         $idWarehouse = (int) $idWar;
                     }
@@ -1876,7 +1902,7 @@ class CartCore extends ObjectModel
      *
      * @throws PrestaShopException
      */
-    public function getPackageShippingCost($idCarrier = null, $useTax = true, Country $defaultCountry = null, $productList = null, $idZone = null)
+    public function getPackageShippingCost($idCarrier = null, $useTax = true, ?Country $defaultCountry = null, $productList = null, $idZone = null)
     {
         if ($this->isVirtualCart()) {
             return 0.0;
@@ -2829,7 +2855,7 @@ class CartCore extends ObjectModel
 
         $uploadedFiles = Db::readOnly()->getArray(
             (new DbQuery())
-                ->select('cd.`value`')
+                ->select('cd.`value`, cd.`type`')
                 ->from('customized_data', 'cd')
                 ->innerJoin('customization', 'c', 'cd.`id_customization` = c.`id_customization`')
                 ->where('cd.`type` = 0')
@@ -2837,8 +2863,7 @@ class CartCore extends ObjectModel
         );
 
         foreach ($uploadedFiles as $mustUnlink) {
-            unlink(_PS_UPLOAD_DIR_.$mustUnlink['value'].'_small');
-            unlink(_PS_UPLOAD_DIR_.$mustUnlink['value']);
+            $this->deleteCustomizationFile($mustUnlink);
         }
 
         $conn = Db::getInstance();
@@ -3131,7 +3156,7 @@ class CartCore extends ObjectModel
         $idCustomization = false,
         $operator = 'up',
         $idAddressDelivery = 0,
-        Shop $shop = null,
+        ?Shop $shop = null,
         $autoAddCartRule = true
     ) {
         if (!$shop) {
@@ -3447,11 +3472,8 @@ class CartCore extends ObjectModel
             );
 
             // Delete customization picture if necessary
-            if (isset($custData['type']) && $custData['type'] == 0) {
-                $result = (
-                    @unlink(_PS_UPLOAD_DIR_.$custData['value']) &&
-                    @unlink(_PS_UPLOAD_DIR_.$custData['value'].'_small')
-                );
+            if ($custData) {
+                $result = $this->deleteCustomizationFile($custData);
             }
 
             $result = $conn->delete('customized_data', '`id_customization` = '.(int) $idCustomization) && $result;
@@ -3744,7 +3766,7 @@ class CartCore extends ObjectModel
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public function simulateCarriersOutput(Country $defaultCountry = null, $flush = false)
+    public function simulateCarriersOutput(?Country $defaultCountry = null, $flush = false)
     {
         $deliveryOptionList = $this->getDeliveryOptionList($defaultCountry, $flush);
 
@@ -3777,7 +3799,7 @@ class CartCore extends ObjectModel
                 foreach ($option['carrier_list'] as $carrier) {
                     $nameList[] = $carrier['instance']->name;
                 }
-                $name = join(' -', $nameList);
+                $name = implode(' -', $nameList);
             }
             $carriers[] = [
                 'name'          => $name,
@@ -3845,7 +3867,7 @@ class CartCore extends ObjectModel
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public function getCarrierCost($idCarrier, $useTax = true, Country $defaultCountry = null, $deliveryOption = null)
+    public function getCarrierCost($idCarrier, $useTax = true, ?Country $defaultCountry = null, $deliveryOption = null)
     {
         if (is_null($deliveryOption)) {
             $deliveryOption = $this->getDeliveryOption($defaultCountry);
@@ -3881,7 +3903,7 @@ class CartCore extends ObjectModel
      * @return bool|float
      * @throws PrestaShopException
      */
-    public function getOrderShippingCost($idCarrier = null, $useTax = true, Country $defaultCountry = null, $productList = null)
+    public function getOrderShippingCost($idCarrier = null, $useTax = true, ?Country $defaultCountry = null, $productList = null)
     {
         Tools::displayAsDeprecated();
 
@@ -4115,6 +4137,7 @@ class CartCore extends ObjectModel
         }
 
         $reasons = [];
+        $errors = [];
         $addressesWithoutCarriers = $this->getDeliveryAddressesWithoutCarriers(false, $errors);
         if ($addressesWithoutCarriers) {
             if ($errors) {
@@ -4157,10 +4180,19 @@ class CartCore extends ObjectModel
     {
         $addressesWithoutCarriers = [];
         foreach ($this->getProducts() as $product) {
-            if (!in_array($product['id_address_delivery'], $addressesWithoutCarriers)
-                && !count(Carrier::getAvailableCarrierList(new Product($product['id_product']), null, $product['id_address_delivery'], null, null, $error))
-            ) {
-                $addressesWithoutCarriers[] = $product['id_address_delivery'];
+            if (!in_array($product['id_address_delivery'], $addressesWithoutCarriers)) {
+                $carrierList = Carrier::getAvailableCarrierList(
+                    new Product((int)$product['id_product']),
+                    0,
+                    (int)$product['id_address_delivery'],
+                    null,
+                    $this,
+                    $error,
+                    (int)$product['id_product_attribute']
+                );
+                if (! $carrierList) {
+                    $addressesWithoutCarriers[] = $product['id_address_delivery'];
+                }
             }
         }
         if (!$returnCollection) {
@@ -4285,10 +4317,7 @@ class CartCore extends ObjectModel
                         'id_customization = '.(int) $customization['id_customization'].' AND type = '.(int) $customization['type'].' AND `index` = '.(int) $customization['index']
 
                     );
-                    if ($type == Product::CUSTOMIZE_FILE) {
-                        @unlink(_PS_UPLOAD_DIR_.$customization['value']);
-                        @unlink(_PS_UPLOAD_DIR_.$customization['value'].'_small');
-                    }
+                    $this->deleteCustomizationFile($customization);
                     break;
                 }
             }
@@ -4362,13 +4391,11 @@ class CartCore extends ObjectModel
      * @param int $index
      *
      * @return bool
-     * @throws PrestaShopDatabaseException
+     *
      * @throws PrestaShopException
      */
     public function deleteCustomizationToProduct($idProduct, $index)
     {
-        $result = true;
-
         $custData = Db::readOnly()->getRow(
             (new DbQuery())
                 ->select('cu.`id_customization`, cd.`index`, cd.`value`, cd.`type`')
@@ -4380,20 +4407,15 @@ class CartCore extends ObjectModel
                 ->where('`in_cart` = 0')
         );
 
-        // Delete customization picture if necessary
-        if ($custData['type'] == 0) {
-            $result = (
-                @unlink(_PS_UPLOAD_DIR_.$custData['value']) &&
-                @unlink(_PS_UPLOAD_DIR_.$custData['value'].'_small')
-            );
+        if ($custData) {
+            // Delete customization picture if necessary
+            $result = $this->deleteCustomizationFile($custData);
+            $result = Db::getInstance()->delete('customized_data', '`id_customization` = ' . (int)$custData['id_customization'] . ' AND `index` = ' . (int)$index) && $result;
+            return $result;
+        } else {
+            return true;
         }
 
-        $result = (
-            Db::getInstance()->delete('customized_data', '`id_customization` = '.(int) $custData['id_customization'].' AND `index` = '.(int) $index) &&
-            $result
-        );
-
-        return $result;
     }
 
     /**
@@ -4521,7 +4543,7 @@ class CartCore extends ObjectModel
             foreach ($customs as $custom) {
                 $customizedValue = $custom['value'];
 
-                if ((int) $custom['type'] == 0) {
+                if ((int) $custom['type'] === Product::CUSTOMIZE_FILE) {
                     $customizedValue = md5(uniqid(rand(), true));
                     copy(_PS_UPLOAD_DIR_.$custom['value'], _PS_UPLOAD_DIR_.$customizedValue);
                     copy(_PS_UPLOAD_DIR_.$custom['value'].'_small', _PS_UPLOAD_DIR_.$customizedValue.'_small');
@@ -4979,5 +5001,24 @@ class CartCore extends ObjectModel
         }
 
         return true;
+    }
+
+    /**
+     * @param array $custData
+     *
+     * @return bool
+     */
+    protected function deleteCustomizationFile(array $custData): bool
+    {
+        $result = true;
+        if ((int)$custData['type'] === Product::CUSTOMIZE_FILE) {
+            if (file_exists(_PS_UPLOAD_DIR_ . $custData['value'])) {
+                $result = unlink(_PS_UPLOAD_DIR_ . $custData['value']);
+            }
+            if (file_exists(_PS_UPLOAD_DIR_ . $custData['value'] . '_small')) {
+                $result = unlink(_PS_UPLOAD_DIR_ . $custData['value'] . '_small') && $result;
+            }
+        }
+        return $result;
     }
 }

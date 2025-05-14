@@ -193,6 +193,7 @@ class CurrencyCore extends ObjectModel
                 ->from('currency', 'c')
                 ->leftJoin('currency_shop', 'cs', 'cs.`id_currency` = c.`id_currency`')
                 ->where($idShop ? 'cs.`id_shop` = '.(int) $idShop : '')
+                ->where('c.`deleted` = 0')
                 ->orderBy('`name` ASC')
         );
     }
@@ -334,7 +335,7 @@ class CurrencyCore extends ObjectModel
                 [
                     'currencies' => $currencies,
                     'baseCurrency' => mb_strtoupper($defaultCurrency->iso_code)
-                ],
+                ]
             );
             if (is_array($rates)) {
                 foreach ($rates as $isoCode => $rate) {
@@ -507,11 +508,12 @@ class CurrencyCore extends ObjectModel
         if (!isset(static::$countActiveCurrencies[$idShop])) {
             static::$countActiveCurrencies[$idShop] = Db::readOnly()->getValue(
                 (new DbQuery())
-                ->select('COUNT(DISTINCT c.`id_currency`)')
-                ->from('currency', 'c')
-                ->leftJoin('currency_shop', 'cs', 'cs.`id_currency` = c.`id_currency`')
-                ->where('cs.`id_shop` = '.(int) $idShop)
-                ->where('c.`active` = 1')
+                    ->select('COUNT(DISTINCT c.`id_currency`)')
+                    ->from('currency', 'c')
+                    ->leftJoin('currency_shop', 'cs', 'cs.`id_currency` = c.`id_currency`')
+                    ->where('cs.`id_shop` = '.(int) $idShop)
+                    ->where('c.`deleted` = 0')
+                    ->where('c.`active` = 1')
             );
         }
 
