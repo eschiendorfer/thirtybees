@@ -67,7 +67,7 @@ abstract class AbstractErrorPageCore implements ErrorResponseInterface
      */
     public function getPageContent(ErrorDescription $errorDescription)
     {
-        try{
+        try {
             return $this->renderError($errorDescription);
         } catch (Throwable $t) {
             // It's very unlikely that exception will be thrown during error message rendering. If that happen,
@@ -138,12 +138,12 @@ abstract class AbstractErrorPageCore implements ErrorResponseInterface
     /**
      * @return string
      */
-    protected abstract function getContentType();
+    abstract protected function getContentType();
 
     /**
      * @param ErrorDescription $errorDescription
      * @return string
      */
-    protected abstract function renderError(ErrorDescription $errorDescription);
+    abstract protected function renderError(ErrorDescription $errorDescription);
 
 }

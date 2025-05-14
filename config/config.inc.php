@@ -1,4 +1,7 @@
 <?php
+
+use Thirtybees\Core\DependencyInjection\ServiceLocator;
+use Thirtybees\Core\Error\BootstrapErrorHandler;
 /**
  * 2007-2016 PrestaShop
  *
@@ -63,6 +66,11 @@ if (!file_exists(_PS_ROOT_DIR_.'/config/settings.inc.php')) {
     }
     exit;
 }
+
+// install bootstrap error handler
+require_once(_PS_ROOT_DIR_ . '/classes/error/BootstrapErrorHandler.php');
+$bootstrapErrorHandler = BootstrapErrorHandler::getInstance();
+$bootstrapErrorHandler->installErrorHandler();
 
 /* include settings file only if we are not in multi-tenancy mode */
 require_once(_PS_ROOT_DIR_.'/config/settings.inc.php');
@@ -326,3 +334,6 @@ if (!defined('_PS_CACHE_ENABLED_')) {
 
 Hook::triggerEvent('actionRegisterAutoloader');
 Hook::triggerEvent('actionRegisterErrorHandlers');
+
+$errorHandler = ServiceLocator::getInstance()->getErrorHandler();
+$errorHandler->replay($bootstrapErrorHandler);

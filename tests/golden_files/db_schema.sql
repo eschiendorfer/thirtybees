@@ -75,7 +75,7 @@ CREATE TABLE `PREFIX_attachment` (
 CREATE TABLE `PREFIX_attachment_lang` (
   `id_attachment` int(11) unsigned NOT NULL,
   `id_lang` int(11) unsigned NOT NULL,
-  `name` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`id_attachment`,`id_lang`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -118,6 +118,9 @@ CREATE TABLE `PREFIX_attribute_impact` (
   `id_attribute` int(11) unsigned NOT NULL,
   `weight` decimal(20,6) NOT NULL,
   `price` decimal(20,6) NOT NULL,
+  `width` decimal(20,6) NOT NULL DEFAULT '0.000000',
+  `height` decimal(20,6) NOT NULL DEFAULT '0.000000',
+  `depth` decimal(20,6) NOT NULL DEFAULT '0.000000',
   PRIMARY KEY (`id_attribute_impact`),
   UNIQUE KEY `id_product` (`id_product`,`id_attribute`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -864,6 +867,7 @@ CREATE TABLE `PREFIX_employee` (
   `optin` tinyint(1) unsigned NOT NULL DEFAULT '1',
   `last_connection_date` datetime DEFAULT NULL,
   `signature` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `campaign_disabled` datetime DEFAULT NULL,
   PRIMARY KEY (`id_employee`),
   KEY `employee_login` (`email`,`passwd`),
   KEY `id_employee_passwd` (`id_employee`,`passwd`),
@@ -949,7 +953,7 @@ CREATE TABLE `PREFIX_feature_value_lang` (
 
 CREATE TABLE `PREFIX_gender` (
   `id_gender` int(11) NOT NULL AUTO_INCREMENT,
-  `type` tinyint(1) NOT NULL,
+  `type` tinyint(1) DEFAULT '0',
   PRIMARY KEY (`id_gender`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -1148,6 +1152,7 @@ CREATE TABLE `PREFIX_lang` (
   `active` tinyint(3) unsigned NOT NULL DEFAULT '0',
   `iso_code` char(2) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `language_code` char(5) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `url_code` varchar(40) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `date_format_lite` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Y-m-d',
   `date_format_full` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Y-m-d H:i:s',
   `is_rtl` tinyint(1) NOT NULL DEFAULT '0',
@@ -1184,6 +1189,7 @@ CREATE TABLE `PREFIX_mail` (
   `template` varchar(62) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `subject` varchar(254) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `id_lang` int(11) unsigned NOT NULL,
+  `transport` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `date_add` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id_mail`),
   KEY `recipient` (`recipient`(10))
@@ -1832,6 +1838,9 @@ CREATE TABLE `PREFIX_product_attribute` (
   `ecotax` decimal(20,6) NOT NULL DEFAULT '0.000000',
   `quantity` int(10) NOT NULL DEFAULT '0',
   `weight` decimal(20,6) NOT NULL DEFAULT '0.000000',
+  `width` decimal(20,6) NOT NULL DEFAULT '0.000000',
+  `height` decimal(20,6) NOT NULL DEFAULT '0.000000',
+  `depth` decimal(20,6) NOT NULL DEFAULT '0.000000',
   `unit_price_impact` decimal(20,6) NOT NULL DEFAULT '0.000000',
   `default_on` tinyint(1) unsigned DEFAULT NULL,
   `minimal_quantity` int(11) unsigned NOT NULL DEFAULT '1',
@@ -1866,6 +1875,9 @@ CREATE TABLE `PREFIX_product_attribute_shop` (
   `price` decimal(20,6) NOT NULL DEFAULT '0.000000',
   `ecotax` decimal(20,6) NOT NULL DEFAULT '0.000000',
   `weight` decimal(20,6) NOT NULL DEFAULT '0.000000',
+  `width` decimal(20,6) NOT NULL DEFAULT '0.000000',
+  `height` decimal(20,6) NOT NULL DEFAULT '0.000000',
+  `depth` decimal(20,6) NOT NULL DEFAULT '0.000000',
   `unit_price_impact` decimal(20,6) NOT NULL DEFAULT '0.000000',
   `default_on` tinyint(1) unsigned DEFAULT NULL,
   `minimal_quantity` int(11) unsigned NOT NULL DEFAULT '1',

@@ -31,6 +31,8 @@
 
 use CoreUpdater\CodeCallback;
 use CoreUpdater\ObjectModelSchemaBuilder;
+use Defuse\Crypto\Exception\EnvironmentIsBrokenException;
+use Defuse\Crypto\Key;
 
 /**
  * Class InstallModelInstall
@@ -115,9 +117,9 @@ class InstallModelInstall extends InstallAbstractModel
 
         if (Encryptor::supportsPhpEncryption()) {
             try {
-                $secureKey = \Defuse\Crypto\Key::createNewRandomKey();
+                $secureKey = Key::createNewRandomKey();
                 $settingsConstants['_PHP_ENCRYPTION_KEY_'] = $secureKey->saveToAsciiSafeString();
-            } catch (\Defuse\Crypto\Exception\EnvironmentIsBrokenException $e) {
+            } catch (EnvironmentIsBrokenException $e) {
                 throw new PrestashopInstallerException("Failed to generate encryption key", 0, $e);
             }
         }
@@ -371,7 +373,7 @@ class InstallModelInstall extends InstallAbstractModel
             InstallModelInstall::$cacheLocalizationPackContent[$country] = $localizationFileContent;
         }
 
-        return isset(InstallModelInstall::$cacheLocalizationPackContent[$country]) ? InstallModelInstall::$cacheLocalizationPackContent[$country] : false;
+        return InstallModelInstall::$cacheLocalizationPackContent[$country] ?? false;
     }
 
     /**
@@ -563,7 +565,7 @@ class InstallModelInstall extends InstallAbstractModel
      *
      * @throws PrestaShopException
      */
-    public function configureShop(array $data = [])
+    public function configureShop(array $data = [], array $config = []): bool
     {
         //clear image cache in tmp folder
         if (file_exists(_PS_TMP_IMG_DIR_)) {
@@ -580,6 +582,7 @@ class InstallModelInstall extends InstallAbstractModel
             'shopCountry'    => 'us',
             'shopTimezone'   => 'US/Eastern',
             'rewriteEngine'  => false,
+            'sslEnabled'     => false,
         ];
 
         foreach ($defaultData as $k => $v) {
@@ -605,8 +608,11 @@ class InstallModelInstall extends InstallAbstractModel
         Configuration::updateGlobalValue('PS_TIMEZONE', $data['shopTimezone']);
         Configuration::updateGlobalValue('PS_CONFIGURATION_AGREMENT', (int) $data['configurationAgreement']);
 
+        // Set SSL options
+        Configuration::updateGlobalValue('PS_SSL_ENABLED', $data['sslEnabled'] ? 1 : 0);
+
         // Set default rewriting settings
-        Configuration::updateGlobalValue('PS_REWRITING_SETTINGS', $data['rewriteEngine']);
+        Configuration::updateGlobalValue('PS_REWRITING_SETTINGS', $data['rewriteEngine'] ? 1 : 0);
 
         // Choose the best ciphering algorithm available
         Configuration::updateGlobalValue('PS_CIPHER_ALGORITHM', $this->getCipherAlgorightm());
@@ -622,8 +628,8 @@ class InstallModelInstall extends InstallAbstractModel
 
         if (is_array($groups) && count($groups)) {
             foreach ($groups as $key => $group) {
-                if (Configuration::get($groupsDefault[$key]) != $groups[$key]['id_group']) {
-                    Configuration::updateGlobalValue($groupsDefault[$key], (int) $groups[$key]['id_group']);
+                if (Configuration::get($groupsDefault[$key]) != $group['id_group']) {
+                    Configuration::updateGlobalValue($groupsDefault[$key], (int) $group['id_group']);
                 }
             }
         }
@@ -639,8 +645,8 @@ class InstallModelInstall extends InstallAbstractModel
 
         if (count($states)) {
             foreach ($states as $key => $state) {
-                if (Configuration::get($statesDefault[$key]) != $states[$key]['id_order_state']) {
-                    Configuration::updateGlobalValue($statesDefault[$key], (int) $states[$key]['id_order_state']);
+                if (Configuration::get($statesDefault[$key]) != $state['id_order_state']) {
+                    Configuration::updateGlobalValue($statesDefault[$key], (int) $state['id_order_state']);
                 }
             }
             /* deprecated order state */
@@ -664,7 +670,7 @@ class InstallModelInstall extends InstallAbstractModel
         $version = substr($version, 0, 2);
         $localizationFileContent = $this->getLocalizationPackContent($version, $data['shopCountry']);
 
-        $locale = new LocalizationPackCore();
+        $locale = new LocalizationPack();
         $locale->loadLocalisationPack($localizationFileContent, [], true);
 
         // Create default employee
@@ -701,6 +707,10 @@ class InstallModelInstall extends InstallAbstractModel
 
             if (!@Tools::generateHtaccess(null, $data['rewriteEngine'])) {
                 Configuration::updateGlobalValue('PS_REWRITING_SETTINGS', 0);
+            }
+
+            foreach ($config as $key => $value) {
+                Configuration::updateGlobalValue($key, $value);
             }
 
             return true;

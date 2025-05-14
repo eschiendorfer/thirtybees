@@ -1,4 +1,7 @@
 <?php
+
+use Thirtybees\Core\DependencyInjection\ServiceLocator;
+use Thirtybees\Core\Error\ErrorUtils;
 /**
  * 2007-2016 PrestaShop
  *
@@ -49,7 +52,7 @@ class PrestaShopExceptionCore extends Exception
      * @param string|null $file
      * @param int|null $line
      */
-    public function __construct($message = '', $code = 0, Throwable $previous = null, $customTrace = null, $file = null, $line = null)
+    public function __construct($message = '', $code = 0, ?Throwable $previous = null, $customTrace = null, $file = null, $line = null)
     {
         parent::__construct($message, $code, $previous);
 
@@ -75,8 +78,8 @@ class PrestaShopExceptionCore extends Exception
      */
     public function displayMessage()
     {
-        $errorHandler = Thirtybees\Core\DependencyInjection\ServiceLocator::getInstance()->getErrorHandler();
-        $errorHandler->handleFatalError(Thirtybees\Core\Error\ErrorUtils::describeException($this));
+        $errorHandler = ServiceLocator::getInstance()->getErrorHandler();
+        $errorHandler->handleFatalError(ErrorUtils::describeException($this));
         exit;
     }
 

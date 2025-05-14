@@ -29,6 +29,7 @@
  *  PrestaShop is an internationally registered trademark & property of PrestaShop SA
  */
 
+use CoreUpdater\TableSchema;
 use Thirtybees\Core\InitializationCallback;
 
 /**
@@ -319,7 +320,7 @@ class CarrierCore extends ObjectModel implements InitializationCallback
      *
      * @throws PrestaShopException
      */
-    public function getIdTaxRulesGroup(Context $context = null)
+    public function getIdTaxRulesGroup(?Context $context = null)
     {
         return static::getIdTaxRulesGroupByIdCarrier((int) $this->id, $context);
     }
@@ -332,7 +333,7 @@ class CarrierCore extends ObjectModel implements InitializationCallback
      *
      * @throws PrestaShopException
      */
-    public static function getIdTaxRulesGroupByIdCarrier($idCarrier, Context $context = null)
+    public static function getIdTaxRulesGroupByIdCarrier($idCarrier, ?Context $context = null)
     {
         if (!$context) {
             $context = Context::getContext();
@@ -575,14 +576,22 @@ class CarrierCore extends ObjectModel implements InitializationCallback
      * @param int $idShop
      * @param Cart $cart
      * @param array $error contains an error message if an error occurs
+     * @param int|null $combinationId calculate for specific product combination
      *
      * @return array
      * @throws PrestaShopDatabaseException
      *
      * @throws PrestaShopException
      */
-    public static function getAvailableCarrierList(Product $product, $idWarehouse, $idAddressDelivery = null, $idShop = null, $cart = null, &$error = [])
-    {
+    public static function getAvailableCarrierList(
+        Product $product,
+        $idWarehouse,
+        $idAddressDelivery = null,
+        $idShop = null,
+        $cart = null,
+        &$error = [],
+        $combinationId = 0
+    ) {
         static $psCountryDefault = null;
 
         if ($psCountryDefault === null) {
@@ -600,7 +609,10 @@ class CarrierCore extends ObjectModel implements InitializationCallback
             $error = [];
         }
 
-        $idAddress = (int) ((!is_null($idAddressDelivery) && $idAddressDelivery != 0) ? $idAddressDelivery : $cart->id_address_delivery);
+        $idAddress = (int)$idAddressDelivery;
+        if (! $idAddress) {
+            $idAddress = (int)$cart->id_address_delivery;
+        }
         if ($idAddress) {
             $idZone = Address::getZoneById($idAddress);
 
@@ -682,13 +694,9 @@ class CarrierCore extends ObjectModel implements InitializationCallback
             $carrierList = array_intersect($carrierList, $warehouseCarrierList);
         }
 
-        $cartQuantity = 0;
         $cartWeight = 0;
 
         foreach ($cart->getProducts(false, false) as $cartProduct) {
-            if ($cartProduct['id_product'] == $product->id) {
-                $cartQuantity += $cartProduct['cart_quantity'];
-            }
             if (isset($cartProduct['weight_attribute']) && $cartProduct['weight_attribute'] > 0) {
                 $cartWeight += ($cartProduct['weight_attribute'] * $cartProduct['cart_quantity']);
             } else {
@@ -696,12 +704,18 @@ class CarrierCore extends ObjectModel implements InitializationCallback
             }
         }
 
+        $productWeight = $product->getWeight($combinationId);
+
         foreach ($carrierList as $key => $idCarrier) {
             $carrier = new Carrier($idCarrier);
 
             // Get the sizes of the carrier and the product and sort them to check if the carrier can take the product.
             $carrierSizes = [(int) $carrier->max_width, (int) $carrier->max_height, (int) $carrier->max_depth];
-            $productSizes = [(int) $product->width, (int) $product->height, (int) $product->depth];
+            $productSizes = [
+                (int)round($product->getWidth($combinationId)),
+                (int)round($product->getHeight($combinationId)),
+                (int)round($product->getDepth($combinationId))
+            ];
             rsort($carrierSizes, SORT_NUMERIC);
             rsort($productSizes, SORT_NUMERIC);
 
@@ -729,6 +743,11 @@ class CarrierCore extends ObjectModel implements InitializationCallback
             }
 
             if ($carrier->max_weight > 0 && $cartWeight > $carrier->max_weight) {
+                $error[$carrier->id] = static::SHIPPING_WEIGHT_EXCEPTION;
+                unset($carrierList[$key]);
+            }
+
+            if ($carrier->max_weight > 0 && $productWeight > $carrier->max_weight) {
                 $error[$carrier->id] = static::SHIPPING_WEIGHT_EXCEPTION;
                 unset($carrierList[$key]);
             }
@@ -1137,7 +1156,7 @@ class CarrierCore extends ObjectModel implements InitializationCallback
 
         Db::getInstance()->delete(
             'carrier_group',
-            '`id_group` IN ('.join(',', $idGroupList).')'
+            '`id_group` IN ('.implode(',', $idGroupList).')'
         );
 
         $carrierList = Db::readOnly()->getArray(
@@ -1145,7 +1164,7 @@ class CarrierCore extends ObjectModel implements InitializationCallback
                 ->select('`id_carrier`')
                 ->from('carrier')
                 ->where('`deleted` = 0')
-                ->where(is_array($exception) ? '`id_carrier` NOT IN ('.join(',', $exception).')' : '')
+                ->where(is_array($exception) ? '`id_carrier` NOT IN ('.implode(',', $exception).')' : '')
         );
 
         if ($carrierList) {
@@ -1292,7 +1311,7 @@ class CarrierCore extends ObjectModel implements InitializationCallback
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public function deleteTaxRulesGroup(array $shops = null)
+    public function deleteTaxRulesGroup(?array $shops = null)
     {
         if (!$shops) {
             $shops = Shop::getContextListShopID();
@@ -2011,7 +2030,7 @@ class CarrierCore extends ObjectModel implements InitializationCallback
     }
 
     /**
-     * @param \CoreUpdater\TableSchema $table
+     * @param TableSchema $table
      */
     public static function processTableSchema($table)
     {
@@ -2039,7 +2058,7 @@ class CarrierCore extends ObjectModel implements InitializationCallback
                 $this->display_name = static::expandName($this->name);
             } else {
                 $this->display_name = [];
-                foreach (Language::getLanguages(false, false, true) as $lang)  {
+                foreach (Language::getLanguages(false, false, true) as $lang) {
                     $this->display_name[$lang] = static::expandName($this->name);
                 }
             }
