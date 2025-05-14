@@ -113,7 +113,7 @@ smartyRegisterFunction($smarty, 'modifier', 'urlencode', 'urlencode');
 smartyRegisterFunction($smarty, 'modifier', 'utf8ToIdn', ['Tools', 'convertEmailToIdn']);
 smartyRegisterFunction($smarty, 'modifier', 'var_export', 'var_export');
 
-if (defined('_PS_ADMIN_DIR_')) {
+if (defined('_PS_ADMIN_DIR_') && !defined('GENZO_FRONT_TRANSLATION')) {
     smartyRegisterFunction($smarty, 'function', 'l', ['Translate', 'smartyAdminTranslate'], false);
 } else {
     smartyRegisterFunction($smarty, 'function', 'l', ['Translate', 'smartyFrontTranslate'], false);
