@@ -230,10 +230,8 @@ class OrderCarrierCore extends ObjectModel
         if ($id_order && Module::isEnabled('genzo_shipping')) {
             /* @var $genzoShipping Genzo_Shipping */
             $genzoShipping = Module::getInstanceByName('genzo_shipping');
-            if (!empty($genzoShipping->getPackagingOptionsForOrder($id_order, true, true))) {
-                // Note: we never want to raise the fee absolute value (Abholung in Biberist should be calculated with zero cost) -> min()
-                $fee_absolute = min($fee_absolute, 3.00); // Assuming that a letter cost's us 3.00 CHF
-            }
+            $bestPackagingOption = $genzoShipping->getBestPackagingOptionForOrder($id_order);
+            $fee_absolute = $bestPackagingOption->shipping_cost + $bestPackagingOption->packaging_cost;
         }
 
         $this->shipping_cost_accounting = Tools::ps_round($fee_absolute*$conversionRate + ($fee_relative/100*$shipping_cost), 6);
