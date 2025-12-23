@@ -232,6 +232,10 @@ class OrderCarrierCore extends ObjectModel
             $genzoShipping = Module::getInstanceByName('genzo_shipping');
             $bestPackagingOption = $genzoShipping->getBestPackagingOptionForOrder($id_order);
             $fee_absolute = $bestPackagingOption->shipping_cost + $bestPackagingOption->packaging_cost;
+
+            if ($carrier->id_carrier == SpielezarHelper::CARRIER_PREORDER) {
+                $fee_absolute = 0;
+            }
         }
 
         $this->shipping_cost_accounting = Tools::ps_round($fee_absolute*$conversionRate + ($fee_relative/100*$shipping_cost), 6);
