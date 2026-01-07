@@ -204,10 +204,11 @@ class OrderCarrierCore extends ObjectModel
     /**
      * Set shipping_cost_accounting value
      *
-     * @param object $carrier CarrierObject or id_carrier
+     * @param object|int $carrier CarrierObject or id_carrier
      * @param float $shipping_cost Shipping cost paid by customer (default tax_excl)
      * @param int $id_currency ID Currency
      * @param float $conversionRate Order conversion rate
+     * @param ?int $id_order
      *
      */
     public function setShippingCostAccounting($carrier, $shipping_cost, $id_country, $conversionRate, $id_order = null) {
@@ -230,12 +231,13 @@ class OrderCarrierCore extends ObjectModel
         if ($id_order && Module::isEnabled('genzo_shipping')) {
             /* @var $genzoShipping Genzo_Shipping */
             $genzoShipping = Module::getInstanceByName('genzo_shipping');
-            $bestPackagingOption = $genzoShipping->getBestPackagingOptionForOrder($id_order);
+            $bestPackagingOption = $genzoShipping->getBestPackagingOptionForOrder($id_order, true);
             $fee_absolute = $bestPackagingOption->shipping_cost + $bestPackagingOption->packaging_cost;
 
-            if ($carrier->id_carrier == SpielezarHelper::CARRIER_PREORDER) {
+            if (in_array($carrier->id_carrier, [SpielezarHelper::CARRIER_PREORDER, SpielezarHelper::CARRIER_PICKUP])) {
                 $fee_absolute = 0;
             }
+
         }
 
         $this->shipping_cost_accounting = Tools::ps_round($fee_absolute*$conversionRate + ($fee_relative/100*$shipping_cost), 6);
