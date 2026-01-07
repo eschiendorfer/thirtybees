@@ -234,7 +234,7 @@ class OrderCarrierCore extends ObjectModel
             $bestPackagingOption = $genzoShipping->getBestPackagingOptionForOrder($id_order, true);
             $fee_absolute = $bestPackagingOption->shipping_cost + $bestPackagingOption->packaging_cost;
 
-            if (in_array($carrier->id, [SpielezarHelper::CARRIER_PREORDER, SpielezarHelper::CARRIER_PICKUP])) {
+            if (in_array($carrier->id_reference, [SpielezarHelper::CARRIER_PREORDER, SpielezarHelper::CARRIER_PICKUP])) {
                 $fee_absolute = 0;
             }
 
