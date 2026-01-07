@@ -404,7 +404,7 @@ class AdminOrdersControllerCore extends AdminController
 
         if ($this->hasEditPermission() && $this->display == 'view') {
             $apiKey = Configuration::get('TB_GOOGLE_MAPS_API_KEY');
-            if ($apiKey) {
+            if ($apiKey && !$this->context->isMobile()) {
                 $this->addJS('https://maps.google.com/maps/api/js?key='. urlencode($apiKey));
             }
             $this->addJS(_PS_JS_DIR_.'admin/orders.js');
