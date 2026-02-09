@@ -1262,13 +1262,20 @@ class AdminSupplyOrdersControllerCore extends AdminController
                 }
 
                 // specify initial state
-                $_POST['id_supply_order_state'] = 1; //defaut creation state
 
-                // specify global reference currency
-                $_POST['id_ref_currency'] = Currency::getDefaultCurrency()->id;
+                // Todo: Genzo this was a quick fix. In general all this bullshit with $_POST and also is_editing_order should be rewritten
+                // Note: This $_POST Values did override existing id_supply_order_state (when editing)
+                // strangely this wasn't executed too often as there was often an $this->errors due to date_delivery_expected in the past
+                if (!Tools::getIntValue('id_supply_order')) {
 
-                // specify supplier name
-                $_POST['supplier_name'] = Supplier::getNameById($idSupplier);
+                    $_POST['id_supply_order_state'] = 1; //defaut creation state
+
+                    // specify global reference currency
+                    $_POST['id_ref_currency'] = Currency::getDefaultCurrency()->id;
+
+                    // specify supplier name
+                    $_POST['supplier_name'] = Supplier::getNameById($idSupplier);
+                }
 
                 //specific discount check
                 $_POST['discount_rate'] = Tools::getNumberValue('discount_rate');
