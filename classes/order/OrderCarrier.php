@@ -231,7 +231,7 @@ class OrderCarrierCore extends ObjectModel
         if ($id_order && Module::isEnabled('genzo_shipping')) {
             /* @var $genzoShipping Genzo_Shipping */
             $genzoShipping = Module::getInstanceByName('genzo_shipping');
-            $bestPackagingOption = $genzoShipping->getBestPackagingOptionForOrder($id_order, true);
+            $bestPackagingOption = $genzoShipping->getBestPackagingOptionForOrder($id_order, true, (int)$carrier->id);
             $fee_absolute = $bestPackagingOption->shipping_cost + $bestPackagingOption->packaging_cost;
 
             if (in_array($carrier->id, [SpielezarHelper::CARRIER_PREORDER, SpielezarHelper::CARRIER_PICKUP])) {
