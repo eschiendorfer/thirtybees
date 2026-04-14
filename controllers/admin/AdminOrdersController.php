@@ -598,7 +598,7 @@ class AdminOrdersControllerCore extends AdminController
                 $trackingNumber = Tools::getValue('tracking_number');
                 if (!Validate::isLoadedObject($orderCarrier)) {
                     $this->errors[] = Tools::displayError('The order carrier ID is invalid.');
-                } elseif (!Validate::isTrackingNumber($trackingNumber)) {
+                } elseif (Tools::getValue('tracking_number') && !Validate::isTrackingNumber($trackingNumber)) {
                     $this->errors[] = Tools::displayError('The tracking number is incorrect.');
                 } else {
                     $customer = new Customer((int) $order->id_customer);
@@ -619,9 +619,75 @@ class AdminOrdersControllerCore extends AdminController
                             ],
                             $order->id_shop
                         );
-                        Tools::redirectAdmin(static::$currentIndex.'&id_order='.$order->id.'&vieworder&conf=4&token='.$this->token);
                     }
 
+                    // Update shipping
+                    $id_carrier = (int)Tools::getValue('id_carrier');
+                    $tracking_number = pSQL($trackingNumber);
+
+                    if (Tools::getValue('recalculate_shipping')) {
+                        $weight = null;
+                        $shipping_cost_tax_incl = null;
+                    }
+                    else {
+                        $weight = (float)Tools::getValue('weight');
+                        $shipping_cost_tax_incl = (float)Tools::getValue('shipping_cost_tax_incl');
+                    }
+
+                    if ($order->updateShipping($id_carrier, $weight, $shipping_cost_tax_incl, $tracking_number)) {
+                        if (Tools::getValue('send_transit_email')) {
+                            // Send mail to customer
+                            $customer = new Customer((int) $order->id_customer);
+                            $carrier = new Carrier((int) $order->id_carrier, $order->id_lang);
+                            if (!Validate::isLoadedObject($customer)) {
+                                throw new PrestaShopException('Can\'t load Customer object');
+                            }
+                            if (!Validate::isLoadedObject($carrier)) {
+                                throw new PrestaShopException('Can\'t load Carrier object');
+                            }
+                            $templateVars = [
+                                '{followup}'         => str_replace('@', $trackingNumber, $carrier->url),
+                                '{firstname}'        => $customer->firstname,
+                                '{lastname}'         => $customer->lastname,
+                                '{id_order}'         => $order->id,
+                                '{shipping_number}'  => $trackingNumber,
+                                '{order_name}'       => $order->getUniqReference(),
+                                '{bankwire_owner}'   => (string) Configuration::get('BANK_WIRE_OWNER'),
+                                '{bankwire_details}' => (string) nl2br(Configuration::get('BANK_WIRE_DETAILS')),
+                                '{bankwire_address}' => (string) nl2br(Configuration::get('BANK_WIRE_ADDRESS')),
+                            ];
+                            if (@Mail::Send(
+                                (int) $order->id_lang,
+                                'in_transit',
+                                Mail::l('Package in transit', (int) $order->id_lang),
+                                $templateVars,
+                                $customer->email,
+                                $customer->firstname.' '.$customer->lastname,
+                                null,
+                                null,
+                                null,
+                                null,
+                                _PS_MAIL_DIR_,
+                                true,
+                                (int) $order->id_shop
+                            )) {
+                                Hook::triggerEvent(
+                                'actionAdminOrdersTrackingNumberUpdate',
+                                [
+                                    'order' => $order,
+                                    'customer' => $customer,
+                                    'carrier' => $carrier
+                                ],
+                                $order->id_shop
+                            );
+                                Tools::redirectAdmin(static::$currentIndex.'&id_order='.$order->id.'&vieworder&conf=4&token='.$this->token);
+                            } else {
+                                $this->errors[] = Tools::displayError('An error occurred while sending an email to the customer.');
+                            }
+                        }
+                    } else {
+                        $this->errors[] = Tools::displayError('The order carrier cannot be updated.');
+                    }
                 }
             } else {
                 $this->errors[] = Tools::displayError('You do not have permission to edit this.');
@@ -2004,6 +2070,7 @@ class AdminOrdersControllerCore extends AdminController
             'orderDocuments'               => $order->getDocuments(),
             'messages'                     => CustomerMessage::getMessagesByOrderId($order->id, false),
             'carrier'                      => new Carrier($order->id_carrier),
+            'carriers'                     => Carrier::getCarriers($this->context->language->id, false, false, null, null, Carrier::PS_CARRIERS_ONLY, $order->id_shop),
             'history'                      => $history,
             'states'                       => OrderState::getOrderStates($this->context->language->id),
             'warehouse_list'               => $warehouseList,
