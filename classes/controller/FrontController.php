@@ -120,6 +120,9 @@ class FrontControllerCore extends Controller
     /** @var bool If true, forces display to maintenance page. */
     protected $maintenance = false;
 
+    /** @var array AJAX values that will be sent in ajaxDisplay() */
+    public $ajaxValues = [];
+
     /**
      * Controller constructor.
      *
@@ -854,6 +857,27 @@ class FrontControllerCore extends Controller
         }
 
         return true;
+    }
+
+    /**
+     * Run ajax process
+     * @see Controller::run()
+     *
+     * @since 1.5.0
+     */
+    protected function displayAjax(){
+        $return = [
+            'hasError' => !empty($this->errors),
+            'errors'   => $this->errors,
+            'ajaxValues'   => $this->ajaxValues,
+            'token'    => Tools::getToken(false),
+        ];
+
+        if ($this->template) {
+            $return['page'] = $this->context->smarty->fetch($this->template);
+        }
+
+        $this->ajaxDie(json_encode($return));
     }
 
     /**

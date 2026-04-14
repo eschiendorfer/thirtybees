@@ -105,9 +105,13 @@ class AddressControllerCore extends FrontController
                             unset($this->context->cart->id_address_delivery);
                             $this->context->cart->updateAddressId($this->_address->id, (int) Address::getFirstCustomerAddressId($this->context->customer->id));
                         }
-                        Tools::redirect('index.php?controller=addresses');
+                        if (!$this->ajax) {
+                            Tools::redirect('index.php?controller=addresses');
+                        }
                     }
-                    $this->errors[] = Tools::displayError('This address cannot be deleted.');
+                    else {
+                        $this->errors[] = Tools::displayError('This address cannot be deleted.');
+                    }
                 }
             } elseif ($this->ajax) {
                 exit;
@@ -185,20 +189,6 @@ class AddressControllerCore extends FrontController
         }
 
         $this->setTemplate(_PS_THEME_DIR_.'address.tpl');
-    }
-
-    /**
-     * @throws PrestaShopException
-     */
-    public function displayAjax()
-    {
-        if (count($this->errors)) {
-            $return = [
-                'hasError' => !empty($this->errors),
-                'errors'   => $this->errors,
-            ];
-            $this->ajaxDie(json_encode($return));
-        }
     }
 
     /**
