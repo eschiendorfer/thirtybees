@@ -23,13 +23,18 @@
 *  International Registered Trademark & Property of PrestaShop SA
 *}
 {if isset($fields.title)}<h3>{$fields.title}</h3>{/if}
-
 {if isset($tabs) && $tabs|count}
 <script type="text/javascript">
 	var helper_tabs = {$tabs|json_encode};
 	var unique_field_id = '';
 </script>
 {/if}
+
+<script type="text/javascript">
+	var conditional_fields = [];
+	var checkbox_elements = [];
+</script>
+
 {block name="defaultForm"}
 {if isset($identifier_bk) && $identifier_bk == $identifier}{capture name='identifier_count'}{counter name='identifier_count'}{/capture}{/if}
 {assign var='identifier_bk' value=$identifier scope='parent'}
@@ -66,6 +71,13 @@
 				{elseif $key == 'input'}
 					<div class="form-wrapper">
 					{foreach $field as $input}
+						{* Fill the conditional_fields javascript array *}
+						{if isset($input.conditional_rules) && is_array($input.conditional_rules) && !empty($input.conditional_rules) && $input.type!=='checkbox'}
+							<script>
+								{assign var='conditional_helper' value=[{$input.name} => $input.conditional_rules]}
+								conditional_fields.push('{$conditional_helper|json_encode}');
+							</script>
+						{/if}
 						{block name="input_row"}
 						<div class="form-group{if isset($input.form_group_class)} {$input.form_group_class}{/if}{if $input.type == 'hidden'} hide{/if}"{if $input.name == 'id_state'} id="contains_states"{if !$contains_states} style="display:none;"{/if}{/if}{if isset($tabs) && isset($input.tab)} data-tab-id="{$input.tab}"{/if}>
 						{if $input.type == 'hidden'}
@@ -446,6 +458,20 @@
 									{/if}
 									{foreach $input.values.query as $value}
 										{assign var=id_checkbox value=$input.name|cat:'_'|cat:$value[$input.values.id]}
+
+										{if isset($input.conditional_rules) && is_array($input.conditional_rules) && !empty($input.conditional_rules)}
+											<script>
+												{assign var='conditional_helper' value=[{$id_checkbox} => $input.conditional_rules]}
+												conditional_fields.push('{$conditional_helper|json_encode}');
+
+												if (!checkbox_elements.{$input.name}) {
+													checkbox_elements.{$input.name} = [];
+												}
+
+												checkbox_elements.{$input.name}.push('{$id_checkbox|json_encode}');
+											</script>
+										{/if}
+
 										<div class="checkbox{if isset($input.expand) && strtolower($input.expand.default) == 'show'} hidden{/if}">
 											{strip}
 												<label for="{$id_checkbox}">
@@ -933,3 +959,190 @@
 	{block name="script"}{/block}
 	</script>
 {/if}
+
+{* Handle conditional fields *}
+<script>
+
+	var form_identifier = "{if isset($fields.form.form.id_form)}{$fields.form.form.id_form|escape:'html':'UTF-8'}{else}{if $table == null}configuration_form{else}{$table}_form{/if}{if isset($smarty.capture.table_count) && $smarty.capture.table_count}_{$smarty.capture.table_count|intval}{/if}{/if}";
+	var form = document.querySelector('form#'+form_identifier);
+
+	// Trigger the display function on multiple events
+	if (form) {
+
+		displayConditionalFormElements();
+
+		form.addEventListener('change', function() {
+			displayConditionalFormElements(event.target.id);
+		});
+
+		// Make sure that chosen fields are also triggering the displayConditionalFormElements() function
+		$(document).ready(function() {
+			$('.chosen').chosen().change(function () {
+				displayConditionalFormElements(this.id);
+			});
+		});
+
+	}
+
+	function displayConditionalFormElements(id_field_updated = '') {
+
+		conditional_fields.forEach(function(conditional_field) {
+
+			conditional_field = JSON.parse(conditional_field);
+
+			Object.entries(conditional_field).forEach(function(conditional_field_rules) {
+
+				var [id_field_element, group_rules_object] = conditional_field_rules;
+
+				// Making sure, that a manual change of a field by user, is still possible
+				if (!id_field_updated || id_field_updated!==id_field_element) {
+
+					// If one rule group matches, the loop can be skipped (OR condition)
+					var found_matching_rule_group = false;
+
+					// Handle all actions (they will be overridden, if one group matches all rules)
+					var action_display = group_rules_object.display_default;
+					var action_disabled = group_rules_object.disabled_default;
+					var action_set_values = group_rules_object.set_values_default;
+					var action_no_change = false;
+
+					group_rules_object.group_rules.forEach(function (rules_object) {
+
+						if (found_matching_rule_group === false) {
+
+							// Loop through all rules. They all need to be true (AND condition)
+							var all_rules_matching = true;
+
+							rules_object.rules.forEach(function (rule) {
+
+								if (all_rules_matching === true) {
+
+									// Get the fields, that decides, if the main field should be showed or hided
+									var field_elements_conditional = [];
+
+									// Elements for checkboxes are defined above in the foreach loop
+									if (checkbox_elements[rule.id]) {
+										checkbox_elements[rule.id].forEach(function (checkbox_name) {
+											field_elements_conditional.push(document.querySelector('input[name=' + checkbox_name + ']'));
+										});
+									} else {
+										field_elements_conditional = document.getElementsByName(rule.id);
+									}
+
+
+									var field_elements_conditional_values = [];
+									var values_accepted = rule.values;
+
+									field_elements_conditional.forEach(function (field_element_conditional) {
+										// Overwrite the value depending on the used field type
+										if (field_element_conditional.tagName === 'SELECT') {
+
+											if (field_element_conditional.selectedOptions.length) {
+												for (var i = 0; i < field_element_conditional.selectedOptions.length; i++) {
+													// In true/false mode: skip value=0 as this is normally kind of "Please choose"
+													if (Array.isArray(values_accepted) || (field_element_conditional.selectedOptions[i].value !== '' && field_element_conditional.selectedOptions[i].value !== '0')) {
+														field_elements_conditional_values.push(field_element_conditional.selectedOptions[i].value);
+													}
+												}
+											}
+
+										} else if (field_element_conditional.tagName === 'INPUT' && (field_element_conditional.type === 'radio' || field_element_conditional.type === 'checkbox')) {
+											// Make sure that switches doesn't get the 0 value, if the values_accepted is true/false
+											if (field_element_conditional.checked && (Array.isArray(values_accepted) || (field_element_conditional.value !== '' && field_element_conditional.value !== '0'))) {
+												// Note: the checkbox does not use any value attribute
+												var current_value = field_element_conditional.type === 'checkbox' ? field_element_conditional.name.replace(rule.id + '_', '') : field_element_conditional.value;
+												field_elements_conditional_values.push(current_value);
+											}
+										} else {
+											field_elements_conditional_values.push(field_element_conditional.value);
+										}
+									});
+
+									if (Array.isArray(values_accepted)) {
+										// Make sure that all values are compared as strings (otherwise includes function won't work for integers)
+										values_accepted = values_accepted.map(String);
+
+										all_rules_matching = false;
+
+										// Check if one of the selected values matches any accepted value
+										field_elements_conditional_values.forEach(function (field_element_conditional_value) {
+											if (values_accepted.includes(field_element_conditional_value)) {
+												all_rules_matching = true;
+											}
+										});
+
+									} else if ((values_accepted === true && !field_elements_conditional_values.length) || (values_accepted === false && field_elements_conditional_values.length)) {
+										all_rules_matching = false;
+									}
+								}
+							});
+
+							if (all_rules_matching === true) {
+								found_matching_rule_group = true;
+
+								// Update the actions values
+								action_display = rules_object.display;
+								action_disabled = rules_object.disabled;
+								action_set_values = rules_object.set_values;
+								action_no_change = rules_object.no_change;
+							}
+						}
+
+					});
+				}
+
+				// Apply the Actions: we need to use querySelectorAll as inputs with type radio two elements
+				var field_elements = document.querySelectorAll('form#'+form_identifier+' [name="'+id_field_element+'"]');
+
+				// Make sure that language fields are also working (as they have name_'id_lang')
+				languages.forEach(function(language) {
+					var lang_field = document.querySelector('form#'+form_identifier+' [name="'+id_field_element+'_'+language.id_lang+'"]');
+					if (lang_field) {
+						field_elements.length ? field_elements.push(lang_field) : field_elements=[lang_field];
+					}
+				});
+
+				// In a few edge cases you want to define, that nothing changes anymore -> to achieve you can set a group rule with 'no_change' => true
+				if (!action_no_change) {
+					field_elements.forEach(function (field_element) {
+						// Action: display
+						if (action_display !== undefined) {
+
+							if (field_element.type === 'file') {
+								// Input with type file does use a nested version of form-group
+								field_element.closest('.form-group').parentElement.closest('.form-group').style.display = (action_display === true) ? '' : 'none';
+							} else {
+								field_element.closest('.form-group').style.display = (action_display === true) ? '' : 'none';
+							}
+
+						}
+
+						// Action: disabled
+						if (action_disabled !== undefined) {
+							field_element.disabled = action_disabled;
+						}
+
+						// Action: set_value
+						if (action_set_values !== undefined) {
+
+							if (!Array.isArray(action_set_values)) {
+								action_set_values = [action_set_values];
+							}
+
+							action_set_values = action_set_values.map(String);
+
+							if (field_element.tagName === 'INPUT' && (field_element.type === 'radio' || field_element.type === 'checkbox')) {
+								// In the checkbox inputs there isn't any value attribute. It has to be extracted from name
+								var current_value = field_element.type === 'checkbox' ? /[^_]*$/.exec(field_element.name)[0] : field_element.value;
+								field_element.checked = action_set_values.includes(current_value);
+							} else {
+								field_element.value = action_set_values[0];
+							}
+
+						}
+					});
+				}
+			});
+		});
+	}
+</script>

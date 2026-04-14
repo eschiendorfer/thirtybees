@@ -316,6 +316,19 @@ class AdminShopGroupControllerCore extends AdminController
                         ],
                     ],
                     'desc'     => $this->l('Once this option is enabled (which is only possible if customers and available quantities are shared among shops), the customer\'s cart will be shared by all shops in this group. This way, any purchase started in one shop will be able to be completed in another shop from the same group.').'<br/>'.$this->l('Warning: You will not be able to disable this option once you\'ve started to accept orders.'),
+                    'conditional_rules' => [
+                        'disabled_default' => true,
+                        'set_values_default' => 0,
+                        'group_rules' => [
+                            [
+                                'disabled' => false,
+                                'rules' => [
+                                    ['id' => 'share_customer', 'values' => true],
+                                    ['id' => 'share_stock', 'values' => true],
+                                ]
+                            ],
+                        ]
+                    ]
                 ],
                 [
                     'type'     => 'switch',
