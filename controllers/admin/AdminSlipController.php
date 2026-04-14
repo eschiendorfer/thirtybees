@@ -47,8 +47,9 @@ class AdminSlipControllerCore extends AdminController
         $this->table = 'order_slip';
         $this->className = 'OrderSlip';
 
-        $this->_select = ' o.`id_shop`';
+        $this->_select = 'a.`id_order_slip` AS id_pdf, o.`id_shop`, o.`reference`, CONCAT(c.`firstname`, \' \', c.`lastname`) AS `customer`, (a.`total_products_tax_incl`+a.`total_shipping_tax_incl`) AS total_tax_incl';
         $this->_join .= ' LEFT JOIN '._DB_PREFIX_.'orders o ON (o.`id_order` = a.`id_order`)';
+        $this->_join .= ' LEFT JOIN '._DB_PREFIX_.'customer c ON (o.`id_customer` = c.`id_customer`)';
         $this->_group = ' GROUP BY a.`id_order_slip`';
 
         $this->fields_list = [
@@ -57,10 +58,15 @@ class AdminSlipControllerCore extends AdminController
                 'align' => 'center',
                 'class' => 'fixed-width-xs',
             ],
-            'id_order'      => [
-                'title'        => $this->l('Order ID'),
-                'align'        => 'left',
-                'class'        => 'fixed-width-md',
+            'reference' => [
+                'title' => $this->l('Order Reference'),
+                'filter_key' => 'o!reference',
+                'align' => 'text-center',
+                'class' => 'fixed-width-xs',
+                'callback' => 'getOrderLink'
+            ],
+            'customer' => [
+                'title' => $this->l('Customer'),
                 'havingFilter' => true,
             ],
             'date_add'      => [
@@ -68,6 +74,13 @@ class AdminSlipControllerCore extends AdminController
                 'type'       => 'date',
                 'align'      => 'right',
                 'filter_key' => 'a!date_add',
+            ],
+            'total_tax_incl' => [
+                'title' => $this->l('Total (tax incl.)'),
+                'align'         => 'text-right',
+                'type'      => 'price',
+                'havingFilter' => true,
+                'class'      => 'fixed-width-xs',
             ],
             'id_pdf'        => [
                 'title'          => $this->l('PDF'),
@@ -79,7 +92,10 @@ class AdminSlipControllerCore extends AdminController
             ],
         ];
 
-        $this->_select = 'a.id_order_slip AS id_pdf';
+        $this->optionTitle = $this->l('Slip');
+
+        $this->_orderBy = 'id_order_slip';
+        $this->_orderWay = 'DESC';
 
         $this->fields_options = [
             'general' => [
@@ -267,5 +283,21 @@ class AdminSlipControllerCore extends AdminController
         ]);
 
         return $this->createTemplate('_print_pdf_icon.tpl')->fetch();
+    }
+
+    /**
+     * @param int $reference
+     * @param array $row
+     * @return string
+     * @throws PrestaShopException
+     */
+    public static function getOrderLink($reference, $row)
+    {
+        $params = [
+            'vieworder'=> true,
+            'id_order' => (int)$row['id_order']
+        ];
+        $link = Context::getContext()->link->getAdminLink('AdminOrders', true, $params);
+        return "<a href='{$link}'>{$reference}</a>";
     }
 }
