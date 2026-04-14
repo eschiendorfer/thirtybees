@@ -537,7 +537,7 @@ class ProductCore extends ObjectModel implements InitializationCallback
             'pack_dynamic'              => ['type' => self::TYPE_BOOL, 'shop' => true, 'validate' => 'isUnsignedInt', 'dbDefault' => '0'],
 
             /* Lang fields */
-            'description'               => ['type' => self::TYPE_HTML, 'lang' => true, 'validate' => 'isCleanHtml', 'size' => ObjectModel::SIZE_TEXT],
+            'description'               => ['type' => self::TYPE_HTML, 'lang' => true, 'validate' => 'isCleanHtml', 'size' => ObjectModel::SIZE_LONG_TEXT],
             'description_short'         => ['type' => self::TYPE_HTML, 'lang' => true, 'validate' => 'isCleanHtml', 'size' => ObjectModel::SIZE_TEXT],
             'link_rewrite'              => ['type' => self::TYPE_STRING, 'lang' => true, 'validate' => 'isLinkRewrite', 'required' => true, 'size' => 128, 'ws_modifier' => [ 'http_method' => WebserviceRequest::HTTP_POST, 'modifier' => 'modifierWsLinkRewrite']],
             'meta_description'          => ['type' => self::TYPE_STRING, 'lang' => true, 'validate' => 'isGenericName', 'size' => 255],
@@ -3078,7 +3078,7 @@ class ProductCore extends ObjectModel implements InitializationCallback
                 unset($row3['id_product_supplier']);
                 $row3['id_product'] = $idProductNew;
                 $row3['id_product_attribute'] = $idProductAttributeNew;
-                $return = $conn->insert('product_supplier', $row3) && $return;
+                $return = $conn->insert('product_supplier', $row3, false, true, Db::INSERT_IGNORE) && $return;
             }
         }
 
@@ -6555,25 +6555,15 @@ class ProductCore extends ObjectModel implements InitializationCallback
                     return false;
                 }
                 /* Multilingual label name update */
-                if (Shop::isFeatureActive()) {
-                    foreach (Shop::getContextListShopID() as $idShop) {
-                        if (!$conn->execute(
-                            'INSERT INTO `'._DB_PREFIX_.'customization_field_lang`
-						(`id_customization_field`, `id_lang`, `id_shop`, `name`) VALUES ('.(int) $tmp[2].', '.(int) $tmp[3].', '.$idShop.', \''.pSQL($value).'\')
-						ON DUPLICATE KEY UPDATE `name` = \''.pSQL($value).'\''
-                        )
-                        ) {
-                            return false;
-                        }
+                foreach (Shop::getContextListShopID() as $idShop) {
+                    if (!$conn->execute(
+                        'INSERT INTO `'._DB_PREFIX_.'customization_field_lang`
+                    (`id_customization_field`, `id_lang`, `id_shop`, `name`) VALUES ('.(int) $tmp[2].', '.(int) $tmp[3].', '.$idShop.', \''.pSQL($value).'\')
+                    ON DUPLICATE KEY UPDATE `name` = \''.pSQL($value).'\''
+                    )
+                    ) {
+                        return false;
                     }
-                } elseif (!$conn->execute(
-                    '
-					INSERT INTO `'._DB_PREFIX_.'customization_field_lang`
-					(`id_customization_field`, `id_lang`, `name`) VALUES ('.(int) $tmp[2].', '.(int) $tmp[3].', \''.pSQL($value).'\')
-					ON DUPLICATE KEY UPDATE `name` = \''.pSQL($value).'\''
-                )
-                ) {
-                    return false;
                 }
 
                 $isRequired = isset($_POST['require_'.(int) $tmp[1].'_'.(int) $tmp[2]]) ? 1 : 0;
@@ -8456,7 +8446,7 @@ class ProductCore extends ObjectModel implements InitializationCallback
      * @throws PrestaShopException
      * @since thirty bees 1.7.0
      */
-    public function getAvailableQuantity(bool $ignoreNegativeStocks = true, bool $fresh = false, int $idShop = null): int
+    public function getAvailableQuantity(bool $ignoreNegativeStocks = true, bool $fresh = false, ?int $idShop = null): int
     {
         $productId = (int)$this->id;
         if (! $productId) {

@@ -746,13 +746,19 @@ class AdminOrdersControllerCore extends AdminController
                                 $customerThread->update();
                             }
                         }
-
                         $customerMessage = new CustomerMessage();
                         $customerMessage->id_customer_thread = $customerThread->id;
                         $customerMessage->id_employee = (int) $this->context->employee->id;
                         $customerMessage->message = Tools::getValue('message');
                         $customerMessage->private = Tools::getValue('visibility');
-
+                        $fileAttachment = Tools::fileAttachment('file_attachment');
+                        if (!empty($fileAttachment['rename']) && rename($fileAttachment['tmp_name'], _PS_UPLOAD_DIR_.basename($fileAttachment['rename']))) {
+                            $customerMessage->file_name = $fileAttachment['rename'];
+                            @chmod(_PS_UPLOAD_DIR_.basename($fileAttachment['rename']), 0664);
+                        }
+                        if (!empty($fileAttachment['name']) && $fileAttachment['error'] != 0) {
+                            $this->errors[] = Tools::displayError('An error occurred during the file upload process.');
+                        }
                         if (!$customerMessage->add()) {
                             $this->errors[] = Tools::displayError('An error occurred while saving the message.');
                         } elseif ($customerMessage->private) {
@@ -762,7 +768,6 @@ class AdminOrdersControllerCore extends AdminController
                             if (Configuration::get('PS_MAIL_TYPE', null, null, $order->id_shop) != Mail::TYPE_TEXT) {
                                 $message = Tools::nl2br($customerMessage->message);
                             }
-
                             $varsTpl = [
                                 '{lastname}'   => $customer->lastname,
                                 '{firstname}'  => $customer->firstname,
@@ -779,7 +784,7 @@ class AdminOrdersControllerCore extends AdminController
                                 $customer->firstname.' '.$customer->lastname,
                                 null,
                                 null,
-                                null,
+                                $fileAttachment,
                                 null,
                                 _PS_MAIL_DIR_,
                                 true,
@@ -3110,10 +3115,10 @@ class AdminOrdersControllerCore extends AdminController
         }
 
         // We can't edit a delivered order
-        if ($order->hasBeenDelivered()) {
+        if (! $order->canEditProducts()) {
             $this->ajaxDie(json_encode([
                 'result' => false,
-                'error'  => Tools::displayError('You cannot edit a delivered order.'),
+                'error'  => Tools::displayError('You cannot edit this order.'),
             ]));
         }
 
@@ -3185,10 +3190,10 @@ class AdminOrdersControllerCore extends AdminController
         }
 
         // We can't edit a delivered order
-        if ($order->hasBeenDelivered()) {
+        if (! $order->canEditProducts()) {
             $this->ajaxDie(json_encode([
                 'result' => false,
-                'error'  => Tools::displayError('You cannot edit a delivered order.'),
+                'error'  => Tools::displayError('You cannot edit this order.'),
             ]));
         }
     }

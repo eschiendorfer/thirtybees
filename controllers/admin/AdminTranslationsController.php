@@ -1288,7 +1288,7 @@ class AdminTranslationsControllerCore extends AdminController
         }
 
         $thmName = str_replace('.', '', Tools::getValue('theme'));
-        $kpiKey = substr(strtoupper($thmName.'_'.Tools::getValue('lang')), 0, 16);
+        $kpiKey = $thmName.'_'.Tools::getValue('lang');
 
         require_once $filePath;
         $translationsArray = $GLOBALS[$translationInformation['var']];
@@ -1306,14 +1306,13 @@ class AdminTranslationsControllerCore extends AdminController
 
         // update translations
         foreach ($_POST as $key => $value) {
-            if (!empty($value)) {
+            if (! empty($value)) {
                 $translationsArray[$key] = $value;
-            } else {
-                unset($translationsArray[$key]);
             }
         }
 
         // translations array is ordered by key (easy merge)
+        $translationsArray = array_filter($translationsArray);
         ksort($translationsArray);
         $varName = $translationInformation['var'];
         $result = file_put_contents(
@@ -1329,14 +1328,7 @@ class AdminTranslationsControllerCore extends AdminController
             }
 
             ConfigurationKPI::updateValue('FRONTOFFICE_TRANSLATIONS_EXPIRE', time());
-            ConfigurationKPI::updateValue(
-                'TRANSLATE_TOTAL_'.$kpiKey,
-                count($translationsArray)
-            );
-            ConfigurationKPI::updateValue(
-                'TRANSLATE_DONE_'.$kpiKey,
-                count($translationsArray)
-            );
+            ConfigurationKPI::updateValue(Configuration::getValidConfigKey('TRANSLATE_DONE_'.$kpiKey), count($translationsArray));
 
             $this->redirect((bool) $saveAndStay);
         } else {
@@ -1771,9 +1763,9 @@ class AdminTranslationsControllerCore extends AdminController
             case 'back':
                 // Parsing file in Back office
                 if ($typeFile == 'php') {
-                    $regex = "/this\s*->\s*l\s*\(\s*(\')"._PS_TRANS_PATTERN_."\'\s*[\)|\,]/U";
+                    $regex = "/this\s*->\s*l\s*\(\s*([\'\"])"._PS_TRANS_PATTERN_."\\1\s*[\)|\,]/U";
                 } elseif ($typeFile == 'specific') {
-                    $regex = '/Translate\s*::\s*getAdminTranslation\s*\(\s*(\')'._PS_TRANS_PATTERN_.'\'(?:,.*)*\s*\)/U';
+                    $regex = '/Translate\s*::\s*getAdminTranslation\s*\(\s*([\'\"])'._PS_TRANS_PATTERN_.'\\1(?:,.*)*\s*\)/U';
                 } else {
                     $regex = '/\{\s*l\s*s\s*=([\'\"])'._PS_TRANS_PATTERN_.'\1(\s*sprintf=.*)?(\s*js=1)?(\s*slashes=1)?.*\}/U';
                 }
@@ -1781,15 +1773,16 @@ class AdminTranslationsControllerCore extends AdminController
 
             case 'errors':
                 // Parsing file for all errors syntax
-                $regex = '/Tools\s*::\s*displayError\s*\(\s*(\')'._PS_TRANS_PATTERN_.'\'(,\s*(.+))?\)/U';
+                $regex = '/Tools\s*::\s*displayError\s*\(\s*([\'\"])'._PS_TRANS_PATTERN_.'\\1(,\s*(.+))?\)/U';
                 break;
 
             case 'modules':
                 // Parsing modules file
                 if ($typeFile == 'php') {
                     $regex = [
-                        '/->\s*l\s*\(\s*(\')'._PS_TRANS_PATTERN_.'\'\s*(\s*,\s*?\'(.+)\'\s*)?(,\s*\'(.+)\'\s*)?\)/U',
-                        '/Translate\s*::\s*getModuleTranslation\([^,]*,\s*(\')'._PS_TRANS_PATTERN_.'\'\s*,.*\s*\)/U',
+                        '/->\s*l\s*\(\s*([\'\"])'._PS_TRANS_PATTERN_.'\\1\s*'
+                        .'(\s*,\s*?[\'\"](.+)[\'\"]\s*)?(,\s*[\'\"](.+)[\'\"]\s*)?\)/U',
+                        '/Translate\s*::\s*getModuleTranslation\([^,]*,\s*([\'\"])'._PS_TRANS_PATTERN_.'\\1\s*,.*\s*\)/U',
                     ];
                 } else {
                     // In tpl file look for something that should contain mod='module_name' according to the documentation
@@ -1801,10 +1794,11 @@ class AdminTranslationsControllerCore extends AdminController
                 // Parsing PDF file
                 if ($typeFile == 'php') {
                     $regex = [
-                        '/HTMLTemplate.*::\s*l\s*\(\s*(\')'._PS_TRANS_PATTERN_.'\'\s*[\)|\,]/U',
-                        '/static\s*::\s*l\s*\(\s*(\')'._PS_TRANS_PATTERN_.'\'\s*[\)|\,]/U',
-                        '/Translate\s*::\s*getPdfTranslation\(\s*(\')'._PS_TRANS_PATTERN_.'\'(?:,.*)*\s*\)/U',
-                        '/->\s*l\s*\(\s*(\')'._PS_TRANS_PATTERN_.'\'\s*(\s*,\s*?\'(.+)\'\s*)?(,\s*\'(.+)\'\s*)?\)/U',
+                        '/HTMLTemplate.*::\s*l\s*\(\s*([\'\"])'._PS_TRANS_PATTERN_.'\\1\s*[\)|\,]/U',
+                        '/static\s*::\s*l\s*\(\s*([\'\"])'._PS_TRANS_PATTERN_.'\\1\s*[\)|\,]/U',
+                        '/Translate\s*::\s*getPdfTranslation\(\s*([\'\"])'._PS_TRANS_PATTERN_.'\\1(?:,.*)*\s*\)/U',
+                        '/->\s*l\s*\(\s*([\'\"])'._PS_TRANS_PATTERN_.'\\1\s*'
+                        .'(\s*,\s*?[\'\"](.+)[\'\"]\s*)?(,\s*[\'\"](.+)[\'\"]\s*)?\)/U',
                     ];
                 } else {
                     $regex = '/\{\s*l\s*s\s*=\s*([\'\"])'._PS_TRANS_PATTERN_.'\1(\s*sprintf\s*=\s*.*)?(\s*js\s*=\s*1)?(\s*pdf\s*=\s*\'true\')?(\s*mod\s*=\s*\'[a-zA-Z0-9_]+\')?\s*\}/U';
@@ -1851,10 +1845,10 @@ class AdminTranslationsControllerCore extends AdminController
      */
     public function initFormFront()
     {
-        if (!$this->theme_exists(Tools::getValue('theme'))) {
-            $this->errors[] = sprintf(Tools::displayError('Invalid theme "%s"'), Tools::getValue('theme'));
-
-            return;
+        $themeName = Tools::getValue('theme');
+        if (!$this->theme_exists($themeName)) {
+            $this->errors[] = sprintf(Tools::displayError('Invalid theme "%s"'), $themeName);
+            return '';
         }
 
         $missingTranslationsFront = [];
@@ -1920,6 +1914,12 @@ class AdminTranslationsControllerCore extends AdminController
                 }
             }
         }
+
+        $done = $count - array_sum($missingTranslationsFront);
+        $kpiKey = $themeName.'_'.Tools::getValue('lang');
+        ConfigurationKPI::updateValue('FRONTOFFICE_TRANSLATIONS_EXPIRE', time());
+        ConfigurationKPI::updateValue(Configuration::getValidConfigKey('TRANSLATE_TOTAL_'.$kpiKey), $count);
+        ConfigurationKPI::updateValue(Configuration::getValidConfigKey('TRANSLATE_DONE_'.$kpiKey), $done);
 
         $this->tpl_view_vars = array_merge(
             $this->tpl_view_vars,
