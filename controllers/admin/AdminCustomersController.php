@@ -628,7 +628,7 @@ class AdminCustomersControllerCore extends AdminController
                     'label'   => $this->l('Default customer group'),
                     'name'    => 'id_default_group',
                     'options' => [
-                        'query' => $groups,
+                        'query' => [],
                         'id'    => 'id_group',
                         'name'  => 'name',
                     ],
@@ -736,6 +736,19 @@ class AdminCustomersControllerCore extends AdminController
             $customerGroupsIds = array_merge($customerGroupsIds, $preselected);
         }
 
+        $defaultGroups = [];
+        foreach ($groups as $group) {
+            if (in_array($group['id_group'], $customerGroupsIds)) {
+                $defaultGroups[] = $group;
+            }
+        }
+        foreach ($this->fields_form['input'] as &$input) {
+            if ($input['type'] === 'select' && $input['name'] === 'id_default_group') {
+                $input['options']['query'] = $defaultGroups;
+                break;
+            }
+        }
+
         foreach ($groups as $group) {
             $this->fields_value['groupBox_'.$group['id_group']] =
                 Tools::getValue('groupBox_'.$group['id_group'], in_array($group['id_group'], $customerGroupsIds));
@@ -752,6 +765,7 @@ class AdminCustomersControllerCore extends AdminController
     {
         parent::setMedia();
         $this->addJqueryPlugin(['typewatch', 'fancybox']);
+        $this->addJS(_PS_JS_DIR_.'admin/customers.js');
     }
 
     /**
@@ -1320,6 +1334,56 @@ class AdminCustomersControllerCore extends AdminController
 
         $customers = array_slice($customers, 0, 100);
 
+        if ($customers) {
+            // 1) Build index: id_customer -> array offset
+            $index = [];
+            foreach ($customers as $i => $c) {
+                $index[(int)$c['id_customer']] = $i;
+            }
+            $ids    = array_keys($index);
+            $idLang = (int) $this->context->language->id;
+
+            // 2) Get default group + all memberships in one go
+            $q = (new DbQuery())
+                ->select('c.id_customer')
+                ->select('gl_def.name AS group_default')
+                ->select('GROUP_CONCAT(DISTINCT gl_all.name ORDER BY gl_all.name SEPARATOR ",") AS groups_all')
+                ->from('customer', 'c')
+                ->leftJoin('customer_group', 'cg', 'cg.id_customer = c.id_customer')
+                ->leftJoin('group_lang', 'gl_all', 'gl_all.id_group = cg.id_group AND gl_all.id_lang = '.$idLang)
+                ->leftJoin('group_lang', 'gl_def', 'gl_def.id_group = c.id_default_group AND gl_def.id_lang = '.$idLang)
+                ->where('c.id_customer IN ('.implode(',', array_map('intval', $ids)).')')
+                ->groupBy('c.id_customer');
+
+            foreach (Db::readOnly()->getArray($q) as $row) {
+                $idc = (int) $row['id_customer'];
+                $off = $index[$idc];
+                $def = (string)$row['group_default'];
+                $all = (string)$row['groups_all'];
+
+                $all = array_filter(array_map('trim', explode(',', $all)));
+
+                // other groups (exclude default)
+                $others = $def !== '' ? array_values(array_diff($all, [$def])) : $all;
+
+                // keep old fields (backward compat)
+                $customers[$off]['group_name']   = $def;
+                $customers[$off]['group_others'] = $others;
+
+                // NEW: full ordered list for easy rendering
+                $names = $def !== '' ? array_merge([$def], $others) : $others;
+                $customers[$off]['groups'] = array_values(array_unique($names));
+            }
+
+            // ensure keys exist
+            foreach ($customers as &$c) {
+                $c['group_name']   = $c['group_name'] ?? '';
+                $c['group_others'] = $c['group_others'] ?? [];
+                $c['groups']       = $c['groups'] ?? [];
+            }
+            unset($c);
+        }
+
         if (! headers_sent()) {
             header('Content-Type: application/json');
         }
@@ -1338,7 +1402,7 @@ class AdminCustomersControllerCore extends AdminController
     }
 
     /**
-     * Uodate the customer note
+     * Update the customer note
      *
      * @return void
      *
@@ -1361,6 +1425,90 @@ class AdminCustomersControllerCore extends AdminController
             }
             $this->ajaxDie('ok');
         }
+    }
+
+    /**
+     * Update customer groups
+     *
+     * @return void
+     *
+     * @throws PrestaShopException
+     */
+    public function ajaxProcessUpdateCustomerGroups()
+    {
+        if (!$this->hasEditPermission()) {
+            if (!headers_sent()) {
+                header('Content-Type: application/json; charset=utf-8');
+            }
+            $this->ajaxDie(json_encode([
+                'success' => false,
+                'message' => $this->l('You do not have permission to edit this.'),
+                'groups'  => [],
+            ]));
+        }
+
+        $idCustomer = Tools::getIntValue('id_customer');
+        $groupIds   = Tools::getValue('groupBox');
+        $groupIds   = is_array($groupIds) ? array_map('intval', $groupIds) : [];
+
+        if (empty($groupIds)) {
+            if (!headers_sent()) {
+                header('Content-Type: application/json; charset=utf-8');
+            }
+            $this->ajaxDie(json_encode([
+                'success' => false,
+                'message' => $this->l('A customer must belong to at least one group.'),
+                'groups'  => [],
+            ]));
+        }
+
+        $customer = new Customer($idCustomer);
+        if (!Validate::isLoadedObject($customer)) {
+            if (!headers_sent()) {
+                header('Content-Type: application/json; charset=utf-8');
+            }
+            $this->ajaxDie(json_encode([
+                'success' => false,
+                'message' => $this->l('Unable to load customer.'),
+                'groups'  => [],
+            ]));
+        }
+
+        // Determine the default group: keep if still associated, otherwise switch to the first posted group
+        $newDefault = in_array((int)$customer->id_default_group, $groupIds)
+            ? (int)$customer->id_default_group
+            : (int)reset($groupIds);
+
+        // Save associations
+        $customer->updateGroup($groupIds);
+
+        // Persist new default if it changed
+        if ($newDefault !== (int)$customer->id_default_group) {
+            $customer->id_default_group = $newDefault;
+            $customer->update();
+        }
+
+        // Build list for dropdown (associated groups only)
+        $groups = [];
+        $allGroups = Group::getGroups($this->context->language->id, true);
+        foreach ($allGroups as $g) {
+            if (in_array((int)$g['id_group'], $groupIds, true)) {
+                $groups[] = [
+                    'id_group' => (int)$g['id_group'],
+                    'name'     => $g['name'],
+                ];
+            }
+        }
+
+        if (!headers_sent()) {
+            header('Content-Type: application/json; charset=utf-8');
+        }
+        $this->ajaxDie(json_encode([
+            'success'    => true,
+            'message'    => $this->l('Group associations updated.'),
+            'groups'     => $groups,
+            'id_default' => $newDefault,
+        ]));
     }
 
     /**
