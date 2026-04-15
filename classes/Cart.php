@@ -68,7 +68,7 @@ class CartCore extends ObjectModel
             'gift_message'            => ['type' => self::TYPE_STRING, 'validate' => 'isMessage', 'size' => ObjectModel::SIZE_TEXT],
             'mobile_theme'            => ['type' => self::TYPE_BOOL, 'validate' => 'isBool', 'dbType' => 'tinyint(1)', 'dbDefault' => '0'],
             'allow_seperated_package' => ['type' => self::TYPE_BOOL, 'validate' => 'isBool', 'dbDefault' => '0'],
-            'use_store_credit'        => ['type' => self::TYPE_BOOL, 'validate' => 'isBool', 'dbDefault' => '0'],
+            'use_store_credit'        => ['type' => self::TYPE_BOOL, 'validate' => 'isBool', 'dbDefault' => '1'],
             'date_add'                => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
             'date_upd'                => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
         ],
@@ -213,7 +213,7 @@ class CartCore extends ObjectModel
     /**
      * @var bool
      */
-    public $use_store_credit = false;
+    public $use_store_credit = true;
 
     /**
      * @var array[] | null
