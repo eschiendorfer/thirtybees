@@ -158,19 +158,6 @@ class ParentOrderControllerCore extends FrontController
                                 }
                                 Tools::redirect('index.php?controller=order&addingCartRule=1');
                             }
-                        } elseif (($storeCredit = StoreCredit::getByCode($code))) {
-                            if ($customerId) {
-                                $storeCredit->id_customer = $customerId;
-                                $storeCredit->update();
-                                $cart = $this->context->cart;
-                                if (Validate::isLoadedObject($cart) && !$cart->use_store_credit) {
-                                    $cart->use_store_credit = true;
-                                    $cart->update();
-                                }
-                                $code = '';
-                            } else {
-                                $this->errors[] = Tools::displayError('You need to sign in before your can redeem store credit vouchers');
-                            }
                         } else {
                             $this->errors[] = Tools::displayError('This voucher does not exists.');
                         }

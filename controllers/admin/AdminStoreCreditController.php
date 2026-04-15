@@ -59,7 +59,7 @@ class AdminStoreCreditControllerCore extends AdminController
                 'LEFT JOIN `' . _DB_PREFIX_ . 'customer` `c` ON (`c`.`id_customer` = `a`.`id_customer`)',
             ]);
             $this->_select = implode(',', [
-                'IF(a.id_customer = 0, "Not redeemed codes", CONCAT(`c`.`firstname`, " ", `c`.`lastname`)) AS `customer_name`',
+                'CONCAT(`c`.`firstname`, " ", `c`.`lastname`) AS `customer_name`',
                 '`c`.`email` as email',
                 "SUM($outstandingExpr) AS `amount_outstanding`",
             ]);
@@ -113,10 +113,6 @@ class AdminStoreCreditControllerCore extends AdminController
                     'title' => $this->l('Name'),
                     'filter_key' => 'a!name',
                 ],
-                'code' => [
-                    'title' => $this->l('Code'),
-                    'class' => 'fixed-width-sm',
-                ],
                 'amount' => [
                     'title' => $this->l('Amount'),
                     'align' => 'text-right',
@@ -154,12 +150,6 @@ class AdminStoreCreditControllerCore extends AdminController
                     [
                         'type' => 'hidden',
                         'name' => 'id_customer',
-                    ],
-                    [
-                        'type'  => 'text',
-                        'label' => $this->l('Code'),
-                        'name'  => 'code',
-                        'hint'  => $this->l('Unique code of the credit'),
                     ],
                     [
                         'type'  => 'price',
@@ -230,7 +220,7 @@ class AdminStoreCreditControllerCore extends AdminController
                     $customer = new Customer($customerId);
                     $customerName = trim($customer->firstname . ' ' . $customer->lastname);
                 } else {
-                    $customerName = $this->l('Not redeemed codes');
+                    $customerName = $this->l('Unknown customer');
                 }
                 $helper->title = sprintf($this->l('Store credits: %s'), $customerName);
             }
@@ -264,7 +254,7 @@ class AdminStoreCreditControllerCore extends AdminController
             ]);
             return '<a href="'.$link.'">' . Tools::safeOutput($value) . "</a>";
         } else {
-            return $this->l('Not redeemed codes');
+            return $this->l('Unknown customer');
         }
     }
 

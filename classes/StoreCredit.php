@@ -40,11 +40,6 @@ class StoreCreditCore extends ObjectModel
     public $id_customer;
 
     /**
-     * @var string
-     */
-    public $code;
-
-    /**
      * @var string $date_from
      */
     public $date_from;
@@ -86,8 +81,7 @@ class StoreCreditCore extends ObjectModel
         'table'     => 'store_credit',
         'primary'   => 'id_store_credit',
         'fields'    => [
-            'id_customer'  => ['type' => self::TYPE_INT,    'validate' => 'isUnsignedId'],
-            'code'         => ['type' => self::TYPE_STRING, 'validate' => 'isCleanHtml', 'size' => 254, 'unique' => true],
+            'id_customer'  => ['type' => self::TYPE_INT,    'validate' => 'isUnsignedId', 'required' => true, 'unique' => true],
             'name'         => ['type' => self::TYPE_STRING, 'validate' => 'isCleanHtml', 'required' => true, 'size' => 254],
             'description'  => ['type' => self::TYPE_STRING, 'validate' => 'isCleanHtml', 'size' => ObjectModel::SIZE_TEXT],
             'date_from'    => ['type' => self::TYPE_DATE,   'validate' => 'isDate', 'dbDefault' => '0000-00-00 00:00:00'],
@@ -117,40 +111,6 @@ class StoreCreditCore extends ObjectModel
             $this->date_to = null;
         }
     }
-
-    /**
-     * @param string $code
-     *
-     * @return int
-     *
-     * @throws PrestaShopException
-     */
-    public static function getIdByCode(string $code): int
-    {
-        $conn = Db::readOnly();
-        return (int)$conn->getValue((new DbQuery())
-            ->select('id_store_credit')
-            ->from('store_credit')
-            ->where('code = "' . pSQL($code) . '"')
-        );
-    }
-
-    /**
-     * @param string $code
-     *
-     * @return static|null
-     *
-     * @throws PrestaShopException
-     */
-    public static function getByCode(string $code)
-    {
-        $id = static::getIdByCode($code);
-        if ($id) {
-            return new static($id);
-        }
-        return null;
-    }
-
 
     /**
      * @param int $shopId
