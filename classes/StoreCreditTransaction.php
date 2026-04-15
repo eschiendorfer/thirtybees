@@ -31,6 +31,7 @@ class StoreCreditTransactionCore extends ObjectModel
 
     const ENTITY_ORDER = 1;
     const ENTITY_ORDER_SLIP = 2;
+    const ENTITY_MANUAL = 3;
 
     /**
      * @var int
@@ -116,7 +117,7 @@ class StoreCreditTransactionCore extends ObjectModel
                 'type' => self::TYPE_INT,
                 'validate' => 'isUnsignedId',
                 'required' => true,
-                'values' => [self::ENTITY_ORDER, self::ENTITY_ORDER_SLIP],
+                'values' => [self::ENTITY_ORDER, self::ENTITY_ORDER_SLIP, self::ENTITY_MANUAL],
             ],
             'id_entity'        => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId'],
             'id_customer'      => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId'],
@@ -222,16 +223,120 @@ class StoreCreditTransactionCore extends ObjectModel
             return false;
         }
 
+        return static::addStoreCreditTransaction(
+            $idStoreCredit,
+            $idCustomer,
+            static::TYPE_DECREASE,
+            static::ECONOMIC_PAYMENT_INSTRUMENT,
+            static::ENTITY_ORDER,
+            $idOrder,
+            $amountTaxIncl
+        );
+    }
+
+    /**
+     * @param int $idStoreCredit
+     * @param int $idCustomer
+     * @param int $transactionType
+     * @param int $economicType
+     * @param int $entityType
+     * @param int $idEntity
+     * @param float $amountTaxIncl
+     * @param int $idEmployee
+     * @param string $note
+     *
+     * @return bool
+     */
+    public static function addStoreCreditTransaction(
+        int $idStoreCredit,
+        int $idCustomer,
+        int $transactionType,
+        int $economicType,
+        int $entityType,
+        int $idEntity,
+        float $amountTaxIncl,
+        int $idEmployee = 0,
+        string $note = ''
+    ): bool {
+        $amountTaxIncl = Tools::roundPrice($amountTaxIncl);
+        $idEmployee = max(0, (int)$idEmployee);
+        $note = trim($note);
+
+        if (
+            $idStoreCredit <= 0 ||
+            $idCustomer <= 0 ||
+            $idEntity <= 0 ||
+            $amountTaxIncl <= 0.0 ||
+            !static::isValidTransactionType($transactionType) ||
+            !static::isValidEconomicType($economicType) ||
+            !static::isValidEntityType($entityType) ||
+            ($note !== '' && !Validate::isCleanHtml($note))
+        ) {
+            return false;
+        }
+
         $transaction = new static();
         $transaction->id_store_credit = $idStoreCredit;
-        $transaction->transaction_type = static::TYPE_DECREASE;
-        $transaction->economic_type = static::ECONOMIC_PAYMENT_INSTRUMENT;
-        $transaction->entity_type = static::ENTITY_ORDER;
-        $transaction->id_entity = $idOrder;
+        $transaction->transaction_type = $transactionType;
+        $transaction->economic_type = $economicType;
+        $transaction->entity_type = $entityType;
+        $transaction->id_entity = $idEntity;
         $transaction->id_customer = $idCustomer;
+        $transaction->id_employee = $idEmployee;
         $transaction->amount_tax_incl = $amountTaxIncl;
+        $transaction->note = $note;
 
         return (bool)$transaction->add();
+    }
+
+    /**
+     * @param int $idStoreCredit
+     * @param int $idCustomer
+     * @param int $economicType
+     * @param float $amountTaxIncl
+     * @param int $idEmployee
+     * @param string $note
+     *
+     * @return bool
+     */
+    public static function addManualIncrease(
+        int $idStoreCredit,
+        int $idCustomer,
+        int $economicType,
+        float $amountTaxIncl,
+        int $idEmployee = 0,
+        string $note = ''
+    ): bool {
+        if ($economicType === static::ECONOMIC_PAYMENT_INSTRUMENT) {
+            return false;
+        }
+
+        return static::addStoreCreditTransaction(
+            $idStoreCredit,
+            $idCustomer,
+            static::TYPE_INCREASE,
+            $economicType,
+            static::ENTITY_MANUAL,
+            static::getNextManualEntityId(),
+            $amountTaxIncl,
+            $idEmployee,
+            $note
+        );
+    }
+
+    /**
+     * @return int
+     */
+    protected static function getNextManualEntityId(): int
+    {
+        $sql = (new DbQuery())
+            ->select('MAX(`id_entity`)')
+            ->from('store_credit_transaction')
+            ->where('entity_type = ' . (int)static::ENTITY_MANUAL);
+
+        $idEntity = (int)Db::getInstance()->getValue($sql) + 1;
+
+        return max(1, $idEntity);
     }
 
     /**
@@ -271,6 +376,7 @@ class StoreCreditTransactionCore extends ObjectModel
         return in_array($type, [
             static::ENTITY_ORDER,
             static::ENTITY_ORDER_SLIP,
+            static::ENTITY_MANUAL,
         ], true);
     }
 }
