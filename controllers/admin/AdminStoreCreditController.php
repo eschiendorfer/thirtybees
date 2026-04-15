@@ -50,9 +50,6 @@ class AdminStoreCreditControllerCore extends AdminController
             ]
         ];
 
-        $isValid = '(a.date_to < "1900-00-00" OR a.date_to >= NOW())';
-        $outstandingExpr = "IF($isValid, a.amount - a.amount_used, 0)";
-
         if ($this->isGroupedView()) {
             $this->addRowAction('view');
             $this->explicitSelect = true;
@@ -66,9 +63,9 @@ class AdminStoreCreditControllerCore extends AdminController
             $this->_select = implode(',', [
                 'CONCAT(`c`.`firstname`, " ", `c`.`lastname`) AS `customer_name`',
                 '`c`.`email` as email',
-                "SUM($outstandingExpr) AS `amount_outstanding`",
+                'SUM(a.amount) AS `amount`',
             ]);
-            $this->_defaultOrderBy = 'amount_outstanding';
+            $this->_defaultOrderBy = 'amount';
             $this->_defaultOrderWay = 'DESC';
             $this->_group = ' GROUP BY c.`id_customer`';
             $this->fields_list = [
@@ -90,8 +87,8 @@ class AdminStoreCreditControllerCore extends AdminController
                     'callback' => 'displayCustomerInfo',
                     'havingFilter' => true,
                 ],
-                'amount_outstanding' => [
-                    'title' => $this->l('Amount outstanding'),
+                'amount' => [
+                    'title' => $this->l('Balance'),
                     'align' => 'text-right',
                     'type' => 'price',
                     'currency' => true,
@@ -106,37 +103,17 @@ class AdminStoreCreditControllerCore extends AdminController
             $this->list_no_link = true;
             $customerId = Tools::getIntValue('id_customer');
             $this->_where .= 'AND a.id_customer = ' . $customerId;
-            $this->_select = implode(', ', [
-                "$outstandingExpr AS `amount_outstanding`",
-            ]);
             $this->fields_list = [
                 'id_store_credit' => [
                     'title' => $this->l('ID'),
                     'align' => 'center',
                     'class' => 'fixed-width-xs',
                 ],
-                'name' => [
-                    'title' => $this->l('Name'),
-                    'filter_key' => 'a!name',
-                ],
                 'amount' => [
-                    'title' => $this->l('Amount'),
+                    'title' => $this->l('Balance'),
                     'align' => 'text-right',
                     'type' => 'price',
                     'currency' => true,
-                ],
-                'amount_used' => [
-                    'title' => $this->l('Amount used'),
-                    'align' => 'text-right',
-                    'type' => 'price',
-                    'currency' => true,
-                ],
-                'amount_outstanding' => [
-                    'title' => $this->l('Amount outstanding'),
-                    'align' => 'text-right',
-                    'type' => 'price',
-                    'currency' => true,
-                    'havingFilter' => true,
                 ],
                 'date_to' => [
                     'title' => $this->l('Expiration date'),
@@ -160,16 +137,9 @@ class AdminStoreCreditControllerCore extends AdminController
                     [
                         'type'  => 'price',
                         'prefix' => $currencySymbol,
-                        'label' => $this->l('Amount'),
+                        'label' => $this->l('Balance'),
                         'name'  => 'amount',
-                        'hint'  => $this->l('Original amount'),
-                    ],
-                    [
-                        'type'  => 'price',
-                        'prefix' => $currencySymbol,
-                        'label' => $this->l('Amount used'),
-                        'name'  => 'amount_used',
-                        'hint'  => $this->l('Amount used'),
+                        'hint'  => $this->l('Current available balance'),
                     ],
                     [
                         'type'  => 'datetime',
@@ -471,122 +441,29 @@ class AdminStoreCreditControllerCore extends AdminController
             return false;
         }
 
-        $idStoreCredit = $this->getOrCreateStoreCreditId($idCustomer);
-        if ($idStoreCredit <= 0) {
-            $this->errors[] = $this->l('Unable to initialize store credit for this customer.');
+        $idShops = Shop::getContextListShopID();
+        if (empty($idShops)) {
+            $idShops = [(int)$this->context->shop->id];
+        }
+
+        if (!StoreCredit::addManualCredit(
+            $idCustomer,
+            $amountTaxIncl,
+            $economicType,
+            $idEmployee,
+            $note,
+            $idShops
+        )) {
+            if (StoreCredit::getStoreCreditIdByCustomer($idCustomer) <= 0) {
+                $this->errors[] = $this->l('Unable to initialize store credit for this customer.');
+            } else {
+                $this->errors[] = $this->l('Unable to save store credit transaction.');
+            }
 
             return false;
-        }
-
-        $conn = Db::getInstance();
-        $amountSql = pSQL((string)$amountTaxIncl);
-        $result = false;
-
-        try {
-            $conn->execute('START TRANSACTION');
-            if (!$this->associateStoreCreditToContextShops($idStoreCredit)) {
-                throw new RuntimeException('Failed to associate store credit with current shop context');
-            }
-
-            $updated = $conn->update(
-                'store_credit',
-                [
-                    'amount'   => ['type' => 'sql', 'value' => '`amount` + ' . $amountSql],
-                    'date_upd' => ['type' => 'sql', 'value' => 'NOW()'],
-                ],
-                'id_store_credit = ' . (int)$idStoreCredit
-            );
-            if (!$updated) {
-                throw new RuntimeException('Failed to update store credit amount');
-            }
-
-            if (!StoreCreditTransaction::addManualIncrease(
-                $idStoreCredit,
-                $idCustomer,
-                $economicType,
-                $amountTaxIncl,
-                $idEmployee,
-                $note
-            )) {
-                throw new RuntimeException('Failed to create store credit transaction');
-            }
-
-            $conn->execute('COMMIT');
-            $result = true;
-        } catch (Exception $exception) {
-            $conn->execute('ROLLBACK');
-            $this->errors[] = $this->l('Unable to save store credit transaction.');
-        }
-
-        return $result;
-    }
-
-    /**
-     * @param int $idStoreCredit
-     *
-     * @return bool
-     */
-    protected function associateStoreCreditToContextShops(int $idStoreCredit): bool
-    {
-        if ($idStoreCredit <= 0) {
-            return false;
-        }
-
-        $conn = Db::getInstance();
-        $shopIds = Shop::getContextListShopID();
-        if (empty($shopIds)) {
-            $shopIds = [(int)$this->context->shop->id];
-        }
-
-        foreach ($shopIds as $idShop) {
-            $idShop = (int)$idShop;
-            if ($idShop <= 0) {
-                continue;
-            }
-            $sql = 'INSERT IGNORE INTO `' . _DB_PREFIX_ . 'store_credit_shop` (`id_store_credit`, `id_shop`) VALUES (' . (int)$idStoreCredit . ', ' . $idShop . ')';
-            if (!$conn->execute($sql, false)) {
-                return false;
-            }
         }
 
         return true;
-    }
-
-    /**
-     * @param int $idCustomer
-     *
-     * @return int
-     *
-     * @throws PrestaShopException
-     */
-    protected function getOrCreateStoreCreditId(int $idCustomer): int
-    {
-        $query = (new DbQuery())
-            ->select('id_store_credit')
-            ->from('store_credit')
-            ->where('id_customer = ' . (int)$idCustomer)
-            ->orderBy('id_store_credit ASC');
-
-        $idStoreCredit = (int)Db::getInstance()->getValue($query);
-        if ($idStoreCredit > 0) {
-            return $idStoreCredit;
-        }
-
-        $storeCredit = new StoreCredit();
-        $storeCredit->id_customer = $idCustomer;
-        $storeCredit->name = $this->l('Store credit');
-        $storeCredit->description = '';
-        $storeCredit->date_from = date('Y-m-d H:i:s');
-        $storeCredit->amount = 0;
-        $storeCredit->amount_used = 0;
-
-        if ($storeCredit->add()) {
-            return (int)$storeCredit->id;
-        }
-
-        $idStoreCredit = (int)Db::getInstance()->getValue($query);
-
-        return max(0, $idStoreCredit);
     }
 
     /**

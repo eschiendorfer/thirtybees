@@ -1193,7 +1193,7 @@
                 <p class="checkbox">
                   <label for="generateDiscount">
                     <input type="checkbox" id="generateDiscount" name="generateDiscount" onclick="toggleShippingCost()"/>
-                    {l s='Generate a voucher'}
+                    {l s='Generate store credit'}
                   </label>
                 </p>
                 <p class="checkbox" id="spanShippingBack" style="display:none;">
@@ -1249,7 +1249,7 @@
             <p class="checkbox">
               <label for="generateDiscountRefund">
                 <input type="checkbox" id="generateDiscountRefund" name="generateDiscountRefund" onclick="toggleShippingCost()"/>
-                {l s='Generate a voucher'}
+                {l s='Generate store credit'}
               </label>
             </p>
             {if $order->total_discounts_tax_excl > 0 || $order->total_discounts_tax_incl > 0}

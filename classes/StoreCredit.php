@@ -30,11 +30,6 @@ class StoreCreditCore extends ObjectModel
     public $id;
 
     /**
-     * @var string|string[] $name
-     */
-    public $name;
-
-    /**
      * @var int $id_customer
      */
     public $id_customer;
@@ -50,19 +45,9 @@ class StoreCreditCore extends ObjectModel
     public $date_to;
 
     /**
-     * @var string $description
-     */
-    public $description;
-
-    /**
      * @var int $quantity
      */
     public $amount;
-
-    /**
-     * @var int $quantity
-     */
-    public $amount_used;
 
     /**
      * @var string $date_add
@@ -82,12 +67,9 @@ class StoreCreditCore extends ObjectModel
         'primary'   => 'id_store_credit',
         'fields'    => [
             'id_customer'  => ['type' => self::TYPE_INT,    'validate' => 'isUnsignedId', 'required' => true, 'unique' => true],
-            'name'         => ['type' => self::TYPE_STRING, 'validate' => 'isCleanHtml', 'required' => true, 'size' => 254],
-            'description'  => ['type' => self::TYPE_STRING, 'validate' => 'isCleanHtml', 'size' => ObjectModel::SIZE_TEXT],
             'date_from'    => ['type' => self::TYPE_DATE,   'validate' => 'isDate', 'dbDefault' => '0000-00-00 00:00:00'],
             'date_to'      => ['type' => self::TYPE_DATE,   'validate' => 'isDate', 'dbDefault' => '0000-00-00 00:00:00'],
             'amount'       => ['type' => self::TYPE_PRICE,  'validate' => 'isPrice'],
-            'amount_used'  => ['type' => self::TYPE_PRICE,  'validate' => 'isPrice'],
             'date_add'     => ['type' => self::TYPE_DATE,   'validate' => 'isDate', 'dbNullable' => false],
             'date_upd'     => ['type' => self::TYPE_DATE,   'validate' => 'isDate', 'dbNullable' => false],
         ],
@@ -124,7 +106,7 @@ class StoreCreditCore extends ObjectModel
     {
         $conn = Db::readOnly();
         $sql = (new DbQuery())
-            ->select('SUM(c.amount - c.amount_used)')
+            ->select('SUM(c.amount)')
             ->from('store_credit', 'c')
             ->innerJoin('store_credit_shop', 'cs', 'c.id_store_credit = cs.id_store_credit AND cs.id_shop = ' . (int)$shopId)
             ->where('c.id_customer = ' . (int)$customerId)
@@ -162,7 +144,7 @@ class StoreCreditCore extends ObjectModel
 
         $conn = Db::getInstance();
         $sql = (new DbQuery())
-            ->select('c.id_store_credit, c.amount, c.amount_used')
+            ->select('c.id_store_credit, c.amount')
             ->from('store_credit', 'c')
             ->innerJoin('store_credit_shop', 'cs', 'c.id_store_credit = cs.id_store_credit AND cs.id_shop = ' . (int)$idShop)
             ->where('c.id_customer = ' . (int)$idCustomer)
@@ -175,7 +157,7 @@ class StoreCreditCore extends ObjectModel
         }
 
         $idStoreCredit = (int)$row['id_store_credit'];
-        $availableAmount = Tools::roundPrice(max(0.0, (float)$row['amount'] - (float)$row['amount_used']));
+        $availableAmount = Tools::roundPrice(max(0.0, (float)$row['amount']));
         $consumedAmount = Tools::roundPrice(min($requestedAmountTaxIncl, $availableAmount));
         if ($consumedAmount <= 0.0) {
             return 0.0;
@@ -185,8 +167,8 @@ class StoreCreditCore extends ObjectModel
         $updated = $conn->update(
             'store_credit',
             [
-                'amount_used' => ['type' => 'sql', 'value' => 'LEAST(`amount`, `amount_used` + ' . $consumedSql . ')'],
-                'date_upd'    => ['type' => 'sql', 'value' => 'NOW()'],
+                'amount'   => ['type' => 'sql', 'value' => 'GREATEST(0, `amount` - ' . $consumedSql . ')'],
+                'date_upd' => ['type' => 'sql', 'value' => 'NOW()'],
             ],
             'id_store_credit = ' . $idStoreCredit
         );
@@ -196,27 +178,13 @@ class StoreCreditCore extends ObjectModel
 
         try {
             if (!StoreCreditTransaction::addOrderConsumption($idStoreCredit, $idCustomer, $idOrder, $consumedAmount)) {
-                $conn->update(
-                    'store_credit',
-                    [
-                        'amount_used' => ['type' => 'sql', 'value' => 'GREATEST(0, `amount_used` - ' . $consumedSql . ')'],
-                        'date_upd'    => ['type' => 'sql', 'value' => 'NOW()'],
-                    ],
-                    'id_store_credit = ' . $idStoreCredit
-                );
+                static::restoreConsumedAmount($conn, $idStoreCredit, $consumedSql);
                 return 0.0;
             }
         } catch (Exception $exception) {
             try {
                 if (StoreCreditTransaction::hasOrderConsumption($idOrder)) {
-                    $conn->update(
-                        'store_credit',
-                        [
-                            'amount_used' => ['type' => 'sql', 'value' => 'GREATEST(0, `amount_used` - ' . $consumedSql . ')'],
-                            'date_upd'    => ['type' => 'sql', 'value' => 'NOW()'],
-                        ],
-                        'id_store_credit = ' . $idStoreCredit
-                    );
+                    static::restoreConsumedAmount($conn, $idStoreCredit, $consumedSql);
                     return StoreCreditTransaction::getOrderConsumptionAmount($idOrder);
                 }
             } catch (Exception $ignored) {
@@ -225,6 +193,293 @@ class StoreCreditCore extends ObjectModel
         }
 
         return $consumedAmount;
+    }
+
+    /**
+     * @param Db $conn
+     * @param int $idStoreCredit
+     * @param string $amountSql
+     *
+     * @return void
+     */
+    protected static function restoreConsumedAmount(Db $conn, int $idStoreCredit, string $amountSql): void
+    {
+        if ($idStoreCredit <= 0 || $amountSql === '') {
+            return;
+        }
+
+        $conn->update(
+            'store_credit',
+            [
+                'amount'   => ['type' => 'sql', 'value' => '`amount` + ' . $amountSql],
+                'date_upd' => ['type' => 'sql', 'value' => 'NOW()'],
+            ],
+            'id_store_credit = ' . (int)$idStoreCredit
+        );
+    }
+
+    /**
+     * Adds refund credit for customer and records transaction.
+     *
+     * @param int $idShop
+     * @param int $idCustomer
+     * @param int $idOrder
+     * @param int $idOrderSlip
+     * @param float $amountTaxIncl
+     * @param int $idEmployee
+     *
+     * @return bool
+     *
+     * @throws PrestaShopException
+     */
+    public static function addRefundCreditForOrderSlip(int $idShop, int $idCustomer, int $idOrder, int $idOrderSlip, float $amountTaxIncl, int $idEmployee = 0): bool
+    {
+        $amountTaxIncl = Tools::roundPrice(max(0.0, $amountTaxIncl));
+        $idEmployee = max(0, (int)$idEmployee);
+        if ($idShop <= 0 || $idCustomer <= 0 || $idOrder <= 0 || $idOrderSlip <= 0 || $amountTaxIncl <= 0.0) {
+            return false;
+        }
+
+        try {
+            if (StoreCreditTransaction::existsTransaction(
+                StoreCreditTransaction::ENTITY_ORDER_SLIP,
+                $idOrderSlip,
+                StoreCreditTransaction::TYPE_INCREASE,
+                StoreCreditTransaction::ECONOMIC_REFUND_CREDIT
+            )) {
+                return true;
+            }
+
+            $idStoreCredit = static::getStoreCreditIdByCustomer($idCustomer);
+            if ($idStoreCredit <= 0) {
+                $idStoreCredit = static::createStoreCreditForCustomer($idCustomer);
+            }
+            if ($idStoreCredit <= 0) {
+                return false;
+            }
+            if (!static::associateStoreCreditToShop($idStoreCredit, $idShop)) {
+                return false;
+            }
+
+            $note = sprintf('Refund for order #%d (order slip #%d)', $idOrder, $idOrderSlip);
+
+            return static::increaseBalanceWithTransaction(
+                $idStoreCredit,
+                $amountTaxIncl,
+                static function() use ($idStoreCredit, $idCustomer, $idOrderSlip, $amountTaxIncl, $idEmployee, $note): bool {
+                    return StoreCreditTransaction::addStoreCreditTransaction(
+                        $idStoreCredit,
+                        $idCustomer,
+                        StoreCreditTransaction::TYPE_INCREASE,
+                        StoreCreditTransaction::ECONOMIC_REFUND_CREDIT,
+                        StoreCreditTransaction::ENTITY_ORDER_SLIP,
+                        $idOrderSlip,
+                        $amountTaxIncl,
+                        $idEmployee,
+                        $note
+                    );
+                }
+            );
+        } catch (Exception $exception) {
+            return false;
+        }
+    }
+
+    /**
+     * @param int $idCustomer
+     * @param float $amountTaxIncl
+     * @param int $economicType
+     * @param int $idEmployee
+     * @param string $note
+     * @param array $idShops
+     *
+     * @return bool
+     */
+    public static function addManualCredit(
+        int $idCustomer,
+        float $amountTaxIncl,
+        int $economicType,
+        int $idEmployee = 0,
+        string $note = '',
+        array $idShops = []
+    ): bool {
+        $amountTaxIncl = Tools::roundPrice(max(0.0, $amountTaxIncl));
+        $idEmployee = max(0, (int)$idEmployee);
+        $note = trim($note);
+
+        if (
+            $idCustomer <= 0 ||
+            $amountTaxIncl <= 0.0 ||
+            empty($idShops) ||
+            !StoreCreditTransaction::isValidEconomicType($economicType) ||
+            $economicType === StoreCreditTransaction::ECONOMIC_PAYMENT_INSTRUMENT ||
+            ($note !== '' && !Validate::isCleanHtml($note))
+        ) {
+            return false;
+        }
+
+        try {
+            $idStoreCredit = static::getStoreCreditIdByCustomer($idCustomer);
+            if ($idStoreCredit <= 0) {
+                $idStoreCredit = static::createStoreCreditForCustomer($idCustomer);
+            }
+            if ($idStoreCredit <= 0) {
+                return false;
+            }
+            if (!static::associateStoreCreditToShops($idStoreCredit, $idShops)) {
+                return false;
+            }
+
+            return static::increaseBalanceWithTransaction(
+                $idStoreCredit,
+                $amountTaxIncl,
+                static function() use ($idStoreCredit, $idCustomer, $economicType, $amountTaxIncl, $idEmployee, $note): bool {
+                    return StoreCreditTransaction::addManualIncrease(
+                        $idStoreCredit,
+                        $idCustomer,
+                        $economicType,
+                        $amountTaxIncl,
+                        $idEmployee,
+                        $note
+                    );
+                }
+            );
+        } catch (Exception $exception) {
+            return false;
+        }
+    }
+
+    /**
+     * @param int $idCustomer
+     *
+     * @return int
+     *
+     * @throws PrestaShopException
+     */
+    public static function getStoreCreditIdByCustomer(int $idCustomer): int
+    {
+        if ($idCustomer <= 0) {
+            return 0;
+        }
+
+        $query = (new DbQuery())
+            ->select('id_store_credit')
+            ->from('store_credit')
+            ->where('id_customer = ' . (int)$idCustomer)
+            ->orderBy('id_store_credit ASC');
+
+        return max(0, (int)Db::getInstance()->getValue($query));
+    }
+
+    /**
+     * @param int $idCustomer
+     *
+     * @return int
+     *
+     * @throws PrestaShopException
+     */
+    public static function createStoreCreditForCustomer(int $idCustomer): int
+    {
+        if ($idCustomer <= 0) {
+            return 0;
+        }
+
+        $storeCredit = new static();
+        $storeCredit->id_customer = $idCustomer;
+        $storeCredit->date_from = date('Y-m-d H:i:s');
+        $storeCredit->amount = 0;
+
+        if ($storeCredit->add()) {
+            return (int)$storeCredit->id;
+        }
+
+        return static::getStoreCreditIdByCustomer($idCustomer);
+    }
+
+    /**
+     * @param int $idStoreCredit
+     * @param int $idShop
+     *
+     * @return bool
+     */
+    public static function associateStoreCreditToShop(int $idStoreCredit, int $idShop): bool
+    {
+        if ($idStoreCredit <= 0 || $idShop <= 0) {
+            return false;
+        }
+
+        $sql = 'INSERT IGNORE INTO `' . _DB_PREFIX_ . 'store_credit_shop` (`id_store_credit`, `id_shop`) VALUES (' . (int)$idStoreCredit . ', ' . (int)$idShop . ')';
+        return (bool)Db::getInstance()->execute($sql, false);
+    }
+
+    /**
+     * @param int $idStoreCredit
+     * @param array $idShops
+     *
+     * @return bool
+     */
+    public static function associateStoreCreditToShops(int $idStoreCredit, array $idShops): bool
+    {
+        if ($idStoreCredit <= 0 || empty($idShops)) {
+            return false;
+        }
+
+        $hasValidShop = false;
+        foreach ($idShops as $idShop) {
+            $idShop = (int)$idShop;
+            if ($idShop <= 0) {
+                continue;
+            }
+            $hasValidShop = true;
+            if (!static::associateStoreCreditToShop($idStoreCredit, $idShop)) {
+                return false;
+            }
+        }
+
+        return $hasValidShop;
+    }
+
+    /**
+     * @param int $idStoreCredit
+     * @param float $amountTaxIncl
+     * @param callable $writeTransaction
+     *
+     * @return bool
+     */
+    protected static function increaseBalanceWithTransaction(int $idStoreCredit, float $amountTaxIncl, callable $writeTransaction): bool
+    {
+        $amountTaxIncl = Tools::roundPrice(max(0.0, $amountTaxIncl));
+        if ($idStoreCredit <= 0 || $amountTaxIncl <= 0.0) {
+            return false;
+        }
+
+        $conn = Db::getInstance();
+        $amountSql = pSQL((string)$amountTaxIncl);
+
+        try {
+            $conn->execute('START TRANSACTION');
+            $updated = $conn->update(
+                'store_credit',
+                [
+                    'amount'   => ['type' => 'sql', 'value' => '`amount` + ' . $amountSql],
+                    'date_upd' => ['type' => 'sql', 'value' => 'NOW()'],
+                ],
+                'id_store_credit = ' . (int)$idStoreCredit
+            );
+            if (!$updated) {
+                throw new RuntimeException('Failed to update store credit amount');
+            }
+
+            if (!$writeTransaction()) {
+                throw new RuntimeException('Failed to create store credit transaction');
+            }
+
+            $conn->execute('COMMIT');
+            return true;
+        } catch (Exception $exception) {
+            $conn->execute('ROLLBACK');
+            return false;
+        }
     }
 
 
