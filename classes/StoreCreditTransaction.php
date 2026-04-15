@@ -130,11 +130,109 @@ class StoreCreditTransactionCore extends ObjectModel
             'store_credit_transaction' => [
                 'id_store_credit' => ['type' => ObjectModel::KEY, 'columns' => ['id_store_credit']],
                 'entity'          => ['type' => ObjectModel::KEY, 'columns' => ['entity_type', 'id_entity']],
+                'entity_transaction' => ['type' => ObjectModel::UNIQUE_KEY, 'columns' => ['entity_type', 'id_entity', 'transaction_type', 'economic_type']],
                 'id_customer'     => ['type' => ObjectModel::KEY, 'columns' => ['id_customer']],
                 'id_employee'     => ['type' => ObjectModel::KEY, 'columns' => ['id_employee']],
             ],
         ],
     ];
+
+    /**
+     * @param int $entityType
+     * @param int $idEntity
+     * @param int $transactionType
+     * @param int $economicType
+     *
+     * @return bool
+     *
+     * @throws PrestaShopException
+     */
+    public static function existsTransaction(int $entityType, int $idEntity, int $transactionType, int $economicType): bool
+    {
+        if ($idEntity <= 0) {
+            return false;
+        }
+
+        $sql = (new DbQuery())
+            ->select('1')
+            ->from('store_credit_transaction')
+            ->where('entity_type = ' . (int)$entityType)
+            ->where('id_entity = ' . (int)$idEntity)
+            ->where('transaction_type = ' . (int)$transactionType)
+            ->where('economic_type = ' . (int)$economicType);
+
+        return (bool)Db::readOnly()->getValue($sql);
+    }
+
+    /**
+     * @param int $idOrder
+     *
+     * @return bool
+     *
+     * @throws PrestaShopException
+     */
+    public static function hasOrderConsumption(int $idOrder): bool
+    {
+        return static::existsTransaction(
+            static::ENTITY_ORDER,
+            $idOrder,
+            static::TYPE_DECREASE,
+            static::ECONOMIC_PAYMENT_INSTRUMENT
+        );
+    }
+
+    /**
+     * @param int $idOrder
+     *
+     * @return float
+     *
+     * @throws PrestaShopException
+     */
+    public static function getOrderConsumptionAmount(int $idOrder): float
+    {
+        if ($idOrder <= 0) {
+            return 0.0;
+        }
+
+        $sql = (new DbQuery())
+            ->select('amount_tax_incl')
+            ->from('store_credit_transaction')
+            ->where('entity_type = ' . (int)static::ENTITY_ORDER)
+            ->where('id_entity = ' . (int)$idOrder)
+            ->where('transaction_type = ' . (int)static::TYPE_DECREASE)
+            ->where('economic_type = ' . (int)static::ECONOMIC_PAYMENT_INSTRUMENT);
+
+        return (float)Db::readOnly()->getValue($sql);
+    }
+
+    /**
+     * @param int $idStoreCredit
+     * @param int $idCustomer
+     * @param int $idOrder
+     * @param float $amountTaxIncl
+     *
+     * @return bool
+     *
+     * @throws PrestaShopException
+     */
+    public static function addOrderConsumption(int $idStoreCredit, int $idCustomer, int $idOrder, float $amountTaxIncl): bool
+    {
+        $amountTaxIncl = Tools::roundPrice($amountTaxIncl);
+        if ($idStoreCredit <= 0 || $idCustomer <= 0 || $idOrder <= 0 || $amountTaxIncl <= 0.0) {
+            return false;
+        }
+
+        $transaction = new static();
+        $transaction->id_store_credit = $idStoreCredit;
+        $transaction->transaction_type = static::TYPE_DECREASE;
+        $transaction->economic_type = static::ECONOMIC_PAYMENT_INSTRUMENT;
+        $transaction->entity_type = static::ENTITY_ORDER;
+        $transaction->id_entity = $idOrder;
+        $transaction->id_customer = $idCustomer;
+        $transaction->amount_tax_incl = $amountTaxIncl;
+
+        return (bool)$transaction->add();
+    }
 
     /**
      * @param int $type

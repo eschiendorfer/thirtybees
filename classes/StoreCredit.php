@@ -1,6 +1,6 @@
 <?php
 /**
- * Copyright (C) 2025-2025 thirty bees
+ * Copyright (C) 2025-2026 thirty bees
  *
  * NOTICE OF LICENSE
  *
@@ -13,7 +13,7 @@
  * to license@thirtybees.com so we can send you a copy immediately.
  *
  * @author    thirty bees <contact@thirtybees.com>
- * @copyright 2025-2025 thirty bees
+ * @copyright 2025-2026 thirty bees
  * @license   Open Software License (OSL 3.0)
  */
 
@@ -131,6 +131,100 @@ class StoreCreditCore extends ObjectModel
             ->where('c.date_from <= NOW()')
             ->where('(c.date_to < "1900-00-00" OR c.date_to >= NOW())');
         return (float)$conn->getValue($sql);
+    }
+
+    /**
+     * Consumes store credit for order and records transaction.
+     *
+     * @param int $idShop
+     * @param int $idCustomer
+     * @param int $idOrder
+     * @param float $requestedAmountTaxIncl
+     *
+     * @return float
+     *
+     * @throws PrestaShopException
+     */
+    public static function consumeForOrder(int $idShop, int $idCustomer, int $idOrder, float $requestedAmountTaxIncl): float
+    {
+        $requestedAmountTaxIncl = Tools::roundPrice(max(0.0, $requestedAmountTaxIncl));
+        if ($idShop <= 0 || $idCustomer <= 0 || $idOrder <= 0 || $requestedAmountTaxIncl <= 0.0) {
+            return 0.0;
+        }
+
+        try {
+            if (StoreCreditTransaction::hasOrderConsumption($idOrder)) {
+                return StoreCreditTransaction::getOrderConsumptionAmount($idOrder);
+            }
+        } catch (Exception $exception) {
+            // Continue without idempotency check if transaction table is not available yet.
+        }
+
+        $conn = Db::getInstance();
+        $sql = (new DbQuery())
+            ->select('c.id_store_credit, c.amount, c.amount_used')
+            ->from('store_credit', 'c')
+            ->innerJoin('store_credit_shop', 'cs', 'c.id_store_credit = cs.id_store_credit AND cs.id_shop = ' . (int)$idShop)
+            ->where('c.id_customer = ' . (int)$idCustomer)
+            ->where('c.date_from <= NOW()')
+            ->where('(c.date_to < "1900-00-00" OR c.date_to >= NOW())');
+
+        $row = $conn->getRow($sql);
+        if (!is_array($row) || empty($row['id_store_credit'])) {
+            return 0.0;
+        }
+
+        $idStoreCredit = (int)$row['id_store_credit'];
+        $availableAmount = Tools::roundPrice(max(0.0, (float)$row['amount'] - (float)$row['amount_used']));
+        $consumedAmount = Tools::roundPrice(min($requestedAmountTaxIncl, $availableAmount));
+        if ($consumedAmount <= 0.0) {
+            return 0.0;
+        }
+
+        $consumedSql = pSQL((string)$consumedAmount);
+        $updated = $conn->update(
+            'store_credit',
+            [
+                'amount_used' => ['type' => 'sql', 'value' => 'LEAST(`amount`, `amount_used` + ' . $consumedSql . ')'],
+                'date_upd'    => ['type' => 'sql', 'value' => 'NOW()'],
+            ],
+            'id_store_credit = ' . $idStoreCredit
+        );
+        if (!$updated) {
+            return 0.0;
+        }
+
+        try {
+            if (!StoreCreditTransaction::addOrderConsumption($idStoreCredit, $idCustomer, $idOrder, $consumedAmount)) {
+                $conn->update(
+                    'store_credit',
+                    [
+                        'amount_used' => ['type' => 'sql', 'value' => 'GREATEST(0, `amount_used` - ' . $consumedSql . ')'],
+                        'date_upd'    => ['type' => 'sql', 'value' => 'NOW()'],
+                    ],
+                    'id_store_credit = ' . $idStoreCredit
+                );
+                return 0.0;
+            }
+        } catch (Exception $exception) {
+            try {
+                if (StoreCreditTransaction::hasOrderConsumption($idOrder)) {
+                    $conn->update(
+                        'store_credit',
+                        [
+                            'amount_used' => ['type' => 'sql', 'value' => 'GREATEST(0, `amount_used` - ' . $consumedSql . ')'],
+                            'date_upd'    => ['type' => 'sql', 'value' => 'NOW()'],
+                        ],
+                        'id_store_credit = ' . $idStoreCredit
+                    );
+                    return StoreCreditTransaction::getOrderConsumptionAmount($idOrder);
+                }
+            } catch (Exception $ignored) {
+                // Keep consumption if transaction table is not available yet.
+            }
+        }
+
+        return $consumedAmount;
     }
 
 
