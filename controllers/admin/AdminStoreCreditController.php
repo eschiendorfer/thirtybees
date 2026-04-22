@@ -42,128 +42,98 @@ class AdminStoreCreditControllerCore extends AdminController
         $this->lang = false;
         $this->_orderWay = 'DESC';
 
-        $this->bulk_actions = [
-            'delete' => [
-                'text' => $this->l('Delete selected'),
-                'icon' => 'icon-trash',
-                'confirm' => $this->l('Delete selected items?')
-            ]
+        $this->bulk_actions = [];
+        $this->list_id = 'storecredits';
+        $this->list_no_link = true;
+        $this->_join = implode('', [
+            ' LEFT JOIN `' . _DB_PREFIX_ . 'customer` `c` ON (`c`.`id_customer` = `a`.`id_customer`)',
+        ]);
+        $this->_select = implode(',', [
+            'CONCAT(`c`.`firstname`, " ", `c`.`lastname`) AS `customer_name`',
+            '`c`.`email` AS `email`',
+        ]);
+        $this->_defaultOrderBy = 'id_store_credit';
+        $this->_defaultOrderWay = 'DESC';
+        $this->addRowAction('transactions');
+        $this->addRowAction('edit');
+        $this->fields_list = [
+            'id_store_credit' => [
+                'title' => $this->l('ID'),
+                'align' => 'center',
+                'class' => 'fixed-width-xs',
+            ],
+            'id_customer' => [
+                'title' => $this->l('Customer ID'),
+                'align' => 'center',
+                'class' => 'fixed-width-xs',
+            ],
+            'customer_name' => [
+                'title' => $this->l('Customer Name'),
+                'callback_object' => $this,
+                'callback' => 'displayCustomerInfo',
+                'havingFilter' => true,
+            ],
+            'email' => [
+                'title' => $this->l('Customer Email'),
+                'havingFilter' => true,
+            ],
+            'amount' => [
+                'title' => $this->l('Balance'),
+                'align' => 'text-right',
+                'type' => 'price',
+                'currency' => true,
+                'havingFilter' => true,
+            ],
+            'date_to' => [
+                'title' => $this->l('Expiration date'),
+                'type' => 'datetime',
+                'class' => 'fixed-width-lg',
+            ],
         ];
 
-        if ($this->isGroupedView()) {
-            $this->addRowAction('view');
-            $this->explicitSelect = true;
-            $this->_use_found_rows = false;
-            $this->identifier = 'id_customer';
-            $this->bulk_actions = [];
-            $this->list_id = 'storecreditsgrouped';
-            $this->_join = implode('', [
-                'LEFT JOIN `' . _DB_PREFIX_ . 'customer` `c` ON (`c`.`id_customer` = `a`.`id_customer`)',
-            ]);
-            $this->_select = implode(',', [
-                'CONCAT(`c`.`firstname`, " ", `c`.`lastname`) AS `customer_name`',
-                '`c`.`email` as email',
-                'SUM(a.amount) AS `amount`',
-            ]);
-            $this->_defaultOrderBy = 'amount';
-            $this->_defaultOrderWay = 'DESC';
-            $this->_group = ' GROUP BY c.`id_customer`';
-            $this->fields_list = [
-                'id_customer' => [
-                    'title' => $this->l('Customer ID'),
-                    'align' => 'center',
-                    'class' => 'fixed-width-xs',
-                    'filter_key' => 'c!id_customer',
+        $currency = Currency::getCurrencyInstance(Configuration::get('PS_CURRENCY_DEFAULT'));
+        $currencySymbol = $currency->getSign('left') . $currency->getSign('right');
+        $this->fields_form = [
+            'legend' => [
+                'title' => $this->l('Store credit'),
+                'icon'  => 'icon-money',
+            ],
+            'input'  => [
+                [
+                    'type' => 'hidden',
+                    'name' => 'id_customer',
                 ],
-                'customer_name' => [
-                    'title' => $this->l('Customer Name'),
-                    'callback_object' => $this,
-                    'callback' => 'displayCustomerInfo',
-                    'havingFilter' => true,
+                [
+                    'type'  => 'price',
+                    'prefix' => $currencySymbol,
+                    'label' => $this->l('Balance'),
+                    'name'  => 'amount',
+                    'readonly' => true,
+                    'disabled' => true,
+                    'hint'  => $this->l('Balance is adjusted via transactions.'),
                 ],
-                'email' => [
-                    'title' => $this->l('Customer Email'),
-                    'callback_object' => $this,
-                    'callback' => 'displayCustomerInfo',
-                    'havingFilter' => true,
+                [
+                    'type'  => 'datetime',
+                    'label' => $this->l('Valid from'),
+                    'name'  => 'date_from',
+                    'hint'  => $this->l('Date this credit is valid from'),
                 ],
-                'amount' => [
-                    'title' => $this->l('Balance'),
-                    'align' => 'text-right',
-                    'type' => 'price',
-                    'currency' => true,
-                    'havingFilter' => true,
+                [
+                    'type'  => 'datetime',
+                    'label' => $this->l('Valid to'),
+                    'name'  => 'date_to',
+                    'hint'  => $this->l('Credit expiration date'),
                 ],
-            ];
-        } else {
-            $this->list_id = 'storecredits';
-            $this->addRowAction('edit');
-            $this->addRowAction('delete');
-            $this->addRowAction('transactions');
-            $this->list_no_link = true;
-            $customerId = Tools::getIntValue('id_customer');
-            $this->_where .= 'AND a.id_customer = ' . $customerId;
-            $this->fields_list = [
-                'id_store_credit' => [
-                    'title' => $this->l('ID'),
-                    'align' => 'center',
-                    'class' => 'fixed-width-xs',
+                [
+                    'type'  => 'shop',
+                    'label' => $this->l('Shop association'),
+                    'name'  => 'checkBoxShopAsso',
                 ],
-                'amount' => [
-                    'title' => $this->l('Balance'),
-                    'align' => 'text-right',
-                    'type' => 'price',
-                    'currency' => true,
-                ],
-                'date_to' => [
-                    'title' => $this->l('Expiration date'),
-                    'type' => 'datetime',
-                    'class' => 'fixed-width-lg',
-                ],
-            ];
-
-            $currency = Currency::getCurrencyInstance(Configuration::get('PS_CURRENCY_DEFAULT'));
-            $currencySymbol = $currency->getSign('left') . $currency->getSign('right');
-            $this->fields_form = [
-                'legend' => [
-                    'title' => $this->l('Store credit'),
-                    'icon'  => 'icon-money',
-                ],
-                'input'  => [
-                    [
-                        'type' => 'hidden',
-                        'name' => 'id_customer',
-                    ],
-                    [
-                        'type'  => 'price',
-                        'prefix' => $currencySymbol,
-                        'label' => $this->l('Balance'),
-                        'name'  => 'amount',
-                        'hint'  => $this->l('Current available balance'),
-                    ],
-                    [
-                        'type'  => 'datetime',
-                        'label' => $this->l('Valid from'),
-                        'name'  => 'date_from',
-                        'hint'  => $this->l('Date this credit is valid from'),
-                    ],
-                    [
-                        'type'  => 'datetime',
-                        'label' => $this->l('Valid to'),
-                        'name'  => 'date_to',
-                        'hint'  => $this->l('Credit expiration date'),
-                    ],
-                    [
-                        'type'  => 'shop',
-                        'label' => $this->l('Shop association'),
-                        'name'  => 'checkBoxShopAsso',
-                    ]
-                ],
-                'submit' => [
-                    'title' => $this->l('Save'),
-                ],
-            ];
-        }
+            ],
+            'submit' => [
+                'title' => $this->l('Save'),
+            ],
+        ];
 
         parent::__construct();
     }
@@ -198,9 +168,8 @@ class AdminStoreCreditControllerCore extends AdminController
         parent::initPageHeaderToolbar();
 
         if ($this->addStoreCreditTransactionMode) {
-            $idCustomer = Tools::getIntValue('id_customer');
             $this->page_header_toolbar_btn['back_to_list'] = [
-                'href' => $idCustomer ? $this->getCustomerCreditsUrl($idCustomer) : $this->getStoreCreditListUrl(),
+                'href' => $this->getStoreCreditListUrl(),
                 'desc' => $this->l('Back to list'),
                 'icon' => 'process-icon-back',
             ];
@@ -211,7 +180,7 @@ class AdminStoreCreditControllerCore extends AdminController
 
         if (empty($this->display)) {
             $this->page_header_toolbar_btn['add_store_credit_transaction'] = [
-                'href' => $this->getAddStoreCreditTransactionUrl(Tools::getIntValue('id_customer')),
+                'href' => $this->getAddStoreCreditTransactionUrl(),
                 'desc' => $this->l('Add store credit'),
                 'icon' => 'process-icon-new',
             ];
@@ -227,38 +196,8 @@ class AdminStoreCreditControllerCore extends AdminController
     {
         parent::setHelperDisplay($helper);
         if ($helper instanceof HelperList) {
-            if ($this->isGroupedView()) {
-                $helper->title = $this->l('Store credits: grouped by customer');
-                $helper->linkUrlCallback = [$this, 'getViewListUrl'];
-            } else {
-                $customerId = Tools::getIntValue('id_customer');
-                $helper->currentIndex = $this->getCustomerCreditsUrl($customerId);
-                if ($customerId) {
-                    $customer = new Customer($customerId);
-                    $customerName = trim($customer->firstname . ' ' . $customer->lastname);
-                } else {
-                    $customerName = $this->l('Unknown customer');
-                }
-                $helper->title = sprintf($this->l('Store credits: %s'), $customerName);
-                if (is_array($helper->toolbar_btn)) {
-                    $helper->toolbar_btn['transactions'] = [
-                        'href' => $this->getCustomerTransactionsUrl($customerId),
-                        'desc' => $this->l('Transactions'),
-                        'icon' => 'process-icon-view',
-                    ];
-                }
-            }
+            $helper->title = $this->l('Store credits');
         }
-    }
-
-    /**
-     * @param array $row
-     * @return string
-     * @throws PrestaShopException
-     */
-    public function getViewListUrl($row)
-    {
-        return $this->getCustomerCreditsUrl((int)$row['id_customer']);
     }
 
     /**
@@ -292,10 +231,22 @@ class AdminStoreCreditControllerCore extends AdminController
             $this->processAddStoreCreditTransaction();
             if (empty($this->errors)) {
                 $idCustomer = Tools::getIntValue('id_customer');
-                Tools::redirectAdmin($this->getCustomerCreditsUrl($idCustomer));
+                Tools::redirectAdmin($this->getCustomerTransactionsUrl($idCustomer));
             }
 
             return false;
+        }
+
+        if (
+            !$this->addStoreCreditTransactionMode
+            && Tools::isSubmit('submitAdd' . $this->table)
+            && Tools::getIntValue($this->identifier) > 0
+        ) {
+            $idStoreCredit = Tools::getIntValue($this->identifier);
+            $storeCredit = new StoreCredit($idStoreCredit);
+            if (Validate::isLoadedObject($storeCredit)) {
+                $_POST['amount'] = (string)$storeCredit->amount;
+            }
         }
 
         $result = parent::postProcess();
@@ -323,6 +274,8 @@ class AdminStoreCreditControllerCore extends AdminController
                 $customerLabel = trim($customer->firstname . ' ' . $customer->lastname . ' (' . $customer->email . ')');
             }
         }
+        $currency = Currency::getCurrencyInstance((int)Configuration::get('PS_CURRENCY_DEFAULT'));
+        $currencySymbol = $currency ? $currency->getSign('left') . $currency->getSign('right') : '';
 
         $helper = new HelperForm();
         $helper->table = $this->table;
@@ -353,7 +306,7 @@ class AdminStoreCreditControllerCore extends AdminController
                 ],
                 [
                     'type'     => 'price',
-                    'prefix'   => 'CHF ',
+                    'prefix'   => $currencySymbol,
                     'label'    => $this->l('Amount'),
                     'name'     => 'amount_tax_incl',
                     'required' => true,
@@ -427,8 +380,11 @@ class AdminStoreCreditControllerCore extends AdminController
         if ($idCustomer <= 0 || !Validate::isLoadedObject(new Customer($idCustomer))) {
             $this->errors[] = $this->l('Please select a valid customer.');
         }
-        if ($amountTaxIncl <= 0.0) {
-            $this->errors[] = $this->l('Amount must be greater than zero.');
+        if ($amountTaxIncl === 0.0) {
+            $this->errors[] = $this->l('Amount must not be zero.');
+        }
+        if ($amountTaxIncl < 0.0 && $economicType !== StoreCreditTransaction::ECONOMIC_MANUAL_ADJUSTMENT) {
+            $this->errors[] = $this->l('Negative amount is only allowed for manual adjustment.');
         }
         if (!StoreCreditTransaction::isValidEconomicType($economicType) || $economicType === StoreCreditTransaction::ECONOMIC_PAYMENT_INSTRUMENT) {
             $this->errors[] = $this->l('Invalid economic type.');
@@ -494,44 +450,15 @@ class AdminStoreCreditControllerCore extends AdminController
 
 
     /**
-     * @return bool
-     */
-    protected function isGroupedView(): bool
-    {
-        return !Tools::isSubmit('id_customer');
-    }
-
-    /**
-     * @param int $customerId
-     *
      * @return string
      *
      * @throws PrestaShopException
      */
-    protected function getCustomerCreditsUrl(int $customerId): string
+    protected function getAddStoreCreditTransactionUrl(): string
     {
         return $this->context->link->getAdminLink('AdminStoreCredit', true, [
-            'id_customer' => (int)$customerId,
-        ]);
-    }
-
-    /**
-     * @param int $idCustomer
-     *
-     * @return string
-     *
-     * @throws PrestaShopException
-     */
-    protected function getAddStoreCreditTransactionUrl(int $idCustomer = 0): string
-    {
-        $params = [
             'addstorecredittransaction' => 1,
-        ];
-        if ($idCustomer > 0) {
-            $params['id_customer'] = $idCustomer;
-        }
-
-        return $this->context->link->getAdminLink('AdminStoreCredit', true, $params);
+        ]);
     }
 
     /**
@@ -565,38 +492,16 @@ class AdminStoreCreditControllerCore extends AdminController
      *
      * @throws PrestaShopException
      */
-    protected function getStoreCreditTransactionsUrl(int $idStoreCredit): string
+    protected function getStoreCreditTransactionsUrl(int $idStoreCredit, int $idCustomer = 0): string
     {
         $params = [
             'id_store_credit' => (int)$idStoreCredit,
         ];
-        $idCustomer = Tools::getIntValue('id_customer');
-        if ($idCustomer) {
-            $params['id_customer'] = (int)$idCustomer;
+        if ($idCustomer > 0) {
+            $params['id_customer'] = $idCustomer;
         }
+
         return $this->context->link->getAdminLink('AdminStoreCreditTransactions', true, $params);
-    }
-
-    /**
-     * Display view action link
-     *
-     * @param string|null $token
-     * @param int $id
-     * @param string|null $name
-     *
-     * @return string
-     * @throws PrestaShopException
-     * @throws SmartyException
-     */
-    public function displayViewLink($token, $id, $name = null)
-    {
-        $tpl = $this->createTemplate('helpers/list/list_action_view.tpl');
-        $tpl->assign([
-            'href'   => $this->getCustomerCreditsUrl((int)$id),
-            'action' => $this->l('View vouchers')
-        ]);
-
-        return $tpl->fetch();
     }
 
     /**
@@ -610,11 +515,55 @@ class AdminStoreCreditControllerCore extends AdminController
      */
     public function displayTransactionsLink($token, $id, $name = null)
     {
+        $idStoreCredit = (int)$id;
+        $idCustomer = 0;
+        if ($idStoreCredit > 0) {
+            $storeCredit = new StoreCredit($idStoreCredit);
+            if (Validate::isLoadedObject($storeCredit)) {
+                $idCustomer = (int)$storeCredit->id_customer;
+            }
+        }
+
         $tpl = $this->createTemplate('helpers/list/list_action_view.tpl');
         $tpl->assign([
-            'href' => $this->getStoreCreditTransactionsUrl((int)$id),
+            'href' => $this->getStoreCreditTransactionsUrl($idStoreCredit, $idCustomer),
             'action' => $this->l('Transactions'),
         ]);
+
         return $tpl->fetch();
+    }
+
+    /**
+     * @return HelperKpi[]
+     *
+     * @throws PrestaShopException
+     */
+    public function getKpis(): array
+    {
+        $currency = Currency::getCurrencyInstance((int)Configuration::get('PS_CURRENCY_DEFAULT'));
+        $totalOutstanding = $this->getTotalOutstandingStoreCredit();
+
+        $helper = new HelperKpi();
+        $helper->id = 'box-store-credit-outstanding';
+        $helper->icon = 'icon-money';
+        $helper->color = 'color1';
+        $helper->title = $this->l('Outstanding store credit', null, null, false);
+        $helper->subtitle = $this->l('All customers', null, null, false);
+        $helper->value = Tools::displayPrice($totalOutstanding, $currency);
+
+        return [$helper];
+    }
+
+    /**
+     * @return float
+     */
+    protected function getTotalOutstandingStoreCredit(): float
+    {
+        $query = (new DbQuery())
+            ->select('SUM(amount)')
+            ->from('store_credit')
+            ->where('amount > 0');
+
+        return (float)Db::readOnly()->getValue($query);
     }
 }

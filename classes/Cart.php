@@ -1117,7 +1117,7 @@ class CartCore extends ObjectModel
 
         if ($orderTotal > 0 && $this->use_store_credit && (int)$this->id_customer) {
             if ($type == static::BOTH || $type == static::ONLY_STORE_CREDIT) {
-                $creditAvailable = StoreCredit::getByCustomerId((int)$this->id_shop, (int)$this->id_customer);
+                $creditAvailable = StoreCredit::getCustomerAvailableAmount((int)$this->id_shop, (int)$this->id_customer);
                 $creditUsed = Tools::roundPrice(max(0.0, min($orderTotal, $creditAvailable)));
                 if ($type == static::BOTH) {
                     $orderTotal -= $creditUsed;
@@ -4114,18 +4114,18 @@ class CartCore extends ObjectModel
         }
 
         $discounts = array_values($cartRules);
-        if ($this->use_store_credit && (int)$this->id_customer) {
-            $creditUsed = $this->getOrderTotal(true, static::ONLY_STORE_CREDIT);
-            if ($creditUsed > 0.0) {
-                $baseTotalTaxInc -= $creditUsed;
-                $discounts[] = [
-                    'id_cart_rule' => -1,
-                    'id_discount' => ParentOrderController::STORE_CREDIT_CODE,
-                    'code' => ParentOrderController::STORE_CREDIT_CODE,
-                    'id_customer' => $this->id_customer,
-                    'value_real' => $creditUsed,
-                    'name' => 'Store credit',
-                ];
+
+        $storeCreditAvailable = 0.0;
+        $storeCreditUsed = 0.0;
+        $storeCreditEnabled = false;
+        if ((int)$this->id_customer > 0) {
+            $storeCreditAvailable = Tools::roundPrice(StoreCredit::getCustomerAvailableAmount((int)$this->id_shop, (int)$this->id_customer));
+            if ($this->use_store_credit && $storeCreditAvailable > 0.0) {
+                $storeCreditUsed = Tools::roundPrice($this->getOrderTotal(true, static::ONLY_STORE_CREDIT));
+                $storeCreditEnabled = true;
+                if ($storeCreditUsed > 0.0) {
+                    $baseTotalTaxInc -= $storeCreditUsed;
+                }
             }
         }
 
@@ -4154,6 +4154,11 @@ class CartCore extends ObjectModel
             'is_multi_address_delivery' => $this->isMultiAddressDelivery() || (Tools::getIntValue('multi-shipping') == 1),
             'free_ship'                 => !$totalShipping && !$errors,
             'carrier'                   => new Carrier($this->id_carrier, $idLang),
+            'customer_store_credit'     => [
+                'available' => $storeCreditAvailable,
+                'used' => $storeCreditUsed,
+                'enabled' => $storeCreditEnabled,
+            ],
             'errors'                    => $errors,
         ];
 

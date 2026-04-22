@@ -1181,6 +1181,67 @@ class AdminOrdersControllerCore extends AdminController
             }
         } elseif (Tools::isSubmit('messageReaded')) {
             Message::markAsReaded(Tools::getValue('messageReaded'), $this->context->employee->id);
+        } elseif (Tools::isSubmit('submitApplyStoreCredit') && isset($order)) {
+            if ($this->hasEditPermission()) {
+                $amountTaxIncl = Tools::roundPrice((float)Tools::getNumberValue('store_credit_amount'));
+                $orderInvoice = $this->getFirstOrderInvoice($order);
+                if (!Validate::isLoadedObject($orderInvoice)) {
+                    $orderInvoice = null;
+                }
+
+                if (!Validate::isLoadedObject($order)) {
+                    $this->errors[] = Tools::displayError('The order cannot be found');
+                } elseif ($amountTaxIncl <= 0.0) {
+                    $this->errors[] = Tools::displayError('The amount is invalid.');
+                } else {
+                    $outstandingAmountTaxIncl = Tools::roundPrice((float)$order->getOutstandingAmountTaxIncl());
+                    $availableStoreCreditTaxIncl = Tools::roundPrice(
+                        (float)StoreCredit::getCustomerAvailableAmount((int)$order->id_shop, (int)$order->id_customer)
+                    );
+                    $maxApplicableAmountTaxIncl = Tools::roundPrice(min($outstandingAmountTaxIncl, $availableStoreCreditTaxIncl));
+
+                    if ($maxApplicableAmountTaxIncl <= 0.0) {
+                        $this->errors[] = Tools::displayError('There is no applicable store credit for this order.');
+                    } elseif ($amountTaxIncl > $maxApplicableAmountTaxIncl) {
+                        $this->errors[] = Tools::displayError('Amount exceeds outstanding amount or available store credit.');
+                    } else {
+                        $consumedAmountTaxIncl = StoreCredit::consumeForOrder(
+                            (int)$order->id_shop,
+                            (int)$order->id_customer,
+                            (int)$order->id,
+                            $amountTaxIncl
+                        );
+
+                        if ($consumedAmountTaxIncl <= 0.0) {
+                            $this->errors[] = Tools::displayError('Unable to consume store credit.');
+                        } else {
+                            $idStoreCreditTransaction = 0;
+                            try {
+                                $idStoreCreditTransaction = StoreCreditTransaction::getOrderConsumptionTransactionId((int)$order->id);
+                            } catch (Exception $exception) {
+                                $idStoreCreditTransaction = 0;
+                            }
+
+                            $currency = Currency::getCurrencyInstance((int)$order->id_currency);
+                            if (!$order->addOrderPayment(
+                                $consumedAmountTaxIncl,
+                                'Store Credit',
+                                $idStoreCreditTransaction > 0 ? (string)$idStoreCreditTransaction : null,
+                                $currency,
+                                date('Y-m-d H:i:s'),
+                                $orderInvoice,
+                                'store_credit'
+                            )) {
+                                $this->errors[] = Tools::displayError('An error occurred during payment.');
+                            } else {
+                                Tools::redirectAdmin(static::$currentIndex.'&id_order='.$order->id.'&vieworder&conf=4&token='.$this->token);
+                            }
+                        }
+                    }
+                }
+            } else {
+                $this->errors[] = Tools::displayError('You do not have permission to edit this.');
+            }
         } elseif (Tools::isSubmit('submitAddPayment') && isset($order)) {
             if ($this->hasEditPermission()) {
                 $amount = Tools::getNumberValue('payment_amount');
@@ -1877,6 +1938,45 @@ class AdminOrdersControllerCore extends AdminController
             $orderState['text-color'] = Tools::getBrightness($orderState['color']) < 128 ? 'white' : 'black';
         }
 
+        $storeCreditUsedTaxIncl = 0.0;
+        try {
+            $storeCreditUsedTaxIncl = StoreCreditTransaction::getOrderConsumptionAmount((int)$order->id);
+        } catch (Exception $exception) {
+            $storeCreditUsedTaxIncl = 0.0;
+        }
+        $storeCreditTransactionsUrl = $this->context->link->getAdminLink('AdminStoreCreditTransactions', true, [
+            'id_customer' => (int)$order->id_customer,
+        ]);
+
+        $storeCreditPaymentLinks = [];
+        foreach ($order->getOrderPaymentCollection() as $orderPayment) {
+            /** @var OrderPayment $orderPayment */
+            if (
+                (string)$orderPayment->payment_module !== 'store_credit' ||
+                (int)$orderPayment->id <= 0 ||
+                (int)$orderPayment->transaction_id <= 0
+            ) {
+                continue;
+            }
+
+            $storeCreditPaymentLinks[(int)$orderPayment->id] = [
+                'id_store_credit_transaction' => (int)$orderPayment->transaction_id,
+                'url' => $storeCreditTransactionsUrl,
+            ];
+        }
+
+        $storeCreditAvailableTaxIncl = 0.0;
+        try {
+            $storeCreditAvailableTaxIncl = Tools::roundPrice(
+                (float)StoreCredit::getCustomerAvailableAmount((int)$order->id_shop, (int)$order->id_customer)
+            );
+        } catch (Exception $exception) {
+            $storeCreditAvailableTaxIncl = 0.0;
+        }
+
+        $outstandingInvoiceAmountTaxIncl = Tools::roundPrice((float)$order->getOutstandingAmountTaxIncl());
+        $storeCreditMaxApplicableTaxIncl = Tools::roundPrice(min($storeCreditAvailableTaxIncl, $outstandingInvoiceAmountTaxIncl));
+
         // Smarty assign
         $this->tpl_view_vars = [
             'order'                        => $order,
@@ -1893,6 +1993,12 @@ class AdminOrdersControllerCore extends AdminController
             'customerStats'                => $customer->getStats(),
             'products'                     => $products,
             'discounts'                    => $order->getCartRules(),
+            'store_credit_used_tax_incl'   => $storeCreditUsedTaxIncl,
+            'store_credit_transactions_url' => $storeCreditTransactionsUrl,
+            'store_credit_payment_links'   => $storeCreditPaymentLinks,
+            'store_credit_available_tax_incl' => $storeCreditAvailableTaxIncl,
+            'store_credit_max_applicable_tax_incl' => $storeCreditMaxApplicableTaxIncl,
+            'outstanding_invoice_amount_tax_incl' => $outstandingInvoiceAmountTaxIncl,
             'orders_total_paid_tax_incl'   => $order->getOrdersTotalPaid(), // Get the sum of total_paid_tax_incl of the order with similar reference
             'total_paid'                   => $order->getTotalPaid(),
             'returns'                      => OrderReturn::getOrdersReturn($order->id_customer, $order->id),
@@ -3340,6 +3446,26 @@ class AdminOrdersControllerCore extends AdminController
         $template = $this->createTemplate('_documents.tpl');
         $template->assign('orderDocuments', $order->getDocuments());
         return $template->fetch();
+    }
+
+    /**
+     * @param Order $order
+     *
+     * @return OrderInvoice|null
+     *
+     * @throws PrestaShopException
+     */
+    protected function getFirstOrderInvoice(Order $order): ?OrderInvoice
+    {
+        try {
+            $orderInvoices = $order->getInvoicesCollection();
+            if (isset($orderInvoices[0]) && Validate::isLoadedObject($orderInvoices[0])) {
+                return $orderInvoices[0];
+            }
+        } catch (Exception $exception) {
+        }
+
+        return null;
     }
 
     /**

@@ -42,6 +42,8 @@ class OrderPaymentCore extends ObjectModel
     public $amount;
     /** @var string $payment_method */
     public $payment_method;
+    /** @var string $payment_module */
+    public $payment_module;
     /** @var float $conversion_rate */
     public $conversion_rate;
     /** @var string $transaction_id */
@@ -69,6 +71,7 @@ class OrderPaymentCore extends ObjectModel
             'id_currency'     => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true, 'size' => 10],
             'amount'          => ['type' => self::TYPE_PRICE, 'validate' => 'isNegativePrice', 'required' => true],
             'payment_method'  => ['type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'dbNullable' => false],
+            'payment_module'  => ['type' => self::TYPE_STRING, 'validate' => 'isModuleName', 'size' => 64, 'dbNullable' => true],
             'conversion_rate' => ['type' => self::TYPE_FLOAT, 'validate' => 'isFloat', 'size' => 13, 'decimals' => 6, 'dbDefault' => '1.000000'],
             'transaction_id'  => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 254],
             'card_number'     => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 254],

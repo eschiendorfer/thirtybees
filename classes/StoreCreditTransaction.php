@@ -59,7 +59,7 @@ class StoreCreditTransactionCore extends ObjectModel
     public $entity_type;
 
     /**
-     * @var int
+     * @var int|null
      */
     public $id_entity;
 
@@ -119,7 +119,7 @@ class StoreCreditTransactionCore extends ObjectModel
                 'required' => true,
                 'values' => [self::ENTITY_ORDER, self::ENTITY_ORDER_SLIP, self::ENTITY_MANUAL],
             ],
-            'id_entity'        => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId'],
+            'id_entity'        => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbNullable' => true],
             'id_customer'      => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId'],
             'id_employee'      => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId'],
             'amount_tax_incl'  => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'required' => true],
@@ -131,7 +131,6 @@ class StoreCreditTransactionCore extends ObjectModel
             'store_credit_transaction' => [
                 'id_store_credit' => ['type' => ObjectModel::KEY, 'columns' => ['id_store_credit']],
                 'entity'          => ['type' => ObjectModel::KEY, 'columns' => ['entity_type', 'id_entity']],
-                'entity_transaction' => ['type' => ObjectModel::UNIQUE_KEY, 'columns' => ['entity_type', 'id_entity', 'transaction_type', 'economic_type']],
                 'id_customer'     => ['type' => ObjectModel::KEY, 'columns' => ['id_customer']],
                 'id_employee'     => ['type' => ObjectModel::KEY, 'columns' => ['id_employee']],
             ],
@@ -196,7 +195,7 @@ class StoreCreditTransactionCore extends ObjectModel
         }
 
         $sql = (new DbQuery())
-            ->select('amount_tax_incl')
+            ->select('SUM(amount_tax_incl)')
             ->from('store_credit_transaction')
             ->where('entity_type = ' . (int)static::ENTITY_ORDER)
             ->where('id_entity = ' . (int)$idOrder)
@@ -204,6 +203,31 @@ class StoreCreditTransactionCore extends ObjectModel
             ->where('economic_type = ' . (int)static::ECONOMIC_PAYMENT_INSTRUMENT);
 
         return (float)Db::readOnly()->getValue($sql);
+    }
+
+    /**
+     * @param int $idOrder
+     *
+     * @return int
+     *
+     * @throws PrestaShopException
+     */
+    public static function getOrderConsumptionTransactionId(int $idOrder): int
+    {
+        if ($idOrder <= 0) {
+            return 0;
+        }
+
+        $sql = (new DbQuery())
+            ->select('id_store_credit_transaction')
+            ->from('store_credit_transaction')
+            ->where('entity_type = ' . (int)static::ENTITY_ORDER)
+            ->where('id_entity = ' . (int)$idOrder)
+            ->where('transaction_type = ' . (int)static::TYPE_DECREASE)
+            ->where('economic_type = ' . (int)static::ECONOMIC_PAYMENT_INSTRUMENT)
+            ->orderBy('id_store_credit_transaction DESC');
+
+        return max(0, (int)Db::readOnly()->getValue($sql));
     }
 
     /**
@@ -240,7 +264,7 @@ class StoreCreditTransactionCore extends ObjectModel
      * @param int $transactionType
      * @param int $economicType
      * @param int $entityType
-     * @param int $idEntity
+     * @param int|null $idEntity
      * @param float $amountTaxIncl
      * @param int $idEmployee
      * @param string $note
@@ -253,19 +277,21 @@ class StoreCreditTransactionCore extends ObjectModel
         int $transactionType,
         int $economicType,
         int $entityType,
-        int $idEntity,
+        ?int $idEntity,
         float $amountTaxIncl,
         int $idEmployee = 0,
         string $note = ''
     ): bool {
         $amountTaxIncl = Tools::roundPrice($amountTaxIncl);
         $idEmployee = max(0, (int)$idEmployee);
+        $idEntity = $idEntity !== null ? (int)$idEntity : 0;
+        $requiresEntityId = $entityType !== static::ENTITY_MANUAL;
         $note = trim($note);
 
         if (
             $idStoreCredit <= 0 ||
             $idCustomer <= 0 ||
-            $idEntity <= 0 ||
+            ($requiresEntityId && $idEntity <= 0) ||
             $amountTaxIncl <= 0.0 ||
             !static::isValidTransactionType($transactionType) ||
             !static::isValidEconomicType($economicType) ||
@@ -280,7 +306,7 @@ class StoreCreditTransactionCore extends ObjectModel
         $transaction->transaction_type = $transactionType;
         $transaction->economic_type = $economicType;
         $transaction->entity_type = $entityType;
-        $transaction->id_entity = $idEntity;
+        $transaction->id_entity = $requiresEntityId ? $idEntity : null;
         $transaction->id_customer = $idCustomer;
         $transaction->id_employee = $idEmployee;
         $transaction->amount_tax_incl = $amountTaxIncl;
@@ -317,7 +343,7 @@ class StoreCreditTransactionCore extends ObjectModel
             static::TYPE_INCREASE,
             $economicType,
             static::ENTITY_MANUAL,
-            static::getNextManualEntityId(),
+            null,
             $amountTaxIncl,
             $idEmployee,
             $note
@@ -325,18 +351,38 @@ class StoreCreditTransactionCore extends ObjectModel
     }
 
     /**
-     * @return int
+     * @param int $idStoreCredit
+     * @param int $idCustomer
+     * @param int $economicType
+     * @param float $amountTaxIncl
+     * @param int $idEmployee
+     * @param string $note
+     *
+     * @return bool
      */
-    protected static function getNextManualEntityId(): int
-    {
-        $sql = (new DbQuery())
-            ->select('MAX(`id_entity`)')
-            ->from('store_credit_transaction')
-            ->where('entity_type = ' . (int)static::ENTITY_MANUAL);
+    public static function addManualDecrease(
+        int $idStoreCredit,
+        int $idCustomer,
+        int $economicType,
+        float $amountTaxIncl,
+        int $idEmployee = 0,
+        string $note = ''
+    ): bool {
+        if ($economicType === static::ECONOMIC_PAYMENT_INSTRUMENT) {
+            return false;
+        }
 
-        $idEntity = (int)Db::getInstance()->getValue($sql) + 1;
-
-        return max(1, $idEntity);
+        return static::addStoreCreditTransaction(
+            $idStoreCredit,
+            $idCustomer,
+            static::TYPE_DECREASE,
+            $economicType,
+            static::ENTITY_MANUAL,
+            null,
+            $amountTaxIncl,
+            $idEmployee,
+            $note
+        );
     }
 
     /**

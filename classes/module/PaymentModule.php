@@ -558,22 +558,14 @@ abstract class PaymentModuleCore extends Module
 
                     $orderTotalPaidTaxExclWithoutStoreCredit = (float)$this->context->cart->getOrderTotal(false, Cart::BOTH_WITHOUT_STORE_CREDIT, $productList, $idCarrier);
                     $orderTotalPaidTaxInclWithoutStoreCredit = (float)$this->context->cart->getOrderTotal(true, Cart::BOTH_WITHOUT_STORE_CREDIT, $productList, $idCarrier);
-                    $orderTotalPaidTaxExclWithStoreCredit = (float)$this->context->cart->getOrderTotal(false, Cart::BOTH, $productList, $idCarrier);
                     $orderTotalPaidTaxInclWithStoreCredit = (float)$this->context->cart->getOrderTotal(true, Cart::BOTH, $productList, $idCarrier);
 
                     $requestedStoreCreditTaxIncl = Tools::roundPrice(max(0.0, $orderTotalPaidTaxInclWithoutStoreCredit - $orderTotalPaidTaxInclWithStoreCredit));
-                    $requestedStoreCreditTaxExcl = Tools::roundPrice(max(0.0, $orderTotalPaidTaxExclWithoutStoreCredit - $orderTotalPaidTaxExclWithStoreCredit));
-
                     $storeCreditUsedTaxIncl = Tools::roundPrice(min($requestedStoreCreditTaxIncl, $remainingStoreCreditTaxIncl));
                     $remainingStoreCreditTaxIncl = Tools::roundPrice(max(0.0, $remainingStoreCreditTaxIncl - $storeCreditUsedTaxIncl));
 
-                    $storeCreditUsedTaxExcl = 0.0;
-                    if ($requestedStoreCreditTaxIncl > 0.0 && $requestedStoreCreditTaxExcl > 0.0 && $storeCreditUsedTaxIncl > 0.0) {
-                        $storeCreditUsedTaxExcl = Tools::roundPrice($requestedStoreCreditTaxExcl * ($storeCreditUsedTaxIncl / $requestedStoreCreditTaxIncl));
-                    }
-
-                    $order->total_paid_tax_excl = Tools::roundPrice(max(0.0, $orderTotalPaidTaxExclWithoutStoreCredit - $storeCreditUsedTaxExcl));
-                    $order->total_paid_tax_incl = Tools::roundPrice(max(0.0, $orderTotalPaidTaxInclWithoutStoreCredit - $storeCreditUsedTaxIncl));
+                    $order->total_paid_tax_excl = Tools::roundPrice($orderTotalPaidTaxExclWithoutStoreCredit);
+                    $order->total_paid_tax_incl = Tools::roundPrice($orderTotalPaidTaxInclWithoutStoreCredit);
                     $order->total_paid = $order->total_paid_tax_incl;
                     $order->round_mode = Configuration::get('PS_PRICE_ROUND_MODE');
                     $order->round_type = (int) Configuration::get('PS_ROUND_TYPE');
@@ -640,7 +632,7 @@ abstract class PaymentModuleCore extends Module
                 // linked to the order reference and not to the order id
                 $transactionId = $extraVars['transaction_id'] ?? null;
 
-                if (!isset($order) || !Validate::isLoadedObject($order) || !$order->addOrderPayment($amountPaid, null, $transactionId)) {
+                if (!isset($order) || !Validate::isLoadedObject($order) || !$order->addOrderPayment($amountPaid, null, $transactionId, null, null, null, $this->name ?? null)) {
                     Logger::addLog('PaymentModule::validateOrder - Cannot save Order Payment', 3, null, 'Cart', (int) $idCart, true);
                     throw new PrestaShopException('Can\'t save Order Payment');
                 }
@@ -700,6 +692,35 @@ abstract class PaymentModuleCore extends Module
                             'Order',
                             (int)$order->id
                         );
+                    }
+
+                    if ($consumed > 0.0 && $orderStatus->logable) {
+                        $storeCreditTransactionId = 0;
+                        try {
+                            $storeCreditTransactionId = StoreCreditTransaction::getOrderConsumptionTransactionId((int)$order->id);
+                        } catch (Exception $exception) {
+                            $storeCreditTransactionId = 0;
+                        }
+
+                        if (!$order->addOrderPayment(
+                            $consumed,
+                            'Store Credit',
+                            $storeCreditTransactionId > 0 ? (string)$storeCreditTransactionId : null,
+                            null,
+                            null,
+                            null,
+                            'store_credit'
+                        )) {
+                            Logger::addLog(
+                                'PaymentModule::validateOrder - Cannot save Store Credit Order Payment',
+                                3,
+                                null,
+                                'Cart',
+                                (int)$idCart,
+                                true
+                            );
+                            throw new PrestaShopException('Can\'t save Store Credit Order Payment');
+                        }
                     }
                 }
 

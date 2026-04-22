@@ -1647,6 +1647,7 @@ class OrderCore extends ObjectModel
                 $orderPayment->id_currency = $this->id_currency;
                 $orderPayment->amount = $this->total_paid_tax_incl;
                 $orderPayment->payment_method = $this->payment;
+                $orderPayment->payment_module = $this->module;
                 $orderPayment->conversion_rate = $this->conversion_rate;
 
                 $orderPayment->add();
@@ -1703,6 +1704,7 @@ class OrderCore extends ObjectModel
      * This method allows to fulfill the object order_invoice with sales figures
      *
      * @param OrderInvoice $orderInvoice
+     * @param string|null $paymentModule
      *
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
@@ -2208,7 +2210,7 @@ class OrderCore extends ObjectModel
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public function addOrderPayment($amountPaid, $paymentMethod = null, $paymentTransactionId = null, $currency = null, $date = null, $orderInvoice = null)
+    public function addOrderPayment($amountPaid, $paymentMethod = null, $paymentTransactionId = null, $currency = null, $date = null, $orderInvoice = null, $paymentModule = null)
     {
         $orderPayment = new OrderPayment();
         $orderPayment->order_reference = $this->reference;
@@ -2217,6 +2219,7 @@ class OrderCore extends ObjectModel
         $orderPayment->conversion_rate = ($currency ? $currency->conversion_rate : 1);
         // if payment_method is define, we used this
         $orderPayment->payment_method = ($paymentMethod ? $paymentMethod : $this->payment);
+        $orderPayment->payment_module = $paymentModule;
         $orderPayment->transaction_id = $paymentTransactionId;
         $orderPayment->amount = $amountPaid;
         $orderPayment->date_add = ($date ? $date : null);
@@ -2432,6 +2435,61 @@ class OrderCore extends ObjectModel
         }
 
         return $total;
+    }
+
+    /**
+     * Returns outstanding amount (tax incl) for this order.
+     *
+     * If invoices exist, this sums invoice totals and subtracts all payments
+     * linked to these invoices.
+     * If invoices do not exist, this uses order-level totals and subtracts already
+     * booked payments (total_paid_real), including store credit.
+     *
+     * @return float
+     *
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    public function getOutstandingAmountTaxIncl()
+    {
+        $idOrder = (int)$this->id;
+        if ($idOrder <= 0) {
+            return 0.0;
+        }
+
+        $totalInvoiceAmount = (float)Db::readOnly()->getValue(
+            (new DbQuery())
+                ->select('SUM(oi.`total_paid_tax_incl`)')
+                ->from('order_invoice', 'oi')
+                ->where('oi.`id_order` = '.$idOrder)
+        );
+
+        if ($totalInvoiceAmount <= 0.0) {
+            $orderTotalTaxIncl = (float)$this->total_paid_tax_incl;
+            $orderPaid = max(0.0, (float)$this->total_paid_real);
+            return Tools::roundPrice(max(0.0, $orderTotalTaxIncl - $orderPaid));
+        }
+
+        $totalPaidOnInvoices = 0.0;
+        $paymentRows = Db::readOnly()->getArray(
+            (new DbQuery())
+                ->select('op.`id_order_payment`, op.`amount`')
+                ->from('order_invoice_payment', 'oip')
+                ->innerJoin('order_payment', 'op', 'op.`id_order_payment` = oip.`id_order_payment`')
+                ->where('oip.`id_order` = '.$idOrder)
+        );
+
+        $seenPayments = [];
+        foreach ($paymentRows as $paymentRow) {
+            $idOrderPayment = (int)$paymentRow['id_order_payment'];
+            if (isset($seenPayments[$idOrderPayment])) {
+                continue;
+            }
+            $seenPayments[$idOrderPayment] = true;
+            $totalPaidOnInvoices += (float)$paymentRow['amount'];
+        }
+
+        return Tools::roundPrice(max(0.0, $totalInvoiceAmount - $totalPaidOnInvoices));
     }
 
     /**

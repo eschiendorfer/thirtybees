@@ -34,7 +34,6 @@
  */
 class ParentOrderControllerCore extends FrontController
 {
-    const STORE_CREDIT_CODE = 'store_credit';
     /**
      * @var bool $ssl
      */
@@ -128,6 +127,36 @@ class ParentOrderControllerCore extends FrontController
         }
 
         if ($this->nbProducts) {
+            if (Tools::isSubmit('submitEnableStoreCredit')) {
+                $credit = 0.0;
+                if ($customerId > 0) {
+                    $credit = StoreCredit::getCustomerAvailableAmount($this->context->shop->id, $customerId);
+                }
+                if ($credit <= 0.0) {
+                    $this->errors[] = Tools::displayError('You don\'t have store credit.');
+                } else {
+                    $cart = $this->context->cart;
+                    if (Validate::isLoadedObject($cart) && !$cart->use_store_credit) {
+                        $cart->use_store_credit = true;
+                        $cart->update();
+                    }
+                    if (Configuration::get('PS_ORDER_PROCESS_TYPE') == 1) {
+                        Tools::redirect('index.php?controller=order-opc');
+                    }
+                    Tools::redirect('index.php?controller=order');
+                }
+            } elseif (Tools::isSubmit('submitDisableStoreCredit')) {
+                $cart = $this->context->cart;
+                if (Validate::isLoadedObject($cart) && $cart->use_store_credit) {
+                    $cart->use_store_credit = false;
+                    $cart->update();
+                }
+                if (Configuration::get('PS_ORDER_PROCESS_TYPE') == 1) {
+                    Tools::redirect('index.php?controller=order-opc');
+                }
+                Tools::redirect('index.php?controller=order');
+            }
+
             if ($this->vouchersAllowed()) {
                 if (Tools::isSubmit('submitAddDiscount')) {
                     if (!($code = trim(Tools::getValue('discount_name')))) {
@@ -135,19 +164,7 @@ class ParentOrderControllerCore extends FrontController
                     } elseif (!Validate::isCleanHtml($code)) {
                         $this->errors[] = Tools::displayError('The voucher code is invalid.');
                     } else {
-                        if ($customerId && ($code === static::STORE_CREDIT_CODE)) {
-                            $credit = StoreCredit::getByCustomerId($this->context->shop->id, $customerId);
-                            if ($credit <= 0.0) {
-                                $this->errors[] = Tools::displayError('You don\'t have store credit.');
-                            } else {
-                                $cart = $this->context->cart;
-                                if (Validate::isLoadedObject($cart) && !$cart->use_store_credit) {
-                                    $cart->use_store_credit = true;
-                                    $cart->update();
-                                }
-                                $code = '';
-                            }
-                        } elseif (($cartRule = new CartRule(CartRule::getIdByCode($code))) && Validate::isLoadedObject($cartRule)) {
+                        if (($cartRule = new CartRule(CartRule::getIdByCode($code))) && Validate::isLoadedObject($cartRule)) {
                             if ($error = $cartRule->checkValidity($this->context, false, true)) {
                                 $this->errors[] = $error;
                             } else {
@@ -173,10 +190,6 @@ class ParentOrderControllerCore extends FrontController
                     if (Validate::isUnsignedId($discount)) {
                         $this->context->cart->removeCartRule((int)$discount);
                         CartRule::autoAddToCart($this->context);
-                        Tools::redirect('index.php?controller=order-opc');
-                    } elseif ($discount === static::STORE_CREDIT_CODE) {
-                        $this->context->cart->use_store_credit = false;
-                        $this->context->cart->save();
                         Tools::redirect('index.php?controller=order-opc');
                     }
                 }
@@ -455,19 +468,6 @@ class ParentOrderControllerCore extends FrontController
                     unset($availableCartRules[$key]);
                     continue 2;
                 }
-            }
-        }
-
-
-        if ($customerId && !$this->context->cart->use_store_credit) {
-            $credit = StoreCredit::getByCustomerId($this->context->shop->id, $customerId);
-            if ($credit > 0.0) {
-                $availableCartRules[] = [
-                    'id_cart_rule' => -1,
-                    'id_customer' => $customerId,
-                    'code' => static::STORE_CREDIT_CODE,
-                    'name' => sprintf('Store credit (%s)', Tools::displayPrice($credit)),
-                ];
             }
         }
 
@@ -809,6 +809,6 @@ class ParentOrderControllerCore extends FrontController
      */
     protected function vouchersAllowed()
     {
-        return CartRule::isFeatureActive() || StoreCredit::isFeatureActive();
+        return CartRule::isFeatureActive();
     }
 }

@@ -825,6 +825,48 @@ class OrderInvoiceCore extends ObjectModel
     }
 
     /**
+     * Returns outstanding invoice amount (tax incl).
+     *
+     * @return float
+     */
+    public function getOutstandingAmountTaxIncl()
+    {
+        try {
+            return Tools::roundPrice(max(0.0, (float)$this->total_paid_tax_incl - (float)$this->getTotalPaid()));
+        } catch (Exception $exception) {
+            return 0.0;
+        }
+    }
+
+    /**
+     * Returns total store credit consumed for order.
+     *
+     * @param int $idOrder
+     *
+     * @return float
+     */
+    public static function getStoreCreditUsedForOrder(int $idOrder): float
+    {
+        if ($idOrder <= 0) {
+            return 0.0;
+        }
+
+        try {
+            $query = (new DbQuery())
+                ->select('SUM(amount_tax_incl)')
+                ->from('store_credit_transaction')
+                ->where('entity_type = ' . (int)StoreCreditTransaction::ENTITY_ORDER)
+                ->where('id_entity = ' . (int)$idOrder)
+                ->where('transaction_type = ' . (int)StoreCreditTransaction::TYPE_DECREASE)
+                ->where('economic_type = ' . (int)StoreCreditTransaction::ECONOMIC_PAYMENT_INSTRUMENT);
+
+            return (float)Db::readOnly()->getValue($query);
+        } catch (Exception $exception) {
+            return 0.0;
+        }
+    }
+
+    /**
      * Return collection of order invoice object linked to the payments of the current order invoice object
      *
      * @return PrestaShopCollection|array Collection of OrderInvoice or empty array
