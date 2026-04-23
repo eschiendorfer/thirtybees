@@ -233,8 +233,8 @@ class StoreCreditCore extends ObjectModel
             if (StoreCreditTransaction::existsTransaction(
                 StoreCreditTransaction::ENTITY_ORDER_SLIP,
                 $idOrderSlip,
-                StoreCreditTransaction::TYPE_INCREASE,
-                StoreCreditTransaction::ECONOMIC_REFUND_CREDIT
+                StoreCreditTransaction::SIGN_INCREASE,
+                StoreCreditTransaction::TYPE_REFUND_CREDIT
             )) {
                 return true;
             }
@@ -250,22 +250,19 @@ class StoreCreditCore extends ObjectModel
                 return false;
             }
 
-            $note = sprintf('Refund for order #%d (order slip #%d)', $idOrder, $idOrderSlip);
-
             return static::increaseBalanceWithTransaction(
                 $idStoreCredit,
                 $amountTaxIncl,
-                static function() use ($idStoreCredit, $idCustomer, $idOrderSlip, $amountTaxIncl, $idEmployee, $note): bool {
+                static function() use ($idStoreCredit, $idCustomer, $idOrderSlip, $amountTaxIncl, $idEmployee): bool {
                     return StoreCreditTransaction::addStoreCreditTransaction(
                         $idStoreCredit,
                         $idCustomer,
-                        StoreCreditTransaction::TYPE_INCREASE,
-                        StoreCreditTransaction::ECONOMIC_REFUND_CREDIT,
+                        StoreCreditTransaction::SIGN_INCREASE,
+                        StoreCreditTransaction::TYPE_REFUND_CREDIT,
                         StoreCreditTransaction::ENTITY_ORDER_SLIP,
                         $idOrderSlip,
                         $amountTaxIncl,
-                        $idEmployee,
-                        $note
+                        $idEmployee
                     );
                 }
             );
@@ -277,7 +274,7 @@ class StoreCreditCore extends ObjectModel
     /**
      * @param int $idCustomer
      * @param float $amountTaxIncl
-     * @param int $economicType
+     * @param int $transactionType
      * @param int $idEmployee
      * @param string $note
      * @param array $idShops
@@ -287,7 +284,7 @@ class StoreCreditCore extends ObjectModel
     public static function addManualCredit(
         int $idCustomer,
         float $amountTaxIncl,
-        int $economicType,
+        int $transactionType,
         int $idEmployee = 0,
         string $note = '',
         array $idShops = []
@@ -302,9 +299,9 @@ class StoreCreditCore extends ObjectModel
             $idCustomer <= 0 ||
             $absoluteAmountTaxIncl <= 0.0 ||
             empty($idShops) ||
-            !StoreCreditTransaction::isValidEconomicType($economicType) ||
-            $economicType === StoreCreditTransaction::ECONOMIC_PAYMENT_INSTRUMENT ||
-            ($isDecrease && $economicType !== StoreCreditTransaction::ECONOMIC_MANUAL_ADJUSTMENT) ||
+            !StoreCreditTransaction::isValidTransactionType($transactionType) ||
+            $transactionType === StoreCreditTransaction::TYPE_PAYMENT_INSTRUMENT ||
+            ($isDecrease && $transactionType !== StoreCreditTransaction::TYPE_MANUAL_ADJUSTMENT) ||
             ($note !== '' && !Validate::isCleanHtml($note))
         ) {
             return false;
@@ -326,11 +323,11 @@ class StoreCreditCore extends ObjectModel
                 return static::decreaseBalanceWithTransaction(
                     $idStoreCredit,
                     $absoluteAmountTaxIncl,
-                    static function() use ($idStoreCredit, $idCustomer, $economicType, $absoluteAmountTaxIncl, $idEmployee, $note): bool {
+                    static function() use ($idStoreCredit, $idCustomer, $transactionType, $absoluteAmountTaxIncl, $idEmployee, $note): bool {
                         return StoreCreditTransaction::addManualDecrease(
                             $idStoreCredit,
                             $idCustomer,
-                            $economicType,
+                            $transactionType,
                             $absoluteAmountTaxIncl,
                             $idEmployee,
                             $note
@@ -342,11 +339,11 @@ class StoreCreditCore extends ObjectModel
             return static::increaseBalanceWithTransaction(
                 $idStoreCredit,
                 $absoluteAmountTaxIncl,
-                static function() use ($idStoreCredit, $idCustomer, $economicType, $absoluteAmountTaxIncl, $idEmployee, $note): bool {
+                static function() use ($idStoreCredit, $idCustomer, $transactionType, $absoluteAmountTaxIncl, $idEmployee, $note): bool {
                     return StoreCreditTransaction::addManualIncrease(
                         $idStoreCredit,
                         $idCustomer,
-                        $economicType,
+                        $transactionType,
                         $absoluteAmountTaxIncl,
                         $idEmployee,
                         $note

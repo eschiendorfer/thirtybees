@@ -22,12 +22,12 @@
  */
 class StoreCreditTransactionCore extends ObjectModel
 {
-    const TYPE_INCREASE = 1;
-    const TYPE_DECREASE = 2;
+    const SIGN_INCREASE = 1;
+    const SIGN_DECREASE = 2;
 
-    const ECONOMIC_PAYMENT_INSTRUMENT = 1;
-    const ECONOMIC_REFUND_CREDIT = 2;
-    const ECONOMIC_MANUAL_ADJUSTMENT = 3;
+    const TYPE_PAYMENT_INSTRUMENT = 1;
+    const TYPE_REFUND_CREDIT = 2;
+    const TYPE_MANUAL_ADJUSTMENT = 3;
 
     const ENTITY_ORDER = 1;
     const ENTITY_ORDER_SLIP = 2;
@@ -46,12 +46,12 @@ class StoreCreditTransactionCore extends ObjectModel
     /**
      * @var int
      */
-    public $transaction_type;
+    public $transaction_sign;
 
     /**
      * @var int
      */
-    public $economic_type;
+    public $transaction_type;
 
     /**
      * @var int
@@ -101,17 +101,17 @@ class StoreCreditTransactionCore extends ObjectModel
         'primary' => 'id_store_credit_transaction',
         'fields'  => [
             'id_store_credit'  => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true],
+            'transaction_sign' => [
+                'type' => self::TYPE_INT,
+                'validate' => 'isUnsignedId',
+                'required' => true,
+                'values' => [self::SIGN_INCREASE, self::SIGN_DECREASE],
+            ],
             'transaction_type' => [
                 'type' => self::TYPE_INT,
                 'validate' => 'isUnsignedId',
                 'required' => true,
-                'values' => [self::TYPE_INCREASE, self::TYPE_DECREASE],
-            ],
-            'economic_type'    => [
-                'type' => self::TYPE_INT,
-                'validate' => 'isUnsignedId',
-                'required' => true,
-                'values' => [self::ECONOMIC_PAYMENT_INSTRUMENT, self::ECONOMIC_REFUND_CREDIT, self::ECONOMIC_MANUAL_ADJUSTMENT],
+                'values' => [self::TYPE_PAYMENT_INSTRUMENT, self::TYPE_REFUND_CREDIT, self::TYPE_MANUAL_ADJUSTMENT],
             ],
             'entity_type'      => [
                 'type' => self::TYPE_INT,
@@ -140,14 +140,14 @@ class StoreCreditTransactionCore extends ObjectModel
     /**
      * @param int $entityType
      * @param int $idEntity
+     * @param int $transactionSign
      * @param int $transactionType
-     * @param int $economicType
      *
      * @return bool
      *
      * @throws PrestaShopException
      */
-    public static function existsTransaction(int $entityType, int $idEntity, int $transactionType, int $economicType): bool
+    public static function existsTransaction(int $entityType, int $idEntity, int $transactionSign, int $transactionType): bool
     {
         if ($idEntity <= 0) {
             return false;
@@ -158,8 +158,8 @@ class StoreCreditTransactionCore extends ObjectModel
             ->from('store_credit_transaction')
             ->where('entity_type = ' . (int)$entityType)
             ->where('id_entity = ' . (int)$idEntity)
-            ->where('transaction_type = ' . (int)$transactionType)
-            ->where('economic_type = ' . (int)$economicType);
+            ->where('transaction_sign = ' . (int)$transactionSign)
+            ->where('transaction_type = ' . (int)$transactionType);
 
         return (bool)Db::readOnly()->getValue($sql);
     }
@@ -176,8 +176,8 @@ class StoreCreditTransactionCore extends ObjectModel
         return static::existsTransaction(
             static::ENTITY_ORDER,
             $idOrder,
-            static::TYPE_DECREASE,
-            static::ECONOMIC_PAYMENT_INSTRUMENT
+            static::SIGN_DECREASE,
+            static::TYPE_PAYMENT_INSTRUMENT
         );
     }
 
@@ -199,8 +199,8 @@ class StoreCreditTransactionCore extends ObjectModel
             ->from('store_credit_transaction')
             ->where('entity_type = ' . (int)static::ENTITY_ORDER)
             ->where('id_entity = ' . (int)$idOrder)
-            ->where('transaction_type = ' . (int)static::TYPE_DECREASE)
-            ->where('economic_type = ' . (int)static::ECONOMIC_PAYMENT_INSTRUMENT);
+            ->where('transaction_sign = ' . (int)static::SIGN_DECREASE)
+            ->where('transaction_type = ' . (int)static::TYPE_PAYMENT_INSTRUMENT);
 
         return (float)Db::readOnly()->getValue($sql);
     }
@@ -223,8 +223,8 @@ class StoreCreditTransactionCore extends ObjectModel
             ->from('store_credit_transaction')
             ->where('entity_type = ' . (int)static::ENTITY_ORDER)
             ->where('id_entity = ' . (int)$idOrder)
-            ->where('transaction_type = ' . (int)static::TYPE_DECREASE)
-            ->where('economic_type = ' . (int)static::ECONOMIC_PAYMENT_INSTRUMENT)
+            ->where('transaction_sign = ' . (int)static::SIGN_DECREASE)
+            ->where('transaction_type = ' . (int)static::TYPE_PAYMENT_INSTRUMENT)
             ->orderBy('id_store_credit_transaction DESC');
 
         return max(0, (int)Db::readOnly()->getValue($sql));
@@ -250,8 +250,8 @@ class StoreCreditTransactionCore extends ObjectModel
         return static::addStoreCreditTransaction(
             $idStoreCredit,
             $idCustomer,
-            static::TYPE_DECREASE,
-            static::ECONOMIC_PAYMENT_INSTRUMENT,
+            static::SIGN_DECREASE,
+            static::TYPE_PAYMENT_INSTRUMENT,
             static::ENTITY_ORDER,
             $idOrder,
             $amountTaxIncl
@@ -261,8 +261,8 @@ class StoreCreditTransactionCore extends ObjectModel
     /**
      * @param int $idStoreCredit
      * @param int $idCustomer
+     * @param int $transactionSign
      * @param int $transactionType
-     * @param int $economicType
      * @param int $entityType
      * @param int|null $idEntity
      * @param float $amountTaxIncl
@@ -274,8 +274,8 @@ class StoreCreditTransactionCore extends ObjectModel
     public static function addStoreCreditTransaction(
         int $idStoreCredit,
         int $idCustomer,
+        int $transactionSign,
         int $transactionType,
-        int $economicType,
         int $entityType,
         ?int $idEntity,
         float $amountTaxIncl,
@@ -293,8 +293,8 @@ class StoreCreditTransactionCore extends ObjectModel
             $idCustomer <= 0 ||
             ($requiresEntityId && $idEntity <= 0) ||
             $amountTaxIncl <= 0.0 ||
+            !static::isValidTransactionSign($transactionSign) ||
             !static::isValidTransactionType($transactionType) ||
-            !static::isValidEconomicType($economicType) ||
             !static::isValidEntityType($entityType) ||
             ($note !== '' && !Validate::isCleanHtml($note))
         ) {
@@ -303,8 +303,8 @@ class StoreCreditTransactionCore extends ObjectModel
 
         $transaction = new static();
         $transaction->id_store_credit = $idStoreCredit;
+        $transaction->transaction_sign = $transactionSign;
         $transaction->transaction_type = $transactionType;
-        $transaction->economic_type = $economicType;
         $transaction->entity_type = $entityType;
         $transaction->id_entity = $requiresEntityId ? $idEntity : null;
         $transaction->id_customer = $idCustomer;
@@ -318,7 +318,7 @@ class StoreCreditTransactionCore extends ObjectModel
     /**
      * @param int $idStoreCredit
      * @param int $idCustomer
-     * @param int $economicType
+     * @param int $transactionType
      * @param float $amountTaxIncl
      * @param int $idEmployee
      * @param string $note
@@ -328,20 +328,20 @@ class StoreCreditTransactionCore extends ObjectModel
     public static function addManualIncrease(
         int $idStoreCredit,
         int $idCustomer,
-        int $economicType,
+        int $transactionType,
         float $amountTaxIncl,
         int $idEmployee = 0,
         string $note = ''
     ): bool {
-        if ($economicType === static::ECONOMIC_PAYMENT_INSTRUMENT) {
+        if ($transactionType === static::TYPE_PAYMENT_INSTRUMENT) {
             return false;
         }
 
         return static::addStoreCreditTransaction(
             $idStoreCredit,
             $idCustomer,
-            static::TYPE_INCREASE,
-            $economicType,
+            static::SIGN_INCREASE,
+            $transactionType,
             static::ENTITY_MANUAL,
             null,
             $amountTaxIncl,
@@ -353,7 +353,7 @@ class StoreCreditTransactionCore extends ObjectModel
     /**
      * @param int $idStoreCredit
      * @param int $idCustomer
-     * @param int $economicType
+     * @param int $transactionType
      * @param float $amountTaxIncl
      * @param int $idEmployee
      * @param string $note
@@ -363,26 +363,39 @@ class StoreCreditTransactionCore extends ObjectModel
     public static function addManualDecrease(
         int $idStoreCredit,
         int $idCustomer,
-        int $economicType,
+        int $transactionType,
         float $amountTaxIncl,
         int $idEmployee = 0,
         string $note = ''
     ): bool {
-        if ($economicType === static::ECONOMIC_PAYMENT_INSTRUMENT) {
+        if ($transactionType === static::TYPE_PAYMENT_INSTRUMENT) {
             return false;
         }
 
         return static::addStoreCreditTransaction(
             $idStoreCredit,
             $idCustomer,
-            static::TYPE_DECREASE,
-            $economicType,
+            static::SIGN_DECREASE,
+            $transactionType,
             static::ENTITY_MANUAL,
             null,
             $amountTaxIncl,
             $idEmployee,
             $note
         );
+    }
+
+    /**
+     * @param int $sign
+     *
+     * @return bool
+     */
+    public static function isValidTransactionSign(int $sign): bool
+    {
+        return in_array($sign, [
+            static::SIGN_INCREASE,
+            static::SIGN_DECREASE,
+        ], true);
     }
 
     /**
@@ -393,22 +406,9 @@ class StoreCreditTransactionCore extends ObjectModel
     public static function isValidTransactionType(int $type): bool
     {
         return in_array($type, [
-            static::TYPE_INCREASE,
-            static::TYPE_DECREASE,
-        ], true);
-    }
-
-    /**
-     * @param int $type
-     *
-     * @return bool
-     */
-    public static function isValidEconomicType(int $type): bool
-    {
-        return in_array($type, [
-            static::ECONOMIC_PAYMENT_INSTRUMENT,
-            static::ECONOMIC_REFUND_CREDIT,
-            static::ECONOMIC_MANUAL_ADJUSTMENT,
+            static::TYPE_PAYMENT_INSTRUMENT,
+            static::TYPE_REFUND_CREDIT,
+            static::TYPE_MANUAL_ADJUSTMENT,
         ], true);
     }
 

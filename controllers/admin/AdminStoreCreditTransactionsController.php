@@ -44,6 +44,7 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
         $this->_orderBy = 'date_add';
         $this->_orderWay = 'DESC';
         $this->bulk_actions = [];
+        $this->addRowAction('edit');
 
         $idCustomer = Tools::getIntValue('id_customer');
         $idStoreCredit = Tools::getIntValue('id_store_credit');
@@ -75,16 +76,31 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
                 'type' => 'datetime',
                 'class' => 'fixed-width-lg',
             ],
+            'transaction_sign' => [
+                'title' => $this->l('Transaction Sign'),
+                'align' => 'center',
+                'type' => 'select',
+                'filter_key' => 'a!transaction_sign',
+                'list' => [
+                    StoreCreditTransaction::SIGN_INCREASE => $this->l('Increase'),
+                    StoreCreditTransaction::SIGN_DECREASE => $this->l('Decrease'),
+                ],
+                'icon' => [
+                    StoreCreditTransaction::SIGN_DECREASE => [
+                        'src' => 'remove_stock.png',
+                        'alt' => $this->l('Decrease'),
+                    ],
+                    StoreCreditTransaction::SIGN_INCREASE => [
+                        'src' => 'add_stock.png',
+                        'alt' => $this->l('Increase'),
+                    ],
+                ],
+                'class' => 'fixed-width-xs',
+            ],
             'transaction_type' => [
                 'title' => $this->l('Transaction Type'),
                 'callback_object' => $this,
                 'callback' => 'displayTransactionType',
-                'align' => 'center',
-            ],
-            'economic_type' => [
-                'title' => $this->l('Economic Type'),
-                'callback_object' => $this,
-                'callback' => 'displayEconomicType',
                 'align' => 'center',
             ],
             'entity_type' => [
@@ -165,6 +181,17 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
             return;
         }
 
+        if ($this->display === 'edit') {
+            $this->page_header_toolbar_btn['back_to_list'] = [
+                'href' => $this->getTransactionsListUrl($idCustomer, $idStoreCredit),
+                'desc' => $this->l('Back to list'),
+                'icon' => 'process-icon-back',
+            ];
+            unset($this->page_header_toolbar_btn['new']);
+
+            return;
+        }
+
         if (empty($this->display) && $idCustomer > 0) {
             $this->page_header_toolbar_btn['add_store_credit_transaction'] = [
                 'href' => $this->getAddStoreCreditTransactionUrl($idCustomer, $idStoreCredit),
@@ -202,6 +229,20 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
      */
     public function postProcess()
     {
+        if (Tools::isSubmit('submitUpdateStoreCreditTransactionNote')) {
+            $this->processUpdateStoreCreditTransactionNote();
+            if (empty($this->errors)) {
+                $idCustomer = Tools::getIntValue('id_customer');
+                $idStoreCredit = Tools::getIntValue('id_store_credit');
+                if ($idStoreCredit <= 0 && $idCustomer > 0) {
+                    $idStoreCredit = StoreCredit::getStoreCreditIdByCustomer($idCustomer);
+                }
+                Tools::redirectAdmin($this->getTransactionsListUrl($idCustomer, $idStoreCredit));
+            }
+
+            return false;
+        }
+
         if (Tools::isSubmit('submitAddStoreCreditTransaction')) {
             $this->processAddStoreCreditTransaction();
             if (empty($this->errors)) {
@@ -225,10 +266,24 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
      */
     public function renderForm()
     {
-        if (!$this->addStoreCreditTransactionMode) {
-            return parent::renderForm();
+        if ($this->addStoreCreditTransactionMode) {
+            return $this->renderAddTransactionForm();
         }
 
+        if ($this->display === 'edit') {
+            return $this->renderEditNoteForm();
+        }
+
+        return parent::renderForm();
+    }
+
+    /**
+     * @return string
+     *
+     * @throws PrestaShopException
+     */
+    protected function renderAddTransactionForm(): string
+    {
         $idCustomer = Tools::getIntValue('id_customer');
         $idStoreCredit = Tools::getIntValue('id_store_credit');
         $customer = new Customer($idCustomer);
@@ -284,16 +339,16 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
                 ],
                 [
                     'type'    => 'select',
-                    'label'   => $this->l('Economic type'),
-                    'name'    => 'economic_type',
+                    'label'   => $this->l('Transaction type'),
+                    'name'    => 'transaction_type',
                     'options' => [
                         'query' => [
                             [
-                                'id' => StoreCreditTransaction::ECONOMIC_MANUAL_ADJUSTMENT,
+                                'id' => StoreCreditTransaction::TYPE_MANUAL_ADJUSTMENT,
                                 'name' => $this->l('Manual adjustment'),
                             ],
                             [
-                                'id' => StoreCreditTransaction::ECONOMIC_REFUND_CREDIT,
+                                'id' => StoreCreditTransaction::TYPE_REFUND_CREDIT,
                                 'name' => $this->l('Refund credit'),
                             ],
                         ],
@@ -319,8 +374,93 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
             'id_customer' => $idCustomer,
             'customer_label' => Tools::safeOutput($customerLabel),
             'amount_tax_incl' => Tools::safeOutput((string)Tools::getValue('amount_tax_incl', '')),
-            'economic_type' => (int)Tools::getValue('economic_type', StoreCreditTransaction::ECONOMIC_MANUAL_ADJUSTMENT),
+            'transaction_type' => (int)Tools::getValue('transaction_type', StoreCreditTransaction::TYPE_MANUAL_ADJUSTMENT),
             'note' => Tools::safeOutput((string)Tools::getValue('note', '')),
+        ];
+
+        return $helper->generateForm([
+            ['form' => $this->fields_form],
+        ]);
+    }
+
+    /**
+     * @return string
+     *
+     * @throws PrestaShopException
+     */
+    protected function renderEditNoteForm(): string
+    {
+        $idStoreCreditTransaction = Tools::getIntValue($this->identifier);
+        $transaction = new StoreCreditTransaction($idStoreCreditTransaction);
+        if (!Validate::isLoadedObject($transaction)) {
+            $this->errors[] = $this->l('The store credit transaction could not be loaded.');
+
+            return '';
+        }
+
+        $idCustomer = (int)$transaction->id_customer;
+        $idStoreCredit = Tools::getIntValue('id_store_credit');
+        if ($idStoreCredit <= 0 && $idCustomer > 0) {
+            $idStoreCredit = StoreCredit::getStoreCreditIdByCustomer($idCustomer);
+        }
+
+        $helper = new HelperForm();
+        $helper->table = $this->table;
+        $helper->identifier = $this->identifier;
+        $helper->submit_action = 'submitUpdateStoreCreditTransactionNote';
+        $helper->token = $this->token;
+        $helper->show_toolbar = false;
+        $helper->languages = $this->getLanguages();
+        $helper->default_form_language = $this->getDefaultFormLanguage();
+        $helper->allow_employee_form_lang = $this->getAllowEmployeeFormLanguage();
+
+        $params = [
+            'update' . $this->table => 1,
+            $this->identifier => $idStoreCreditTransaction,
+            'id_customer' => $idCustomer,
+        ];
+        if ($idStoreCredit > 0) {
+            $params['id_store_credit'] = $idStoreCredit;
+        }
+        $helper->currentIndex = $this->context->link->getAdminLink('AdminStoreCreditTransactions', true, $params);
+
+        $this->fields_form = [
+            'legend' => [
+                'title' => $this->l('Edit note'),
+                'icon'  => 'icon-pencil',
+            ],
+            'input'  => [
+                [
+                    'type' => 'hidden',
+                    'name' => $this->identifier,
+                ],
+                [
+                    'type' => 'hidden',
+                    'name' => 'id_customer',
+                ],
+                [
+                    'type' => 'hidden',
+                    'name' => 'id_store_credit',
+                ],
+                [
+                    'type'  => 'textarea',
+                    'label' => $this->l('Note'),
+                    'name'  => 'note',
+                    'rows'  => 4,
+                    'cols'  => 80,
+                ],
+            ],
+            'submit' => [
+                'name'  => 'submitUpdateStoreCreditTransactionNote',
+                'title' => $this->l('Save'),
+            ],
+        ];
+
+        $helper->fields_value = [
+            $this->identifier => $idStoreCreditTransaction,
+            'id_customer' => $idCustomer,
+            'id_store_credit' => $idStoreCredit,
+            'note' => Tools::safeOutput((string)Tools::getValue('note', $transaction->note)),
         ];
 
         return $helper->generateForm([
@@ -344,7 +484,7 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
         $idCustomer = Tools::getIntValue('id_customer');
         $amountRaw = str_replace([" ", ",", "'"], ['', '.', ''], (string)Tools::getValue('amount_tax_incl'));
         $amountTaxIncl = Tools::roundPrice((float)$amountRaw);
-        $economicType = Tools::getIntValue('economic_type');
+        $transactionType = Tools::getIntValue('transaction_type');
         $note = trim((string)Tools::getValue('note'));
         $idEmployee = (int)$this->context->employee->id;
 
@@ -354,11 +494,11 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
         if ($amountTaxIncl === 0.0) {
             $this->errors[] = $this->l('Amount must not be zero.');
         }
-        if ($amountTaxIncl < 0.0 && $economicType !== StoreCreditTransaction::ECONOMIC_MANUAL_ADJUSTMENT) {
+        if ($amountTaxIncl < 0.0 && $transactionType !== StoreCreditTransaction::TYPE_MANUAL_ADJUSTMENT) {
             $this->errors[] = $this->l('Negative amount is only allowed for manual adjustment.');
         }
-        if (!StoreCreditTransaction::isValidEconomicType($economicType) || $economicType === StoreCreditTransaction::ECONOMIC_PAYMENT_INSTRUMENT) {
-            $this->errors[] = $this->l('Invalid economic type.');
+        if (!StoreCreditTransaction::isValidTransactionType($transactionType) || $transactionType === StoreCreditTransaction::TYPE_PAYMENT_INSTRUMENT) {
+            $this->errors[] = $this->l('Invalid transaction type.');
         }
         if ($note !== '' && !Validate::isCleanHtml($note)) {
             $this->errors[] = $this->l('Note is invalid.');
@@ -376,7 +516,7 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
         if (!StoreCredit::addManualCredit(
             $idCustomer,
             $amountTaxIncl,
-            $economicType,
+            $transactionType,
             $idEmployee,
             $note,
             $idShops
@@ -394,20 +534,71 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
     }
 
     /**
-     * @param string $value
+     * @return bool
      *
-     * @return string
+     * @throws PrestaShopException
      */
-    public function displayTransactionType($value): string
+    protected function processUpdateStoreCreditTransactionNote(): bool
     {
-        $transactionType = (int)$value;
-        if ($transactionType === StoreCreditTransaction::TYPE_INCREASE) {
-            return $this->l('Increase');
+        if (!$this->hasEditPermission()) {
+            $this->errors[] = $this->l('You do not have permission to edit this.');
+
+            return false;
         }
-        if ($transactionType === StoreCreditTransaction::TYPE_DECREASE) {
-            return $this->l('Decrease');
+
+        $idStoreCreditTransaction = Tools::getIntValue($this->identifier);
+        $transaction = new StoreCreditTransaction($idStoreCreditTransaction);
+        if (!Validate::isLoadedObject($transaction)) {
+            $this->errors[] = $this->l('The store credit transaction could not be loaded.');
+
+            return false;
         }
-        return (string)$transactionType;
+
+        $note = trim((string)Tools::getValue('note'));
+        if ($note !== '' && !Validate::isCleanHtml($note)) {
+            $this->errors[] = $this->l('Note is invalid.');
+
+            return false;
+        }
+
+        $transaction->note = $note;
+        if (!$transaction->update()) {
+            $this->errors[] = $this->l('Unable to update note.');
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @return bool
+     */
+    public function processUpdate()
+    {
+        $this->errors[] = $this->l('Only note editing is allowed for store credit transactions.');
+
+        return false;
+    }
+
+    /**
+     * @return bool
+     */
+    public function processDelete()
+    {
+        $this->errors[] = $this->l('Deleting store credit transactions is not allowed.');
+
+        return false;
+    }
+
+    /**
+     * @return bool
+     */
+    protected function processBulkDelete()
+    {
+        $this->errors[] = $this->l('Deleting store credit transactions is not allowed.');
+
+        return false;
     }
 
     /**
@@ -415,19 +606,19 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
      *
      * @return string
      */
-    public function displayEconomicType($value): string
+    public function displayTransactionType($value): string
     {
-        $economicType = (int)$value;
-        if ($economicType === StoreCreditTransaction::ECONOMIC_PAYMENT_INSTRUMENT) {
+        $transactionType = (int)$value;
+        if ($transactionType === StoreCreditTransaction::TYPE_PAYMENT_INSTRUMENT) {
             return $this->l('Payment instrument');
         }
-        if ($economicType === StoreCreditTransaction::ECONOMIC_REFUND_CREDIT) {
+        if ($transactionType === StoreCreditTransaction::TYPE_REFUND_CREDIT) {
             return $this->l('Refund credit');
         }
-        if ($economicType === StoreCreditTransaction::ECONOMIC_MANUAL_ADJUSTMENT) {
+        if ($transactionType === StoreCreditTransaction::TYPE_MANUAL_ADJUSTMENT) {
             return $this->l('Manual adjustment');
         }
-        return (string)$economicType;
+        return (string)$transactionType;
     }
 
     /**
@@ -556,6 +747,14 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
         $idCustomer = Tools::getIntValue('id_customer');
         if ($idCustomer > 0) {
             return $idCustomer;
+        }
+
+        $idStoreCreditTransaction = Tools::getIntValue($this->identifier);
+        if ($idStoreCreditTransaction > 0) {
+            $transaction = new StoreCreditTransaction($idStoreCreditTransaction);
+            if (Validate::isLoadedObject($transaction)) {
+                return (int)$transaction->id_customer;
+            }
         }
 
         $idStoreCredit = Tools::getIntValue('id_store_credit');

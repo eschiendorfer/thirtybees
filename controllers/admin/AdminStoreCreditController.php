@@ -313,16 +313,16 @@ class AdminStoreCreditControllerCore extends AdminController
                 ],
                 [
                     'type'    => 'select',
-                    'label'   => $this->l('Economic type'),
-                    'name'    => 'economic_type',
+                    'label'   => $this->l('Transaction type'),
+                    'name'    => 'transaction_type',
                     'options' => [
                         'query' => [
                             [
-                                'id' => StoreCreditTransaction::ECONOMIC_MANUAL_ADJUSTMENT,
+                                'id' => StoreCreditTransaction::TYPE_MANUAL_ADJUSTMENT,
                                 'name' => $this->l('Manual adjustment'),
                             ],
                             [
-                                'id' => StoreCreditTransaction::ECONOMIC_REFUND_CREDIT,
+                                'id' => StoreCreditTransaction::TYPE_REFUND_CREDIT,
                                 'name' => $this->l('Refund credit'),
                             ],
                         ],
@@ -348,7 +348,7 @@ class AdminStoreCreditControllerCore extends AdminController
             'id_customer' => $idCustomer,
             'customer_picker' => $this->renderCustomerPicker($idCustomer, $customerLabel),
             'amount_tax_incl' => Tools::safeOutput((string)Tools::getValue('amount_tax_incl', '')),
-            'economic_type' => (int)Tools::getValue('economic_type', StoreCreditTransaction::ECONOMIC_MANUAL_ADJUSTMENT),
+            'transaction_type' => (int)Tools::getValue('transaction_type', StoreCreditTransaction::TYPE_MANUAL_ADJUSTMENT),
             'note' => Tools::safeOutput((string)Tools::getValue('note', '')),
         ];
 
@@ -373,7 +373,7 @@ class AdminStoreCreditControllerCore extends AdminController
         $idCustomer = Tools::getIntValue('id_customer');
         $amountRaw = str_replace([" ", ",", "'"], ['', '.', ''], (string)Tools::getValue('amount_tax_incl'));
         $amountTaxIncl = Tools::roundPrice((float)$amountRaw);
-        $economicType = Tools::getIntValue('economic_type');
+        $transactionType = Tools::getIntValue('transaction_type');
         $note = trim((string)Tools::getValue('note'));
         $idEmployee = (int)$this->context->employee->id;
 
@@ -383,11 +383,11 @@ class AdminStoreCreditControllerCore extends AdminController
         if ($amountTaxIncl === 0.0) {
             $this->errors[] = $this->l('Amount must not be zero.');
         }
-        if ($amountTaxIncl < 0.0 && $economicType !== StoreCreditTransaction::ECONOMIC_MANUAL_ADJUSTMENT) {
+        if ($amountTaxIncl < 0.0 && $transactionType !== StoreCreditTransaction::TYPE_MANUAL_ADJUSTMENT) {
             $this->errors[] = $this->l('Negative amount is only allowed for manual adjustment.');
         }
-        if (!StoreCreditTransaction::isValidEconomicType($economicType) || $economicType === StoreCreditTransaction::ECONOMIC_PAYMENT_INSTRUMENT) {
-            $this->errors[] = $this->l('Invalid economic type.');
+        if (!StoreCreditTransaction::isValidTransactionType($transactionType) || $transactionType === StoreCreditTransaction::TYPE_PAYMENT_INSTRUMENT) {
+            $this->errors[] = $this->l('Invalid transaction type.');
         }
         if ($note !== '' && !Validate::isCleanHtml($note)) {
             $this->errors[] = $this->l('Note is invalid.');
@@ -405,7 +405,7 @@ class AdminStoreCreditControllerCore extends AdminController
         if (!StoreCredit::addManualCredit(
             $idCustomer,
             $amountTaxIncl,
-            $economicType,
+            $transactionType,
             $idEmployee,
             $note,
             $idShops

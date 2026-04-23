@@ -857,8 +857,8 @@ class OrderInvoiceCore extends ObjectModel
                 ->from('store_credit_transaction')
                 ->where('entity_type = ' . (int)StoreCreditTransaction::ENTITY_ORDER)
                 ->where('id_entity = ' . (int)$idOrder)
-                ->where('transaction_type = ' . (int)StoreCreditTransaction::TYPE_DECREASE)
-                ->where('economic_type = ' . (int)StoreCreditTransaction::ECONOMIC_PAYMENT_INSTRUMENT);
+                ->where('transaction_sign = ' . (int)StoreCreditTransaction::SIGN_DECREASE)
+                ->where('transaction_type = ' . (int)StoreCreditTransaction::TYPE_PAYMENT_INSTRUMENT);
 
             return (float)Db::readOnly()->getValue($query);
         } catch (Exception $exception) {
