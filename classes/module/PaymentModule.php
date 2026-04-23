@@ -1089,7 +1089,7 @@ abstract class PaymentModuleCore extends Module
                         '{order_id}'             => $order->id,
                         '{date}'                 => Tools::displayDate(date('Y-m-d H:i:s'), null, 1),
                         '{carrier}'              => $carrierName,
-                        '{payment}'              => mb_substr($order->payment, 0, 32),
+                        '{payment}'              => mb_substr($order->getDisplayPaymentMethodsText(' + ', false, true), 0, 255),
                         '{products}'             => $productListHtml,
                         '{products_txt}'         => $productListTxt,
                         '{discounts}'            => $cartRulesListHtml,
@@ -1100,7 +1100,63 @@ abstract class PaymentModuleCore extends Module
                         '{total_shipping}'       => Tools::displayPrice($order->total_shipping, $this->context->currency, false),
                         '{total_wrapping}'       => Tools::displayPrice($order->total_wrapping, $this->context->currency, false),
                         '{total_tax_paid}'       => Tools::displayPrice(($order->total_products_wt - $order->total_products) + ($order->total_shipping_tax_incl - $order->total_shipping_tax_excl), $this->context->currency, false),
+                        '{order_totals_rows_html}' => '',
+                        '{order_totals_rows_txt}' => '',
+                        '{store_credit_total_rows_html}' => '',
+                        '{store_credit_total_rows_txt}' => '',
                     ];
+
+                    $orderTotalsRows = [
+                        [
+                            'total_products' => Tools::displayPrice(Product::getTaxCalculationMethod() == PS_TAX_EXC ? $order->total_products : $order->total_products_wt, $this->context->currency, false),
+                            'total_shipping' => Tools::displayPrice($order->total_shipping, $this->context->currency, false),
+                            'total_discounts' => Tools::displayPrice($order->total_discounts, $this->context->currency, false),
+                            'total_paid' => Tools::displayPrice($order->total_paid, $this->context->currency, false),
+                            'show_vouchers' => ((float)$order->total_discounts > 0.0),
+                        ],
+                    ];
+                    $data['{order_totals_rows_html}'] = $this->getEmailTemplateContent(
+                        'order_conf_totals_rows.tpl',
+                        Mail::TYPE_HTML,
+                        $orderTotalsRows
+                    );
+                    $data['{order_totals_rows_txt}'] = $this->getEmailTemplateContent(
+                        'order_conf_totals_rows.txt',
+                        Mail::TYPE_TEXT,
+                        $orderTotalsRows
+                    );
+
+                    try {
+                        $storeCreditUsedTaxIncl = (float)StoreCreditTransaction::getOrderConsumptionAmount((int)$order->id);
+                    } catch (Exception $exception) {
+                        $storeCreditUsedTaxIncl = 0.0;
+                    }
+                    if ($storeCreditUsedTaxIncl > 0.0) {
+                        $storeCreditUsed = Tools::displayPrice($storeCreditUsedTaxIncl, $this->context->currency, false);
+                        try {
+                            $outstandingAmountTaxIncl = Tools::roundPrice((float)$order->getOutstandingAmountTaxIncl());
+                        } catch (Exception $exception) {
+                            $outstandingAmountTaxIncl = 0.0;
+                        }
+                        $outstandingAmount = Tools::displayPrice($outstandingAmountTaxIncl, $this->context->currency, false);
+                        $storeCreditRows = [
+                            [
+                                'store_credit' => $storeCreditUsed,
+                                'amount_due'   => $outstandingAmount,
+                            ],
+                        ];
+
+                        $data['{store_credit_total_rows_html}'] = $this->getEmailTemplateContent(
+                            'order_conf_store_credit_rows.tpl',
+                            Mail::TYPE_HTML,
+                            $storeCreditRows
+                        );
+                        $data['{store_credit_total_rows_txt}'] = $this->getEmailTemplateContent(
+                            'order_conf_store_credit_rows.txt',
+                            Mail::TYPE_TEXT,
+                            $storeCreditRows
+                        );
+                    }
 
                     if (is_array($extraVars)) {
                         $data = array_merge($data, $extraVars);

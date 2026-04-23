@@ -186,6 +186,9 @@ class HTMLTemplateOrderSlipCore extends HTMLTemplate
                 'addresses'            => ['invoice' => $invoiceAddress, 'delivery' => $deliveryAddress],
                 'tax_excluded_display' => $taxExcludedDisplay,
                 'total_cart_rule'      => $totalCartRule,
+                'payment_methods_pdf'  => $this->order->getDisplayPaymentMethods(false, true),
+                'payment_methods_pdf_text' => $this->order->getDisplayPaymentMethodsText(' + ', false, true),
+                'store_credit_used_tax_incl' => OrderInvoice::getStoreCreditUsedForOrder((int)$this->order->id),
             ]
         );
 

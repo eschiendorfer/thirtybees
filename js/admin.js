@@ -411,10 +411,17 @@ function selectCheckbox(obj) {
 }
 
 function toggleShippingCost() {
-  generateDiscount = $('#generateDiscount').attr("checked");
-  generateCreditSlip = $('#generateCreditSlip').attr("checked");
-  if (generateDiscount != 'checked' && generateCreditSlip != 'checked') {
-    $('#spanShippingBack input[type=checkbox]').attr("checked", false);
+  var generateDiscount = $('#generateDiscount').prop('checked');
+  var generateStoreCredit = $('#generateStoreCreditTransaction').prop('checked');
+  var generateCreditSlip = $('#generateCreditSlip').prop('checked');
+
+  if (generateStoreCredit && !generateCreditSlip) {
+    $('#generateCreditSlip').prop('checked', true);
+    generateCreditSlip = true;
+  }
+
+  if (!generateDiscount && !generateStoreCredit && !generateCreditSlip) {
+    $('#spanShippingBack input[type=checkbox]').prop('checked', false);
     $('#spanShippingBack').css('display', 'none');
   }
   else {

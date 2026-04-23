@@ -937,7 +937,7 @@ class AdminOrdersControllerCore extends AdminController
                         }
 
                         // Generate store credit
-                        if (Tools::isSubmit('generateDiscountRefund') && !count($this->errors) && $amount > 0) {
+                        if ($this->isStoreCreditSubmitForPartialRefund() && !count($this->errors) && $amount > 0) {
                             $this->createRefundStoreCredit($order, $idOrderSlip, (float)$amount);
                         }
                     } else {
@@ -1076,8 +1076,11 @@ class AdminOrdersControllerCore extends AdminController
                                 }
                             }
                         }
+                        $generateCreditSlip = Tools::isSubmit('generateCreditSlip');
+                        $generateStoreCredit = $this->isStoreCreditSubmitForStandardRefund();
+
                         // E-mail params
-                        if ((Tools::isSubmit('generateCreditSlip') || Tools::isSubmit('generateDiscount')) && !count($this->errors)) {
+                        if (($generateCreditSlip || $generateStoreCredit) && !count($this->errors)) {
                             $customer = new Customer((int) ($order->id_customer));
                             $params['{lastname}'] = $customer->lastname;
                             $params['{firstname}'] = $customer->firstname;
@@ -1088,7 +1091,7 @@ class AdminOrdersControllerCore extends AdminController
                         $idOrderSlip = 0;
 
                         // Generate credit slip
-                        if ((Tools::isSubmit('generateCreditSlip') || Tools::isSubmit('generateDiscount')) && !count($this->errors)) {
+                        if ($generateCreditSlip && !count($this->errors)) {
                             $productList = [];
                             $amount = $orderDetail->unit_price_tax_incl * $fullQuantityList[$idOrderDetail];
 
@@ -1144,7 +1147,7 @@ class AdminOrdersControllerCore extends AdminController
                         }
 
                         // Generate store credit
-                        if (Tools::isSubmit('generateDiscount') && !count($this->errors)) {
+                        if ($generateStoreCredit && !count($this->errors)) {
                             $products = $order->getProducts(false, $fullProductList, $fullQuantityList);
 
                             $total = 0;
@@ -3397,6 +3400,26 @@ class AdminOrdersControllerCore extends AdminController
             ->where('id_customer = ' . (int)$idCustomer);
 
         return (int)Db::readOnly()->getValue($sql);
+    }
+
+    /**
+     * Backward compatible submit check for standard refund store-credit creation.
+     *
+     * @return bool
+     */
+    protected function isStoreCreditSubmitForStandardRefund(): bool
+    {
+        return Tools::isSubmit('generateStoreCreditTransaction') || Tools::isSubmit('generateDiscount');
+    }
+
+    /**
+     * Backward compatible submit check for partial refund store-credit creation.
+     *
+     * @return bool
+     */
+    protected function isStoreCreditSubmitForPartialRefund(): bool
+    {
+        return Tools::isSubmit('generateStoreCreditTransactionRefund') || Tools::isSubmit('generateDiscountRefund');
     }
 
     /**

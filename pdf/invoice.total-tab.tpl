@@ -98,7 +98,7 @@
 	{if isset($show_store_credit_on_invoice) && $show_store_credit_on_invoice && isset($store_credit_used_tax_incl) && $store_credit_used_tax_incl > 0}
 	<tr class="bold">
 		<td class="grey">
-			{l s='Redeemed Store Credit' pdf='true'}
+			{l s='Store Credit' pdf='true'}
 		</td>
 		<td class="white">
 			- {displayPrice currency=$order->id_currency price=$store_credit_used_tax_incl}
@@ -108,7 +108,7 @@
 	{if isset($show_outstanding_invoice_amount) && $show_outstanding_invoice_amount}
 	<tr class="bold big">
 		<td class="grey">
-			{l s='Outstanding Invoice Amount (Tax incl.)' pdf='true'}
+			{l s='Amount Due' pdf='true'}
 		</td>
 		<td class="white">
 			{displayPrice currency=$order->id_currency price=$outstanding_invoice_amount_tax_incl}

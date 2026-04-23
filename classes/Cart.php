@@ -4118,13 +4118,15 @@ class CartCore extends ObjectModel
         $storeCreditAvailable = 0.0;
         $storeCreditUsed = 0.0;
         $storeCreditEnabled = false;
+        $totalPriceWithoutStoreCredit = $baseTotalTaxInc;
+        $totalPriceWithStoreCredit = $baseTotalTaxInc;
         if ((int)$this->id_customer > 0) {
             $storeCreditAvailable = Tools::roundPrice(StoreCredit::getCustomerAvailableAmount((int)$this->id_shop, (int)$this->id_customer));
             if ($this->use_store_credit && $storeCreditAvailable > 0.0) {
                 $storeCreditUsed = Tools::roundPrice($this->getOrderTotal(true, static::ONLY_STORE_CREDIT));
                 $storeCreditEnabled = true;
                 if ($storeCreditUsed > 0.0) {
-                    $baseTotalTaxInc -= $storeCreditUsed;
+                    $totalPriceWithStoreCredit -= $storeCreditUsed;
                 }
             }
         }
@@ -4148,17 +4150,16 @@ class CartCore extends ObjectModel
             'total_shipping_tax_exc'    => $totalShippingTaxExc,
             'total_products_wt'         => $totalProductsWt,
             'total_products'            => $totalProducts,
-            'total_price'               => $baseTotalTaxInc,
+            'total_price'               => $totalPriceWithStoreCredit,
+            'total_price_without_store_credit' => $totalPriceWithoutStoreCredit,
             'total_tax'                 => $totalTax,
             'total_price_without_tax'   => $baseTotalTaxExc,
             'is_multi_address_delivery' => $this->isMultiAddressDelivery() || (Tools::getIntValue('multi-shipping') == 1),
             'free_ship'                 => !$totalShipping && !$errors,
             'carrier'                   => new Carrier($this->id_carrier, $idLang),
-            'customer_store_credit'     => [
-                'available' => $storeCreditAvailable,
-                'used' => $storeCreditUsed,
-                'enabled' => $storeCreditEnabled,
-            ],
+            'store_credit_available'    => $storeCreditAvailable,
+            'store_credit_used'         => $storeCreditUsed,
+            'store_credit_enabled'      => $storeCreditEnabled,
             'errors'                    => $errors,
         ];
 

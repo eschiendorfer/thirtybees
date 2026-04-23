@@ -2438,6 +2438,129 @@ class OrderCore extends ObjectModel
     }
 
     /**
+     * Returns payment methods suitable for customer-facing display.
+     *
+     * @param bool $includeZeroAmountMethods
+     * @param bool $includeFreeOrderFallback
+     *
+     * @return array
+     *
+     * @throws PrestaShopException
+     */
+    public function getDisplayPaymentMethods($includeZeroAmountMethods = false, $includeFreeOrderFallback = true)
+    {
+        $paymentMethods = [];
+        $paymentMethodOrder = [];
+        $hasStoreCreditPayment = false;
+        $storeCreditMethod = '';
+        $originalPaymentMethod = trim((string)$this->payment);
+
+        foreach ($this->getOrderPaymentCollection() as $orderPayment) {
+            /** @var OrderPayment $orderPayment */
+            $method = trim((string)$orderPayment->payment_method);
+            if ($method === '') {
+                continue;
+            }
+
+            if (!isset($paymentMethods[$method])) {
+                $paymentMethods[$method] = [
+                    'hasPositiveAmount' => false,
+                    'isFreeOrder' => false,
+                ];
+                $paymentMethodOrder[] = $method;
+            }
+
+            $module = (string)$orderPayment->payment_module;
+            $amount = (float)$orderPayment->amount;
+
+            if ($module === 'free_order') {
+                $paymentMethods[$method]['isFreeOrder'] = true;
+            }
+            if ($module === 'store_credit' && $amount > 0.0) {
+                $hasStoreCreditPayment = true;
+                $storeCreditMethod = $method;
+            }
+            if ($amount > 0.0) {
+                $paymentMethods[$method]['hasPositiveAmount'] = true;
+            }
+        }
+
+        $result = [];
+        foreach ($paymentMethodOrder as $method) {
+            $methodInfo = $paymentMethods[$method];
+
+            if (!$includeZeroAmountMethods && !$methodInfo['hasPositiveAmount']) {
+                continue;
+            }
+            if ($hasStoreCreditPayment && $methodInfo['isFreeOrder']) {
+                continue;
+            }
+            $result[] = $method;
+        }
+
+        $originalPaymentMethodIsFreeOrder = ((string)$this->module === 'free_order');
+        if (
+            !$originalPaymentMethodIsFreeOrder &&
+            $originalPaymentMethod !== '' &&
+            isset($paymentMethods[$originalPaymentMethod]) &&
+            $paymentMethods[$originalPaymentMethod]['isFreeOrder']
+        ) {
+            $originalPaymentMethodIsFreeOrder = true;
+        }
+
+        if (
+            $hasStoreCreditPayment &&
+            $originalPaymentMethod !== '' &&
+            !$originalPaymentMethodIsFreeOrder &&
+            !in_array($originalPaymentMethod, $result, true)
+        ) {
+            if ($storeCreditMethod !== '') {
+                $storeCreditPosition = array_search($storeCreditMethod, $result, true);
+                if ($storeCreditPosition !== false) {
+                    array_splice($result, $storeCreditPosition, 0, [$originalPaymentMethod]);
+                } else {
+                    $result[] = $originalPaymentMethod;
+                }
+            } else {
+                $result[] = $originalPaymentMethod;
+            }
+        }
+
+        if (empty($result) && $includeFreeOrderFallback && !$hasStoreCreditPayment) {
+            foreach ($paymentMethodOrder as $method) {
+                if ($paymentMethods[$method]['isFreeOrder']) {
+                    $result[] = $method;
+                    break;
+                }
+            }
+        }
+
+        if (empty($result) && (string)$this->payment !== '') {
+            $result[] = (string)$this->payment;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Returns payment methods as text.
+     *
+     * @param string $separator
+     * @param bool $includeZeroAmountMethods
+     * @param bool $includeFreeOrderFallback
+     *
+     * @return string
+     *
+     * @throws PrestaShopException
+     */
+    public function getDisplayPaymentMethodsText($separator = ' + ', $includeZeroAmountMethods = false, $includeFreeOrderFallback = true)
+    {
+        $methods = $this->getDisplayPaymentMethods($includeZeroAmountMethods, $includeFreeOrderFallback);
+
+        return implode($separator, $methods);
+    }
+
+    /**
      * Returns outstanding amount (tax incl) for this order.
      *
      * If invoices exist, this sums invoice totals and subtracts all payments

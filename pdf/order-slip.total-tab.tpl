@@ -38,47 +38,25 @@
 	{/if}
 
 	{if isset($order_details) && count($order_details) > 0}
-		{if (($order->total_paid_tax_incl - $order->total_paid_tax_excl) > 0)}
-			{if $tax_excluded_display}
-				<tr>
-					<td class="grey" width="70%">
-						{l s='Product Total (Tax Excl.)' pdf='true'}
-					</td>
-					<td class="white" width="30%">
-						- {displayPrice currency=$order->id_currency price=$order->total_products}
-					</td>
-				</tr>
-			{else}
-				<tr>
-					<td class="grey" width="70%">
-						{l s='Product Total (Tax Incl.)' pdf='true'}
-					</td>
-					<td class="white" width="30%">
-						- {displayPrice currency=$order->id_currency price=$order->total_products_wt}
-					</td>
-				</tr>
-			{/if}
+		{if $tax_excluded_display}
+			<tr>
+				<td class="grey" width="70%">
+					{l s='Product Total (Tax Excl.)' pdf='true'}
+				</td>
+				<td class="white" width="30%">
+					- {displayPrice currency=$order->id_currency price=$order_slip->total_products_tax_excl}
+				</td>
+			</tr>
 		{else}
 			<tr>
 				<td class="grey" width="70%">
-					{l s='Product Total' pdf='true'}
+					{l s='Product Total (Tax Incl.)' pdf='true'}
 				</td>
 				<td class="white" width="30%">
-					- {displayPrice currency=$order->id_currency price=$order->total_products}
+					- {displayPrice currency=$order->id_currency price=$order_slip->total_products_tax_incl}
 				</td>
 			</tr>
 		{/if}
-	{/if}
-	
-	{if ($order->total_paid_tax_incl - $order->total_paid_tax_excl) > 0}
-		<tr>
-			<td class="grey" width="70%">
-				{l s='Total Tax' pdf='true'}
-			</td>
-			<td class="white" width="30%">
-				- {displayPrice currency=$order->id_currency price=($order->total_paid_tax_incl - $order->total_paid_tax_excl)}
-			</td>
-		</tr>
 	{/if}
 	
 	<tr class="bold">
@@ -86,20 +64,10 @@
 			{if $tax_excluded_display}{l s='Total (Tax Excl.)' pdf='true'}{else}{l s='Total (Tax Incl.)' pdf='true'}{/if}
 		</td>
 		<td class="white" width="30%">
-			{if $total_cart_rule}
-				{assign var=total_paid value=0}
-				{if $tax_excluded_display}
-					{$total_paid = $order->total_paid_tax_excl - $total_cart_rule}
-				{else}
-					{$total_paid = $order->total_paid_tax_incl - $total_cart_rule}
-				{/if}
-				- {displayPrice currency=$order->id_currency price=$total_paid}
+			{if $tax_excluded_display}
+				- {displayPrice currency=$order->id_currency price=($order_slip->total_products_tax_excl + $order_slip->total_shipping_tax_excl - $total_cart_rule)}
 			{else}
-				{if $tax_excluded_display}
-					- {displayPrice currency=$order->id_currency price=$order->total_paid_tax_excl}
-				{else}
-					- {displayPrice currency=$order->id_currency price=$order->total_paid_tax_incl}
-				{/if}
+				- {displayPrice currency=$order->id_currency price=($order_slip->total_products_tax_incl + $order_slip->total_shipping_tax_incl - $total_cart_rule)}
 			{/if}
 		</td>
 	</tr>

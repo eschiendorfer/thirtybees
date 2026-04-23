@@ -262,6 +262,8 @@ class HTMLTemplateInvoiceCore extends HTMLTemplate
         $showStoreCreditOnInvoice = self::isFirstInvoiceForOrder($this->order, (int)$this->order_invoice->id);
         $outstandingInvoiceAmountTaxIncl = $this->order_invoice->getOutstandingAmountTaxIncl();
         $showOutstandingInvoiceAmountOnInvoice = $showStoreCreditOnInvoice && $storeCreditUsedTaxIncl > 0.0;
+        $paymentMethodsPdf = $this->order->getDisplayPaymentMethods(false, true);
+        $paymentMethodsPdfText = $this->order->getDisplayPaymentMethodsText(' + ', false, true);
 
         $data = [
             'order'                      => $this->order,
@@ -282,6 +284,8 @@ class HTMLTemplateInvoiceCore extends HTMLTemplate
             'show_store_credit_on_invoice' => $showStoreCreditOnInvoice,
             'outstanding_invoice_amount_tax_incl' => $outstandingInvoiceAmountTaxIncl,
             'show_outstanding_invoice_amount' => $showOutstandingInvoiceAmountOnInvoice,
+            'payment_methods_pdf'        => $paymentMethodsPdf,
+            'payment_methods_pdf_text'   => $paymentMethodsPdfText,
         ];
         $this->smarty->assign($data);
 

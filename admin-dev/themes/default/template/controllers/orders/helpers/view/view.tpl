@@ -1194,14 +1194,14 @@
                       <td class="partial_refund_fields current-edit" style="display:none;"></td>
                     </tr>
                     <tr id="total_store_credit" {if !isset($store_credit_used_tax_incl) || $store_credit_used_tax_incl <= 0}style="display: none;"{/if}>
-                      <td class="text-right">{l s='Store credit'}</td>
+                      <td class="text-right">{l s='Store Credit'}</td>
                       <td class="amount text-right nowrap">
                         -{displayPrice price=$store_credit_used_tax_incl currency=$currency->id}
                       </td>
                       <td class="partial_refund_fields current-edit" style="display:none;"></td>
                     </tr>
                     <tr id="total_outstanding_invoice_amount" {if !isset($store_credit_used_tax_incl) || $store_credit_used_tax_incl <= 0 || !isset($outstanding_invoice_amount_tax_incl)}style="display: none;"{/if}>
-                      <td class="text-right"><strong>{l s='Outstanding amount (Tax incl.)'}</strong></td>
+                      <td class="text-right"><strong>{l s='Amount Due'}</strong></td>
                       <td class="amount text-right nowrap">
                         <strong>{displayPrice price=$outstanding_invoice_amount_tax_incl currency=$currency->id}</strong>
                       </td>
@@ -1230,8 +1230,8 @@
                   </label>
                 </p>
                 <p class="checkbox">
-                  <label for="generateDiscount">
-                    <input type="checkbox" id="generateDiscount" name="generateDiscount" onclick="toggleShippingCost()"/>
+                  <label for="generateStoreCreditTransaction">
+                    <input type="checkbox" id="generateStoreCreditTransaction" name="generateStoreCreditTransaction" onclick="toggleShippingCost()"/>
                     {l s='Generate store credit'}
                   </label>
                 </p>
@@ -1286,8 +1286,8 @@
               </label>
             </p>
             <p class="checkbox">
-              <label for="generateDiscountRefund">
-                <input type="checkbox" id="generateDiscountRefund" name="generateDiscountRefund" onclick="toggleShippingCost()"/>
+              <label for="generateStoreCreditTransactionRefund">
+                <input type="checkbox" id="generateStoreCreditTransactionRefund" name="generateStoreCreditTransactionRefund" onclick="toggleShippingCost()"/>
                 {l s='Generate store credit'}
               </label>
             </p>
