@@ -702,6 +702,16 @@ abstract class PaymentModuleCore extends Module
                             $storeCreditTransactionId = StoreCreditTransaction::getOrderConsumptionTransactionId((int)$order->id);
                         } catch (Exception $exception) {
                             $storeCreditTransactionId = 0;
+                            Hook::triggerEvent('actionLogCaughtException', [
+                                'exception' => $exception,
+                                'extra_content' => [
+                                    'source' => __METHOD__,
+                                    'id_order' => (int)$order->id,
+                                    'id_cart' => (int)$idCart,
+                                    'id_customer' => (int)$order->id_customer,
+                                    'consumed_amount_tax_incl' => (float)$consumed,
+                                ],
+                            ]);
                         }
 
                         if (!$order->addOrderPayment(

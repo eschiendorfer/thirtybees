@@ -1288,11 +1288,20 @@ class AdminOrdersControllerCore extends AdminController
                         if ($consumedAmountTaxIncl <= 0.0) {
                             $this->errors[] = Tools::displayError('Unable to consume store credit.');
                         } else {
-                            $idStoreCreditTransaction = 0;
                             try {
                                 $idStoreCreditTransaction = StoreCreditTransaction::getOrderConsumptionTransactionId((int)$order->id);
                             } catch (Exception $exception) {
                                 $idStoreCreditTransaction = 0;
+                                Hook::triggerEvent('actionLogCaughtException', [
+                                    'exception' => $exception,
+                                    'extra_content' => [
+                                        'source' => __METHOD__,
+                                        'id_order' => (int)$order->id,
+                                        'id_customer' => (int)$order->id_customer,
+                                        'id_shop' => (int)$order->id_shop,
+                                        'consumed_amount_tax_incl' => (float)$consumedAmountTaxIncl,
+                                    ],
+                                ]);
                             }
 
                             $currency = Currency::getCurrencyInstance((int)$order->id_currency);
@@ -3557,6 +3566,16 @@ class AdminOrdersControllerCore extends AdminController
                 return $orderInvoices[0];
             }
         } catch (Exception $exception) {
+            try {
+                Hook::triggerEvent('actionLogCaughtException', [
+                    'exception' => $exception,
+                    'extra_content' => [
+                        'source' => __METHOD__,
+                        'id_order' => (int)$order->id,
+                    ],
+                ]);
+            } catch (Exception $ignored) {
+            }
         }
 
         return null;
