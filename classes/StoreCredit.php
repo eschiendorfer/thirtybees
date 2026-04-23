@@ -178,6 +178,18 @@ class StoreCreditCore extends ObjectModel
             }
         } catch (Exception $exception) {
             static::restoreConsumedAmount($conn, $idStoreCredit, $consumedSql);
+            Hook::triggerEvent('actionLogCaughtException', [
+                'exception' => $exception,
+                'extra_content' => [
+                    'source' => __METHOD__,
+                    'id_shop' => (int)$idShop,
+                    'id_customer' => (int)$idCustomer,
+                    'id_order' => (int)$idOrder,
+                    'id_store_credit' => (int)$idStoreCredit,
+                    'requested_amount_tax_incl' => (float)$requestedAmountTaxIncl,
+                    'consumed_amount_tax_incl' => (float)$consumedAmount,
+                ],
+            ]);
             return 0.0;
         }
 
@@ -267,6 +279,18 @@ class StoreCreditCore extends ObjectModel
                 }
             );
         } catch (Exception $exception) {
+            Hook::triggerEvent('actionLogCaughtException', [
+                'exception' => $exception,
+                'extra_content' => [
+                    'source' => __METHOD__,
+                    'id_shop' => (int)$idShop,
+                    'id_customer' => (int)$idCustomer,
+                    'id_order' => (int)$idOrder,
+                    'id_order_slip' => (int)$idOrderSlip,
+                    'amount_tax_incl' => (float)$amountTaxIncl,
+                    'id_employee' => (int)$idEmployee,
+                ],
+            ]);
             return false;
         }
     }
@@ -351,6 +375,19 @@ class StoreCreditCore extends ObjectModel
                 }
             );
         } catch (Exception $exception) {
+            Hook::triggerEvent('actionLogCaughtException', [
+                'exception' => $exception,
+                'extra_content' => [
+                    'source' => __METHOD__,
+                    'id_customer' => (int)$idCustomer,
+                    'transaction_type' => (int)$transactionType,
+                    'id_employee' => (int)$idEmployee,
+                    'amount_tax_incl' => (float)$absoluteAmountTaxIncl,
+                    'is_decrease' => (bool)$isDecrease,
+                    'id_shops' => array_map('intval', $idShops),
+                    'note_length' => (int)Tools::strlen($note),
+                ],
+            ]);
             return false;
         }
     }
@@ -484,6 +521,14 @@ class StoreCreditCore extends ObjectModel
             return true;
         } catch (Exception $exception) {
             $conn->execute('ROLLBACK');
+            Hook::triggerEvent('actionLogCaughtException', [
+                'exception' => $exception,
+                'extra_content' => [
+                    'source' => __METHOD__,
+                    'id_store_credit' => (int)$idStoreCredit,
+                    'amount_tax_incl' => (float)$amountTaxIncl,
+                ],
+            ]);
             return false;
         }
     }
@@ -527,6 +572,14 @@ class StoreCreditCore extends ObjectModel
             return true;
         } catch (Exception $exception) {
             $conn->execute('ROLLBACK');
+            Hook::triggerEvent('actionLogCaughtException', [
+                'exception' => $exception,
+                'extra_content' => [
+                    'source' => __METHOD__,
+                    'id_store_credit' => (int)$idStoreCredit,
+                    'amount_tax_incl' => (float)$amountTaxIncl,
+                ],
+            ]);
             return false;
         }
     }
