@@ -951,6 +951,7 @@ class AdminOrdersControllerCore extends AdminController
                     }
 
                     $this->updateOrderCarrierWeight($order);
+                    $idOrderSlip = 0;
 
                     if ($amount >= 0) {
                         if (!OrderSlip::create(
@@ -992,6 +993,10 @@ class AdminOrdersControllerCore extends AdminController
                                 true,
                                 (int) $order->id_shop
                             );
+                            $idOrderSlip = $this->getLatestOrderSlipId((int)$order->id, (int)$order->id_customer);
+                            if ($idOrderSlip <= 0) {
+                                $this->errors[] = Tools::displayError('Unable to determine created credit slip.');
+                            }
                         }
 
                         foreach ($orderDetailList as &$product) {
@@ -1001,71 +1006,9 @@ class AdminOrdersControllerCore extends AdminController
                             }
                         }
 
-                        // Generate voucher
-                        if (Tools::isSubmit('generateDiscountRefund') && !count($this->errors) && $amount > 0) {
-                            $cartRule = new CartRule();
-                            $cartRule->description = sprintf($this->l('Credit slip for order #%d'), $order->id);
-                            $languageIds = Language::getIDs(false);
-                            foreach ($languageIds as $idLang) {
-                                // Define a temporary name
-                                $cartRule->name[$idLang] = sprintf('V0C%1$dO%2$d', $order->id_customer, $order->id);
-                            }
-
-                            // Define a temporary code
-                            $cartRule->code = sprintf('V0C%1$dO%2$d', $order->id_customer, $order->id);
-                            $cartRule->quantity = 1;
-                            $cartRule->quantity_per_user = 1;
-
-                            // Specific to the customer
-                            $cartRule->id_customer = $order->id_customer;
-                            $now = time();
-                            $cartRule->date_from = date('Y-m-d H:i:s', $now);
-                            $cartRule->date_to = date('Y-m-d H:i:s', strtotime('+1 year'));
-                            $cartRule->partial_use = 1;
-                            $cartRule->active = 1;
-
-                            $cartRule->reduction_amount = $amount;
-                            $cartRule->reduction_tax = $order->getTaxCalculationMethod() != PS_TAX_EXC;
-                            $cartRule->minimum_amount_currency = $order->id_currency;
-                            $cartRule->reduction_currency = $order->id_currency;
-
-                            if (!$cartRule->add()) {
-                                $this->errors[] = Tools::displayError('You cannot generate a voucher.');
-                            } else {
-                                // Update the voucher code and name
-                                foreach ($languageIds as $idLang) {
-                                    $cartRule->name[$idLang] = sprintf('V%1$dC%2$dO%3$d', $cartRule->id, $order->id_customer, $order->id);
-                                }
-                                $cartRule->code = sprintf('V%1$dC%2$dO%3$d', $cartRule->id, $order->id_customer, $order->id);
-
-                                if (!$cartRule->update()) {
-                                    $this->errors[] = Tools::displayError('You cannot generate a voucher.');
-                                } else {
-                                    $currency = $this->context->currency;
-                                    $customer = new Customer((int) ($order->id_customer));
-                                    $params['{lastname}'] = $customer->lastname;
-                                    $params['{firstname}'] = $customer->firstname;
-                                    $params['{id_order}'] = $order->id;
-                                    $params['{order_name}'] = $order->getUniqReference();
-                                    $params['{voucher_amount}'] = Tools::displayPrice($cartRule->reduction_amount, $currency, false);
-                                    $params['{voucher_num}'] = $cartRule->code;
-                                    @Mail::Send(
-                                        (int) $order->id_lang,
-                                        'voucher',
-                                        sprintf(Mail::l('New voucher for your order #%s', (int) $order->id_lang), $order->reference),
-                                        $params,
-                                        $customer->email,
-                                        $customer->firstname.' '.$customer->lastname,
-                                        null,
-                                        null,
-                                        null,
-                                        null,
-                                        _PS_MAIL_DIR_,
-                                        true,
-                                        (int) $order->id_shop
-                                    );
-                                }
-                            }
+                        // Generate store credit
+                        if ($this->isStoreCreditSubmitForPartialRefund() && !count($this->errors) && $amount > 0) {
+                            $this->createRefundStoreCredit($order, $idOrderSlip, (float)$amount);
                         }
                     } else {
                         if (!empty($refunds)) {
@@ -1203,8 +1146,11 @@ class AdminOrdersControllerCore extends AdminController
                                 }
                             }
                         }
+                        $generateCreditSlip = Tools::isSubmit('generateCreditSlip');
+                        $generateStoreCredit = $this->isStoreCreditSubmitForStandardRefund();
+
                         // E-mail params
-                        if ((Tools::isSubmit('generateCreditSlip') || Tools::isSubmit('generateDiscount')) && !count($this->errors)) {
+                        if (($generateCreditSlip || $generateStoreCredit) && !count($this->errors)) {
                             $customer = new Customer((int) ($order->id_customer));
                             $params['{lastname}'] = $customer->lastname;
                             $params['{firstname}'] = $customer->firstname;
@@ -1212,9 +1158,10 @@ class AdminOrdersControllerCore extends AdminController
                             $params['{order_name}'] = $order->getUniqReference();
                             $params['{credit_slips_url}'] = $this->context->link->getPageLink('order-slip');
                         }
+                        $idOrderSlip = 0;
 
                         // Generate credit slip
-                        if (Tools::isSubmit('generateCreditSlip') && !count($this->errors)) {
+                        if ($generateCreditSlip && !count($this->errors)) {
                             $productList = [];
                             $amount = $orderDetail->unit_price_tax_incl * $fullQuantityList[$idOrderDetail];
 
@@ -1262,30 +1209,15 @@ class AdminOrdersControllerCore extends AdminController
                                     true,
                                     (int) $order->id_shop
                                 );
+                                $idOrderSlip = $this->getLatestOrderSlipId((int)$order->id, (int)$order->id_customer);
+                                if ($idOrderSlip <= 0) {
+                                    $this->errors[] = Tools::displayError('Unable to determine created credit slip.');
+                                }
                             }
                         }
 
-                        // Generate voucher
-                        if (Tools::isSubmit('generateDiscount') && !count($this->errors)) {
-                            $cartRule = new CartRule();
-                            $languageIds = Language::getIDs((bool) $order);
-                            $cartRule->description = sprintf($this->l('Credit card slip for order #%d'), $order->id);
-                            foreach ($languageIds as $idLang) {
-                                // Define a temporary name
-                                $cartRule->name[$idLang] = 'V0C'.(int) $order->id_customer.'O'.(int) $order->id;
-                            }
-                            // Define a temporary code
-                            $cartRule->code = 'V0C'.(int) $order->id_customer.'O'.(int) $order->id;
-
-                            $cartRule->quantity = 1;
-                            $cartRule->quantity_per_user = 1;
-                            // Specific to the customer
-                            $cartRule->id_customer = $order->id_customer;
-                            $now = time();
-                            $cartRule->date_from = date('Y-m-d H:i:s', $now);
-                            $cartRule->date_to = date('Y-m-d H:i:s', $now + (3600 * 24 * 365.25)); /* 1 year */
-                            $cartRule->active = 1;
-
+                        // Generate store credit
+                        if ($generateStoreCredit && !count($this->errors)) {
                             $products = $order->getProducts(false, $fullProductList, $fullQuantityList);
 
                             $total = 0;
@@ -1303,41 +1235,9 @@ class AdminOrdersControllerCore extends AdminController
                                 $total = Tools::getNumberValue('refund_total_voucher_choose');
                             }
 
-                            $cartRule->reduction_amount = $total;
-                            $cartRule->reduction_tax = true;
-                            $cartRule->minimum_amount_currency = $order->id_currency;
-                            $cartRule->reduction_currency = $order->id_currency;
-
-                            if (!$cartRule->add()) {
-                                $this->errors[] = Tools::displayError('You cannot generate a voucher.');
-                            } else {
-                                // Update the voucher code and name
-                                foreach ($languageIds as $idLang) {
-                                    $cartRule->name[$idLang] = 'V'.(int) ($cartRule->id).'C'.(int) ($order->id_customer).'O'.$order->id;
-                                }
-                                $cartRule->code = 'V'.(int) ($cartRule->id).'C'.(int) ($order->id_customer).'O'.$order->id;
-                                if (!$cartRule->update()) {
-                                    $this->errors[] = Tools::displayError('You cannot generate a voucher.');
-                                } else {
-                                    $currency = $this->context->currency;
-                                    $params['{voucher_amount}'] = Tools::displayPrice($cartRule->reduction_amount, $currency, false);
-                                    $params['{voucher_num}'] = $cartRule->code;
-                                    @Mail::Send(
-                                        (int) $order->id_lang,
-                                        'voucher',
-                                        sprintf(Mail::l('New voucher for your order #%s', (int) $order->id_lang), $order->reference),
-                                        $params,
-                                        $customer->email,
-                                        $customer->firstname.' '.$customer->lastname,
-                                        null,
-                                        null,
-                                        null,
-                                        null,
-                                        _PS_MAIL_DIR_,
-                                        true,
-                                        (int) $order->id_shop
-                                    );
-                                }
+                            $total = Tools::roundPrice(max(0.0, (float)$total));
+                            if ($total > 0.0) {
+                                $this->createRefundStoreCredit($order, $idOrderSlip, $total);
                             }
                         }
                     } else {
@@ -1354,6 +1254,67 @@ class AdminOrdersControllerCore extends AdminController
             }
         } elseif (Tools::isSubmit('messageReaded')) {
             Message::markAsReaded(Tools::getValue('messageReaded'), $this->context->employee->id);
+        } elseif (Tools::isSubmit('submitApplyStoreCredit') && isset($order)) {
+            if ($this->hasEditPermission()) {
+                $amountTaxIncl = Tools::roundPrice((float)Tools::getNumberValue('store_credit_amount'));
+                $orderInvoice = $this->getFirstOrderInvoice($order);
+                if (!Validate::isLoadedObject($orderInvoice)) {
+                    $orderInvoice = null;
+                }
+
+                if (!Validate::isLoadedObject($order)) {
+                    $this->errors[] = Tools::displayError('The order cannot be found');
+                } elseif ($amountTaxIncl <= 0.0) {
+                    $this->errors[] = Tools::displayError('The amount is invalid.');
+                } else {
+                    $outstandingAmountTaxIncl = Tools::roundPrice((float)$order->getOutstandingAmountTaxIncl());
+                    $availableStoreCreditTaxIncl = Tools::roundPrice(
+                        (float)StoreCredit::getCustomerAvailableAmount((int)$order->id_shop, (int)$order->id_customer)
+                    );
+                    $maxApplicableAmountTaxIncl = Tools::roundPrice(min($outstandingAmountTaxIncl, $availableStoreCreditTaxIncl));
+
+                    if ($maxApplicableAmountTaxIncl <= 0.0) {
+                        $this->errors[] = Tools::displayError('There is no applicable store credit for this order.');
+                    } elseif ($amountTaxIncl > $maxApplicableAmountTaxIncl) {
+                        $this->errors[] = Tools::displayError('Amount exceeds outstanding amount or available store credit.');
+                    } else {
+                        $consumedAmountTaxIncl = StoreCredit::consumeForOrder(
+                            (int)$order->id_shop,
+                            (int)$order->id_customer,
+                            (int)$order->id,
+                            $amountTaxIncl
+                        );
+
+                        if ($consumedAmountTaxIncl <= 0.0) {
+                            $this->errors[] = Tools::displayError('Unable to consume store credit.');
+                        } else {
+                            $idStoreCreditTransaction = 0;
+                            try {
+                                $idStoreCreditTransaction = StoreCreditTransaction::getOrderConsumptionTransactionId((int)$order->id);
+                            } catch (Exception $exception) {
+                                $idStoreCreditTransaction = 0;
+                            }
+
+                            $currency = Currency::getCurrencyInstance((int)$order->id_currency);
+                            if (!$order->addOrderPayment(
+                                $consumedAmountTaxIncl,
+                                'Store Credit',
+                                $idStoreCreditTransaction > 0 ? (string)$idStoreCreditTransaction : null,
+                                $currency,
+                                date('Y-m-d H:i:s'),
+                                $orderInvoice,
+                                'store_credit'
+                            )) {
+                                $this->errors[] = Tools::displayError('An error occurred during payment.');
+                            } else {
+                                Tools::redirectAdmin(static::$currentIndex.'&id_order='.$order->id.'&vieworder&conf=4&token='.$this->token);
+                            }
+                        }
+                    }
+                }
+            } else {
+                $this->errors[] = Tools::displayError('You do not have permission to edit this.');
+            }
         } elseif (Tools::isSubmit('submitAddPayment') && isset($order)) {
             if ($this->hasEditPermission()) {
                 $amount = Tools::getNumberValue('payment_amount');
@@ -2050,6 +2011,45 @@ class AdminOrdersControllerCore extends AdminController
             $orderState['text-color'] = Tools::getBrightness($orderState['color']) < 128 ? 'white' : 'black';
         }
 
+        $storeCreditUsedTaxIncl = 0.0;
+        try {
+            $storeCreditUsedTaxIncl = StoreCreditTransaction::getOrderConsumptionAmount((int)$order->id);
+        } catch (Exception $exception) {
+            $storeCreditUsedTaxIncl = 0.0;
+        }
+        $storeCreditTransactionsUrl = $this->context->link->getAdminLink('AdminStoreCreditTransactions', true, [
+            'id_customer' => (int)$order->id_customer,
+        ]);
+
+        $storeCreditPaymentLinks = [];
+        foreach ($order->getOrderPaymentCollection() as $orderPayment) {
+            /** @var OrderPayment $orderPayment */
+            if (
+                (string)$orderPayment->payment_module !== 'store_credit' ||
+                (int)$orderPayment->id <= 0 ||
+                (int)$orderPayment->transaction_id <= 0
+            ) {
+                continue;
+            }
+
+            $storeCreditPaymentLinks[(int)$orderPayment->id] = [
+                'id_store_credit_transaction' => (int)$orderPayment->transaction_id,
+                'url' => $storeCreditTransactionsUrl,
+            ];
+        }
+
+        $storeCreditAvailableTaxIncl = 0.0;
+        try {
+            $storeCreditAvailableTaxIncl = Tools::roundPrice(
+                (float)StoreCredit::getCustomerAvailableAmount((int)$order->id_shop, (int)$order->id_customer)
+            );
+        } catch (Exception $exception) {
+            $storeCreditAvailableTaxIncl = 0.0;
+        }
+
+        $outstandingInvoiceAmountTaxIncl = Tools::roundPrice((float)$order->getOutstandingAmountTaxIncl());
+        $storeCreditMaxApplicableTaxIncl = Tools::roundPrice(min($storeCreditAvailableTaxIncl, $outstandingInvoiceAmountTaxIncl));
+
         // Smarty assign
         $this->tpl_view_vars = [
             'order'                        => $order,
@@ -2066,6 +2066,12 @@ class AdminOrdersControllerCore extends AdminController
             'customerStats'                => $customer->getStats(),
             'products'                     => $products,
             'discounts'                    => $order->getCartRules(),
+            'store_credit_used_tax_incl'   => $storeCreditUsedTaxIncl,
+            'store_credit_transactions_url' => $storeCreditTransactionsUrl,
+            'store_credit_payment_links'   => $storeCreditPaymentLinks,
+            'store_credit_available_tax_incl' => $storeCreditAvailableTaxIncl,
+            'store_credit_max_applicable_tax_incl' => $storeCreditMaxApplicableTaxIncl,
+            'outstanding_invoice_amount_tax_incl' => $outstandingInvoiceAmountTaxIncl,
             'orders_total_paid_tax_incl'   => $order->getOrdersTotalPaid(), // Get the sum of total_paid_tax_incl of the order with similar reference
             'total_paid'                   => $order->getTotalPaid(),
             'returns'                      => OrderReturn::getOrdersReturn($order->id_customer, $order->id),
@@ -3445,6 +3451,84 @@ class AdminOrdersControllerCore extends AdminController
     }
 
     /**
+     * @param int $idOrder
+     * @param int $idCustomer
+     *
+     * @return int
+     *
+     * @throws PrestaShopException
+     */
+    protected function getLatestOrderSlipId(int $idOrder, int $idCustomer): int
+    {
+        if ($idOrder <= 0 || $idCustomer <= 0) {
+            return 0;
+        }
+
+        $sql = (new DbQuery())
+            ->select('MAX(id_order_slip)')
+            ->from('order_slip')
+            ->where('id_order = ' . (int)$idOrder)
+            ->where('id_customer = ' . (int)$idCustomer);
+
+        return (int)Db::readOnly()->getValue($sql);
+    }
+
+    /**
+     * Backward compatible submit check for standard refund store-credit creation.
+     *
+     * @return bool
+     */
+    protected function isStoreCreditSubmitForStandardRefund(): bool
+    {
+        return Tools::isSubmit('generateStoreCreditTransaction') || Tools::isSubmit('generateDiscount');
+    }
+
+    /**
+     * Backward compatible submit check for partial refund store-credit creation.
+     *
+     * @return bool
+     */
+    protected function isStoreCreditSubmitForPartialRefund(): bool
+    {
+        return Tools::isSubmit('generateStoreCreditTransactionRefund') || Tools::isSubmit('generateDiscountRefund');
+    }
+
+    /**
+     * @param Order $order
+     * @param int $idOrderSlip
+     * @param float $amountTaxIncl
+     *
+     * @return bool
+     */
+    protected function createRefundStoreCredit(Order $order, int $idOrderSlip, float $amountTaxIncl): bool
+    {
+        $amountTaxIncl = Tools::roundPrice(max(0.0, $amountTaxIncl));
+        if ($amountTaxIncl <= 0.0) {
+            return true;
+        }
+
+        if ($idOrderSlip <= 0) {
+            $this->errors[] = Tools::displayError('Please generate a credit slip before creating store credit.');
+            return false;
+        }
+
+        $idEmployee = (int)$this->context->employee->id;
+        if (!StoreCredit::addRefundCreditForOrderSlip(
+            (int)$order->id_shop,
+            (int)$order->id_customer,
+            (int)$order->id,
+            $idOrderSlip,
+            $amountTaxIncl,
+            $idEmployee
+        )) {
+            $this->errors[] = Tools::displayError('You cannot generate store credit.');
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * @param Order $order
      *
      * @return string
@@ -3456,6 +3540,26 @@ class AdminOrdersControllerCore extends AdminController
         $template = $this->createTemplate('_documents.tpl');
         $template->assign('orderDocuments', $order->getDocuments());
         return $template->fetch();
+    }
+
+    /**
+     * @param Order $order
+     *
+     * @return OrderInvoice|null
+     *
+     * @throws PrestaShopException
+     */
+    protected function getFirstOrderInvoice(Order $order): ?OrderInvoice
+    {
+        try {
+            $orderInvoices = $order->getInvoicesCollection();
+            if (isset($orderInvoices[0]) && Validate::isLoadedObject($orderInvoices[0])) {
+                return $orderInvoices[0];
+            }
+        } catch (Exception $exception) {
+        }
+
+        return null;
     }
 
     /**

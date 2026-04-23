@@ -1536,6 +1536,7 @@ CREATE TABLE `PREFIX_order_payment` (
   `order_reference` varchar(9) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `id_currency` int(10) unsigned NOT NULL,
   `amount` decimal(20,6) NOT NULL,
+  `payment_module` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `payment_method` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `conversion_rate` decimal(13,6) NOT NULL DEFAULT '1.000000',
   `transaction_id` varchar(254) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,

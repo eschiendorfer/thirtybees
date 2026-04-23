@@ -26,14 +26,13 @@
 	<tr>
 		<td class="payment center small grey bold" width="44%">{l s='Payment Method' pdf='true'}</td>
 		<td class="payment left white" width="56%">
-			<table width="100%" border="0">
-				{foreach from=$order_invoice->getOrderPaymentCollection() item=payment}
-					<tr>
-						<td class="right small">{$payment->payment_method}</td>
-						<td class="right small">{displayPrice currency=$payment->id_currency price=$payment->amount}</td>
-					</tr>
+			{if isset($payment_methods_pdf) && $payment_methods_pdf|@count > 0}
+				{foreach from=$payment_methods_pdf item=paymentMethod name=paymentMethods}
+					{$paymentMethod}{if !$smarty.foreach.paymentMethods.last} + {/if}
 				{/foreach}
-			</table>
+			{else}
+				{$order->payment}
+			{/if}
 		</td>
 	</tr>
 </table>

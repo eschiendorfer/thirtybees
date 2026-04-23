@@ -338,8 +338,10 @@ class OrderHistoryCore extends ObjectModel
 
                     if (isset($paymentMethod) && $order->total_paid != 0) {
                         $payment->payment_method = $paymentMethod->displayName;
+                        $payment->payment_module = $order->module;
                     } else {
                         $payment->payment_method = null;
+                        $payment->payment_module = null;
                     }
 
                     $order->adjustTotalPaidAmount($payment->amount, $payment->id_currency);

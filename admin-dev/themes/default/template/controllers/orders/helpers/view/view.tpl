@@ -442,7 +442,13 @@
                 <tr>
                   <td>{dateFormat date=$payment->date_add full=true}</td>
                   <td>{$payment->payment_method|escape:'html':'UTF-8'}</td>
-                  <td>{$payment->transaction_id|escape:'html':'UTF-8'}</td>
+                  <td>
+                    {if isset($store_credit_payment_links[$payment->id])}
+                      <a href="{$store_credit_payment_links[$payment->id].url|escape:'html':'UTF-8'}">{$store_credit_payment_links[$payment->id].id_store_credit_transaction|intval}</a>
+                    {else}
+                      {$payment->transaction_id|escape:'html':'UTF-8'}
+                    {/if}
+                  </td>
                   <td>{displayPrice price=$payment->amount currency=$payment->id_currency}</td>
                   <td>
                     {if $invoice = $payment->getOrderInvoice($order->id)}
@@ -546,6 +552,25 @@
                   </button>
                 </td>
               </tr>
+              {if $can_edit && isset($store_credit_max_applicable_tax_incl) && $store_credit_max_applicable_tax_incl > 0}
+              <tr class="hidden-print">
+                <td></td>
+                <td><strong>{l s='Apply store credit'}</strong></td>
+                <td></td>
+                <td>
+                  <input type="text" name="store_credit_amount" value="{$store_credit_max_applicable_tax_incl|string_format:'%.2f'}" class="form-control fixed-width-sm pull-left"/>
+                  <p class="help-block" style="margin-bottom: 0;">
+                    {l s='Available'}: {displayPrice price=$store_credit_available_tax_incl currency=$currency->id}
+                  </p>
+                </td>
+                <td></td>
+                <td class="actions">
+                  <button class="btn btn-default" type="submit" name="submitApplyStoreCredit">
+                    {l s='Apply'}
+                  </button>
+                </td>
+              </tr>
+              {/if}
               </tbody>
             </table>
           </div>
@@ -1168,6 +1193,20 @@
                       </td>
                       <td class="partial_refund_fields current-edit" style="display:none;"></td>
                     </tr>
+                    <tr id="total_store_credit" {if !isset($store_credit_used_tax_incl) || $store_credit_used_tax_incl <= 0}style="display: none;"{/if}>
+                      <td class="text-right">{l s='Store Credit'}</td>
+                      <td class="amount text-right nowrap">
+                        -{displayPrice price=$store_credit_used_tax_incl currency=$currency->id}
+                      </td>
+                      <td class="partial_refund_fields current-edit" style="display:none;"></td>
+                    </tr>
+                    <tr id="total_outstanding_invoice_amount" {if !isset($store_credit_used_tax_incl) || $store_credit_used_tax_incl <= 0 || !isset($outstanding_invoice_amount_tax_incl)}style="display: none;"{/if}>
+                      <td class="text-right"><strong>{l s='Amount Due'}</strong></td>
+                      <td class="amount text-right nowrap">
+                        <strong>{displayPrice price=$outstanding_invoice_amount_tax_incl currency=$currency->id}</strong>
+                      </td>
+                      <td class="partial_refund_fields current-edit" style="display:none;"></td>
+                    </tr>
                   </table>
                 </div>
               </div>
@@ -1191,9 +1230,9 @@
                   </label>
                 </p>
                 <p class="checkbox">
-                  <label for="generateDiscount">
-                    <input type="checkbox" id="generateDiscount" name="generateDiscount" onclick="toggleShippingCost()"/>
-                    {l s='Generate a voucher'}
+                  <label for="generateStoreCreditTransaction">
+                    <input type="checkbox" id="generateStoreCreditTransaction" name="generateStoreCreditTransaction" onclick="toggleShippingCost()"/>
+                    {l s='Generate store credit'}
                   </label>
                 </p>
                 <p class="checkbox" id="spanShippingBack" style="display:none;">
@@ -1247,9 +1286,9 @@
               </label>
             </p>
             <p class="checkbox">
-              <label for="generateDiscountRefund">
-                <input type="checkbox" id="generateDiscountRefund" name="generateDiscountRefund" onclick="toggleShippingCost()"/>
-                {l s='Generate a voucher'}
+              <label for="generateStoreCreditTransactionRefund">
+                <input type="checkbox" id="generateStoreCreditTransactionRefund" name="generateStoreCreditTransactionRefund" onclick="toggleShippingCost()"/>
+                {l s='Generate store credit'}
               </label>
             </p>
             {if $order->total_discounts_tax_excl > 0 || $order->total_discounts_tax_incl > 0}

@@ -38,10 +38,12 @@ class CartCore extends ObjectModel
     const ONLY_DISCOUNTS = 2;
     const BOTH = 3;
     const BOTH_WITHOUT_SHIPPING = 4;
+    const BOTH_WITHOUT_STORE_CREDIT = 10;
     const ONLY_SHIPPING = 5;
     const ONLY_WRAPPING = 6;
     const ONLY_PRODUCTS_WITHOUT_SHIPPING = 7;
     const ONLY_PHYSICAL_PRODUCTS_WITHOUT_SHIPPING = 8;
+    const ONLY_STORE_CREDIT = 9;
     const NO_CARRIER_FOUND_PLACEHOLDER = 0;
     /**
      * @var array Object model definition
@@ -66,6 +68,7 @@ class CartCore extends ObjectModel
             'gift_message'            => ['type' => self::TYPE_STRING, 'validate' => 'isMessage', 'size' => ObjectModel::SIZE_TEXT],
             'mobile_theme'            => ['type' => self::TYPE_BOOL, 'validate' => 'isBool', 'dbType' => 'tinyint(1)', 'dbDefault' => '0'],
             'allow_seperated_package' => ['type' => self::TYPE_BOOL, 'validate' => 'isBool', 'dbDefault' => '0'],
+            'use_store_credit'        => ['type' => self::TYPE_BOOL, 'validate' => 'isBool', 'dbDefault' => '1'],
             'date_add'                => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
             'date_upd'                => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
         ],
@@ -206,6 +209,11 @@ class CartCore extends ObjectModel
      * @var bool Allow to seperate order in multiple package in order to recieve as soon as possible the available products
      */
     public $allow_seperated_package = false;
+
+    /**
+     * @var bool
+     */
+    public $use_store_credit = true;
 
     /**
      * @var array[] | null
@@ -848,10 +856,12 @@ class CartCore extends ObjectModel
             static::ONLY_DISCOUNTS,
             static::BOTH,
             static::BOTH_WITHOUT_SHIPPING,
+            static::BOTH_WITHOUT_STORE_CREDIT,
             static::ONLY_SHIPPING,
             static::ONLY_WRAPPING,
             static::ONLY_PRODUCTS_WITHOUT_SHIPPING,
             static::ONLY_PHYSICAL_PRODUCTS_WITHOUT_SHIPPING,
+            static::ONLY_STORE_CREDIT,
         ];
 
         // Define virtual context to prevent case where the cart is not the in the global context
@@ -862,7 +872,7 @@ class CartCore extends ObjectModel
             throw new PrestaShopException(sprintf(Tools::displayError('getOrderTotal: Invalid value of $type parameter: %s'), $type));
         }
 
-        $withShipping = in_array($type, [static::BOTH, static::ONLY_SHIPPING]);
+        $withShipping = in_array($type, [static::BOTH, static::ONLY_SHIPPING, static::BOTH_WITHOUT_STORE_CREDIT]);
 
         // if cart rules are not used
         if ($type == static::ONLY_DISCOUNTS && !CartRule::isFeatureActive()) {
@@ -879,7 +889,7 @@ class CartCore extends ObjectModel
             $type = static::BOTH_WITHOUT_SHIPPING;
         }
 
-        if ($withShipping || $type == static::ONLY_DISCOUNTS) {
+        if ($withShipping || $type == static::ONLY_DISCOUNTS || $type == static::ONLY_STORE_CREDIT) {
             if (is_null($products) && is_null($idCarrier)) {
                 $shippingFees = $this->getTotalShippingCost(null, (bool) $withTaxes);
             } else {
@@ -1092,7 +1102,8 @@ class CartCore extends ObjectModel
             $orderTotal -= $orderTotalDiscount;
         }
 
-        if ($type == static::BOTH) {
+
+        if ($type == static::BOTH || $type == static::BOTH_WITHOUT_STORE_CREDIT || $type == static::ONLY_STORE_CREDIT) {
             $orderTotal += $shippingFees + $wrappingFees;
         }
 
@@ -1102,6 +1113,22 @@ class CartCore extends ObjectModel
 
         if ($type == static::ONLY_DISCOUNTS) {
             return $orderTotalDiscount;
+        }
+
+        if ($orderTotal > 0 && $this->use_store_credit && (int)$this->id_customer) {
+            if ($type == static::BOTH || $type == static::ONLY_STORE_CREDIT) {
+                $creditAvailable = StoreCredit::getCustomerAvailableAmount((int)$this->id_shop, (int)$this->id_customer);
+                $creditUsed = Tools::roundPrice(max(0.0, min($orderTotal, $creditAvailable)));
+                if ($type == static::BOTH) {
+                    $orderTotal -= $creditUsed;
+                } else {
+                    $orderTotal = $creditUsed;
+                }
+            }
+        } else {
+            if ($type === static::ONLY_STORE_CREDIT) {
+                return 0.0;
+            }
         }
 
         return Tools::ps_round((float) $orderTotal, $displayPrecision);
@@ -3958,8 +3985,8 @@ class CartCore extends ObjectModel
             'invoice'  => AddressFormat::getFormattedLayoutData($invoice),
         ];
 
-        $baseTotalTaxInc = $this->getOrderTotal(true);
-        $baseTotalTaxExc = $this->getOrderTotal(false);
+        $baseTotalTaxInc = $this->getOrderTotal(true, static::BOTH_WITHOUT_STORE_CREDIT);
+        $baseTotalTaxExc = $this->getOrderTotal(false, static::BOTH_WITHOUT_STORE_CREDIT);
 
         $totalTax = $baseTotalTaxInc - $baseTotalTaxExc;
 
@@ -4086,6 +4113,24 @@ class CartCore extends ObjectModel
             }
         }
 
+        $discounts = array_values($cartRules);
+
+        $storeCreditAvailable = 0.0;
+        $storeCreditUsed = 0.0;
+        $storeCreditEnabled = false;
+        $totalPriceWithoutStoreCredit = $baseTotalTaxInc;
+        $totalPriceWithStoreCredit = $baseTotalTaxInc;
+        if ((int)$this->id_customer > 0) {
+            $storeCreditAvailable = Tools::roundPrice(StoreCredit::getCustomerAvailableAmount((int)$this->id_shop, (int)$this->id_customer));
+            if ($this->use_store_credit && $storeCreditAvailable > 0.0) {
+                $storeCreditUsed = Tools::roundPrice($this->getOrderTotal(true, static::ONLY_STORE_CREDIT));
+                $storeCreditEnabled = true;
+                if ($storeCreditUsed > 0.0) {
+                    $totalPriceWithStoreCredit -= $storeCreditUsed;
+                }
+            }
+        }
+
         $errors = $this->getDeliveryErrorReasons();
         $summary = [
             'delivery'                  => $delivery,
@@ -4095,7 +4140,7 @@ class CartCore extends ObjectModel
             'formattedAddresses'        => $formattedAddresses,
             'products'                  => array_values($products),
             'gift_products'             => $giftProducts,
-            'discounts'                 => array_values($cartRules),
+            'discounts'                 => $discounts,
             'is_virtual_cart'           => (int) $this->isVirtualCart(),
             'total_discounts'           => $totalDiscounts,
             'total_discounts_tax_exc'   => $totalDiscountsTaxExc,
@@ -4105,12 +4150,16 @@ class CartCore extends ObjectModel
             'total_shipping_tax_exc'    => $totalShippingTaxExc,
             'total_products_wt'         => $totalProductsWt,
             'total_products'            => $totalProducts,
-            'total_price'               => $baseTotalTaxInc,
+            'total_price'               => $totalPriceWithStoreCredit,
+            'total_price_without_store_credit' => $totalPriceWithoutStoreCredit,
             'total_tax'                 => $totalTax,
             'total_price_without_tax'   => $baseTotalTaxExc,
             'is_multi_address_delivery' => $this->isMultiAddressDelivery() || (Tools::getIntValue('multi-shipping') == 1),
             'free_ship'                 => !$totalShipping && !$errors,
             'carrier'                   => new Carrier($this->id_carrier, $idLang),
+            'store_credit_available'    => $storeCreditAvailable,
+            'store_credit_used'         => $storeCreditUsed,
+            'store_credit_enabled'      => $storeCreditEnabled,
             'errors'                    => $errors,
         ];
 

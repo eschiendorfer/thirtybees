@@ -453,6 +453,10 @@ abstract class PaymentModuleCore extends Module
             $this->currentOrderReference = $reference;
 
             $cartTotalPaid = $this->context->cart->getOrderTotal(true, Cart::BOTH);
+            $remainingStoreCreditTaxIncl = 0.0;
+            if ($this->context->cart->use_store_credit && (int)$this->context->cart->id_customer > 0) {
+                $remainingStoreCreditTaxIncl = (float)$this->context->cart->getOrderTotal(true, Cart::ONLY_STORE_CREDIT);
+            }
 
             foreach ($cartDeliveryOption as $idAddress => $keyCarriers) {
                 foreach ($deliveryOptionList[$idAddress][$keyCarriers]['carrier_list'] as $idCarrier => $data) {
@@ -552,8 +556,16 @@ abstract class PaymentModuleCore extends Module
                     $order->total_wrapping_tax_incl = (float) abs($this->context->cart->getOrderTotal(true, Cart::ONLY_WRAPPING, $productList, $idCarrier));
                     $order->total_wrapping = $order->total_wrapping_tax_incl;
 
-                    $order->total_paid_tax_excl = (float) (float) $this->context->cart->getOrderTotal(false, Cart::BOTH, $productList, $idCarrier);
-                    $order->total_paid_tax_incl = (float) (float) $this->context->cart->getOrderTotal(true, Cart::BOTH, $productList, $idCarrier);
+                    $orderTotalPaidTaxExclWithoutStoreCredit = (float)$this->context->cart->getOrderTotal(false, Cart::BOTH_WITHOUT_STORE_CREDIT, $productList, $idCarrier);
+                    $orderTotalPaidTaxInclWithoutStoreCredit = (float)$this->context->cart->getOrderTotal(true, Cart::BOTH_WITHOUT_STORE_CREDIT, $productList, $idCarrier);
+                    $orderTotalPaidTaxInclWithStoreCredit = (float)$this->context->cart->getOrderTotal(true, Cart::BOTH, $productList, $idCarrier);
+
+                    $requestedStoreCreditTaxIncl = Tools::roundPrice(max(0.0, $orderTotalPaidTaxInclWithoutStoreCredit - $orderTotalPaidTaxInclWithStoreCredit));
+                    $storeCreditUsedTaxIncl = Tools::roundPrice(min($requestedStoreCreditTaxIncl, $remainingStoreCreditTaxIncl));
+                    $remainingStoreCreditTaxIncl = Tools::roundPrice(max(0.0, $remainingStoreCreditTaxIncl - $storeCreditUsedTaxIncl));
+
+                    $order->total_paid_tax_excl = Tools::roundPrice($orderTotalPaidTaxExclWithoutStoreCredit);
+                    $order->total_paid_tax_incl = Tools::roundPrice($orderTotalPaidTaxInclWithoutStoreCredit);
                     $order->total_paid = $order->total_paid_tax_incl;
                     $order->round_mode = Configuration::get('PS_PRICE_ROUND_MODE');
                     $order->round_type = (int) Configuration::get('PS_ROUND_TYPE');
@@ -599,7 +611,8 @@ abstract class PaymentModuleCore extends Module
                         'order' => $order,
                         'productList' => $productList,
                         'outOfStock' => $outOfStock,
-                        'carrierName' => $carrier ? $carrier->getName() : Tools::displayError('No carrier')
+                        'carrierName' => $carrier ? $carrier->getName() : Tools::displayError('No carrier'),
+                        'storeCreditUsedTaxIncl' => $storeCreditUsedTaxIncl,
                     ];
                 }
             }
@@ -621,7 +634,7 @@ abstract class PaymentModuleCore extends Module
                 // linked to the order reference and not to the order id
                 $transactionId = $extraVars['transaction_id'] ?? null;
 
-                if (!isset($order) || !Validate::isLoadedObject($order) || !$order->addOrderPayment($amountPaid, null, $transactionId)) {
+                if (!isset($order) || !Validate::isLoadedObject($order) || !$order->addOrderPayment($amountPaid, null, $transactionId, null, null, null, $this->name ?? null)) {
                     Logger::addLog('PaymentModule::validateOrder - Cannot save Order Payment', 3, null, 'Cart', (int) $idCart, true);
                     throw new PrestaShopException('Can\'t save Order Payment');
                 }
@@ -642,6 +655,7 @@ abstract class PaymentModuleCore extends Module
                 $productList = $entry['productList'];
                 $outOfStock = (bool)$entry['outOfStock'];
                 $carrierName = $entry['carrierName'];
+                $storeCreditUsedTaxIncl = (float)$entry['storeCreditUsedTaxIncl'];
 
                 if (!$secureKey) {
                     $message .= '<br />'.Tools::displayError('Warning: the secure key is empty, check your payment account before validation');
@@ -658,6 +672,57 @@ abstract class PaymentModuleCore extends Module
                         $msg->id_order = (int) $order->id;
                         $msg->private = 1;
                         $msg->add();
+                    }
+                }
+
+                if (
+                    $storeCreditUsedTaxIncl > 0.0 &&
+                    $idOrderState != Configuration::get('PS_OS_ERROR') &&
+                    $idOrderState != Configuration::get('PS_OS_CANCELED')
+                ) {
+                    $consumed = StoreCredit::consumeForOrder(
+                        (int)$order->id_shop,
+                        (int)$order->id_customer,
+                        (int)$order->id,
+                        $storeCreditUsedTaxIncl
+                    );
+                    if ($consumed + 0.000001 < $storeCreditUsedTaxIncl) {
+                        Logger::addLog(
+                            'PaymentModule::validateOrder - Store credit consumption mismatch for order ' . (int)$order->id,
+                            2,
+                            null,
+                            'Order',
+                            (int)$order->id
+                        );
+                    }
+
+                    if ($consumed > 0.0 && $orderStatus->logable) {
+                        $storeCreditTransactionId = 0;
+                        try {
+                            $storeCreditTransactionId = StoreCreditTransaction::getOrderConsumptionTransactionId((int)$order->id);
+                        } catch (Exception $exception) {
+                            $storeCreditTransactionId = 0;
+                        }
+
+                        if (!$order->addOrderPayment(
+                            $consumed,
+                            'Store Credit',
+                            $storeCreditTransactionId > 0 ? (string)$storeCreditTransactionId : null,
+                            null,
+                            null,
+                            null,
+                            'store_credit'
+                        )) {
+                            Logger::addLog(
+                                'PaymentModule::validateOrder - Cannot save Store Credit Order Payment',
+                                3,
+                                null,
+                                'Cart',
+                                (int)$idCart,
+                                true
+                            );
+                            throw new PrestaShopException('Can\'t save Store Credit Order Payment');
+                        }
                     }
                 }
 
@@ -1026,7 +1091,7 @@ abstract class PaymentModuleCore extends Module
                         '{order_id}'             => $order->id,
                         '{date}'                 => Tools::displayDate(date('Y-m-d H:i:s'), null, 1),
                         '{carrier}'              => $carrierName,
-                        '{payment}'              => mb_substr($order->payment, 0, 32),
+                        '{payment}'              => mb_substr($order->getDisplayPaymentMethodsText(' + ', false, true), 0, 255),
                         '{products}'             => $productListHtml,
                         '{products_txt}'         => $productListTxt,
                         '{discounts}'            => $cartRulesListHtml,
@@ -1037,7 +1102,63 @@ abstract class PaymentModuleCore extends Module
                         '{total_shipping}'       => Tools::displayPrice($order->total_shipping, $this->context->currency, false),
                         '{total_wrapping}'       => Tools::displayPrice($order->total_wrapping, $this->context->currency, false),
                         '{total_tax_paid}'       => Tools::displayPrice(($order->total_products_wt - $order->total_products) + ($order->total_shipping_tax_incl - $order->total_shipping_tax_excl), $this->context->currency, false),
+                        '{order_totals_rows_html}' => '',
+                        '{order_totals_rows_txt}' => '',
+                        '{store_credit_total_rows_html}' => '',
+                        '{store_credit_total_rows_txt}' => '',
                     ];
+
+                    $orderTotalsRows = [
+                        [
+                            'total_products' => Tools::displayPrice(Product::getTaxCalculationMethod() == PS_TAX_EXC ? $order->total_products : $order->total_products_wt, $this->context->currency, false),
+                            'total_shipping' => Tools::displayPrice($order->total_shipping, $this->context->currency, false),
+                            'total_discounts' => Tools::displayPrice($order->total_discounts, $this->context->currency, false),
+                            'total_paid' => Tools::displayPrice($order->total_paid, $this->context->currency, false),
+                            'show_vouchers' => ((float)$order->total_discounts > 0.0),
+                        ],
+                    ];
+                    $data['{order_totals_rows_html}'] = $this->getEmailTemplateContent(
+                        'order_conf_totals_rows.tpl',
+                        Mail::TYPE_HTML,
+                        $orderTotalsRows
+                    );
+                    $data['{order_totals_rows_txt}'] = $this->getEmailTemplateContent(
+                        'order_conf_totals_rows.txt',
+                        Mail::TYPE_TEXT,
+                        $orderTotalsRows
+                    );
+
+                    try {
+                        $storeCreditUsedTaxIncl = (float)StoreCreditTransaction::getOrderConsumptionAmount((int)$order->id);
+                    } catch (Exception $exception) {
+                        $storeCreditUsedTaxIncl = 0.0;
+                    }
+                    if ($storeCreditUsedTaxIncl > 0.0) {
+                        $storeCreditUsed = Tools::displayPrice($storeCreditUsedTaxIncl, $this->context->currency, false);
+                        try {
+                            $outstandingAmountTaxIncl = Tools::roundPrice((float)$order->getOutstandingAmountTaxIncl());
+                        } catch (Exception $exception) {
+                            $outstandingAmountTaxIncl = 0.0;
+                        }
+                        $outstandingAmount = Tools::displayPrice($outstandingAmountTaxIncl, $this->context->currency, false);
+                        $storeCreditRows = [
+                            [
+                                'store_credit' => $storeCreditUsed,
+                                'amount_due'   => $outstandingAmount,
+                            ],
+                        ];
+
+                        $data['{store_credit_total_rows_html}'] = $this->getEmailTemplateContent(
+                            'order_conf_store_credit_rows.tpl',
+                            Mail::TYPE_HTML,
+                            $storeCreditRows
+                        );
+                        $data['{store_credit_total_rows_txt}'] = $this->getEmailTemplateContent(
+                            'order_conf_store_credit_rows.txt',
+                            Mail::TYPE_TEXT,
+                            $storeCreditRows
+                        );
+                    }
 
                     if (is_array($extraVars)) {
                         $data = array_merge($data, $extraVars);

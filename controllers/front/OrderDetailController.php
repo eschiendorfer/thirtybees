@@ -218,6 +218,17 @@ class OrderDetailControllerCore extends FrontController
                 $orderStatus = new OrderState((int) $idOrderState, (int) $order->id_lang);
 
                 $customer = new Customer($order->id_customer);
+                $storeCreditUsedTaxIncl = 0.0;
+                try {
+                    $storeCreditUsedTaxIncl = Tools::roundPrice((float)StoreCreditTransaction::getOrderConsumptionAmount((int)$order->id));
+                } catch (Exception $exception) {
+                    $storeCreditUsedTaxIncl = 0.0;
+                }
+                $outstandingAmountTaxIncl = Tools::roundPrice((float)$order->getOutstandingAmountTaxIncl());
+                $orderPaymentMethodsText = trim((string)$order->getDisplayPaymentMethodsText(' + ', false, true));
+                if ($orderPaymentMethodsText === '' && (string)$order->payment !== '') {
+                    $orderPaymentMethodsText = (string)$order->payment;
+                }
                 $this->context->smarty->assign(
                     [
                         'shop_name'                     => strval(Configuration::get('PS_SHOP_NAME')),
@@ -251,6 +262,9 @@ class OrderDetailControllerCore extends FrontController
                         'customizedDatas'               => $customizedDatas,
                         /* DEPRECATED: customizedDatas @since 1.5 */
                         'reorderingAllowed'             => !Configuration::get('PS_DISALLOW_HISTORY_REORDERING'),
+                        'store_credit_used_tax_incl'    => $storeCreditUsedTaxIncl,
+                        'outstanding_amount_tax_incl'   => $outstandingAmountTaxIncl,
+                        'order_payment_methods_text'    => $orderPaymentMethodsText,
                     ]
                 );
 

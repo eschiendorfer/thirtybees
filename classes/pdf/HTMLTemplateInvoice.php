@@ -258,6 +258,13 @@ class HTMLTemplateInvoiceCore extends HTMLTemplate
             $legalFreeText = Configuration::get('PS_INVOICE_LEGAL_FREE_TEXT', (int) Context::getContext()->language->id, null, (int) $this->order->id_shop);
         }
 
+        $storeCreditUsedTaxIncl = OrderInvoice::getStoreCreditUsedForOrder((int)$this->order->id);
+        $showStoreCreditOnInvoice = self::isFirstInvoiceForOrder($this->order, (int)$this->order_invoice->id);
+        $outstandingInvoiceAmountTaxIncl = $this->order_invoice->getOutstandingAmountTaxIncl();
+        $showOutstandingInvoiceAmountOnInvoice = $showStoreCreditOnInvoice && $storeCreditUsedTaxIncl > 0.0;
+        $paymentMethodsPdf = $this->order->getDisplayPaymentMethods(false, true);
+        $paymentMethodsPdfText = $this->order->getDisplayPaymentMethodsText(' + ', false, true);
+
         $data = [
             'order'                      => $this->order,
             'order_invoice'              => $this->order_invoice,
@@ -273,6 +280,12 @@ class HTMLTemplateInvoiceCore extends HTMLTemplate
             'customer'                   => $customer,
             'footer'                     => $footer,
             'legal_free_text'            => $legalFreeText,
+            'store_credit_used_tax_incl' => $storeCreditUsedTaxIncl,
+            'show_store_credit_on_invoice' => $showStoreCreditOnInvoice,
+            'outstanding_invoice_amount_tax_incl' => $outstandingInvoiceAmountTaxIncl,
+            'show_outstanding_invoice_amount' => $showOutstandingInvoiceAmountOnInvoice,
+            'payment_methods_pdf'        => $paymentMethodsPdf,
+            'payment_methods_pdf_text'   => $paymentMethodsPdfText,
         ];
         $this->smarty->assign($data);
 
@@ -439,6 +452,27 @@ class HTMLTemplateInvoiceCore extends HTMLTemplate
         }
 
         return $template;
+    }
+
+    /**
+     * @param Order $order
+     * @param int $idOrderInvoice
+     *
+     * @return bool
+     */
+    protected static function isFirstInvoiceForOrder($order, $idOrderInvoice)
+    {
+        $idOrderInvoice = (int)$idOrderInvoice;
+        if ($idOrderInvoice <= 0 || !Validate::isLoadedObject($order)) {
+            return false;
+        }
+
+        $invoices = $order->getInvoicesCollection();
+        if (!isset($invoices[0])) {
+            return true;
+        }
+
+        return (int)$invoices[0]->id === $idOrderInvoice;
     }
 
     /**

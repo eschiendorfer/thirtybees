@@ -26,7 +26,13 @@
 	<tr>
 		<td class="payment center small grey bold" width="44%">{l s='Payment Method' pdf='true'}</td>
 		<td class="payment left white" width="56%">
-			{$order->payment}
+			{if isset($payment_methods_pdf) && $payment_methods_pdf|@count > 0}
+				{foreach from=$payment_methods_pdf item=paymentMethod name=paymentMethods}
+					{$paymentMethod}{if !$smarty.foreach.paymentMethods.last} + {/if}
+				{/foreach}
+			{else}
+				{$order->payment}
+			{/if}
 		</td>
 	</tr>
 </table>

@@ -149,12 +149,37 @@ class OrderConfirmationControllerCore extends FrontController
             ]
         );
 
+        $storeCreditUsedTaxIncl = 0.0;
+        try {
+            $storeCreditUsedTaxIncl = Tools::roundPrice((float)StoreCreditTransaction::getOrderConsumptionAmount((int)$order->id));
+        } catch (Exception $exception) {
+            $storeCreditUsedTaxIncl = 0.0;
+        }
+
+        try {
+            $outstandingAmountTaxIncl = Tools::roundPrice((float)$order->getOutstandingAmountTaxIncl());
+        } catch (Exception $exception) {
+            $outstandingAmountTaxIncl = 0.0;
+        }
+        $orderConfirmationAmountTaxIncl = $storeCreditUsedTaxIncl > 0.0
+            ? $outstandingAmountTaxIncl
+            : (float)$order->total_paid_tax_incl;
+
+        $orderPaymentMethodsText = trim((string)$order->getDisplayPaymentMethodsText(' + ', false, true));
+        if ($orderPaymentMethodsText === '' && (string)$order->payment !== '') {
+            $orderPaymentMethodsText = (string)$order->payment;
+        }
+
         $this->context->smarty->assign(
             [
                 'is_guest'                => $this->context->customer->is_guest,
                 'HOOK_ORDER_CONFIRMATION' => $this->displayOrderConfirmation(),
                 'HOOK_PAYMENT_RETURN'     => $this->displayPaymentReturn(),
                 'order'                   => $order,
+                'store_credit_used_tax_incl' => $storeCreditUsedTaxIncl,
+                'outstanding_amount_tax_incl' => $outstandingAmountTaxIncl,
+                'order_confirmation_amount_tax_incl' => $orderConfirmationAmountTaxIncl,
+                'order_payment_methods_text' => $orderPaymentMethodsText,
             ]
         );
 
