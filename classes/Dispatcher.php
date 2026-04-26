@@ -1430,9 +1430,12 @@ class DispatcherCore
                         return (int) $result['id_product'];
                     }
                 }
+            } else {
+                $productLink = $link->getProductLink((int) $results[0]['id_product']);
+                if ($url === str_replace($baseLink, '', $productLink)) {
+                    return (int) $results[0]['id_product'];
+                }
             }
-
-            return (int) $results[0]['id_product'];
         }
 
         return 0;
