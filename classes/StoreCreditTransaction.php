@@ -28,10 +28,12 @@ class StoreCreditTransactionCore extends ObjectModel
     const TYPE_PAYMENT_INSTRUMENT = 1;
     const TYPE_REFUND_CREDIT = 2;
     const TYPE_MANUAL_ADJUSTMENT = 3;
+    const TYPE_ACCOUNTING_ADJUSTMENT = 4;
 
     const ENTITY_ORDER = 1;
     const ENTITY_ORDER_SLIP = 2;
     const ENTITY_MANUAL = 3;
+    const ENTITY_ACCOUNTING_TRANSACTION = 4;
 
     /**
      * @var int
@@ -111,13 +113,23 @@ class StoreCreditTransactionCore extends ObjectModel
                 'type' => self::TYPE_INT,
                 'validate' => 'isUnsignedId',
                 'required' => true,
-                'values' => [self::TYPE_PAYMENT_INSTRUMENT, self::TYPE_REFUND_CREDIT, self::TYPE_MANUAL_ADJUSTMENT],
+                'values' => [
+                    self::TYPE_PAYMENT_INSTRUMENT,
+                    self::TYPE_REFUND_CREDIT,
+                    self::TYPE_MANUAL_ADJUSTMENT,
+                    self::TYPE_ACCOUNTING_ADJUSTMENT,
+                ],
             ],
             'entity_type'      => [
                 'type' => self::TYPE_INT,
                 'validate' => 'isUnsignedId',
                 'required' => true,
-                'values' => [self::ENTITY_ORDER, self::ENTITY_ORDER_SLIP, self::ENTITY_MANUAL],
+                'values' => [
+                    self::ENTITY_ORDER,
+                    self::ENTITY_ORDER_SLIP,
+                    self::ENTITY_MANUAL,
+                    self::ENTITY_ACCOUNTING_TRANSACTION,
+                ],
             ],
             'id_entity'        => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbNullable' => true],
             'id_customer'      => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId'],
@@ -409,6 +421,7 @@ class StoreCreditTransactionCore extends ObjectModel
             static::TYPE_PAYMENT_INSTRUMENT,
             static::TYPE_REFUND_CREDIT,
             static::TYPE_MANUAL_ADJUSTMENT,
+            static::TYPE_ACCOUNTING_ADJUSTMENT,
         ], true);
     }
 
@@ -423,6 +436,7 @@ class StoreCreditTransactionCore extends ObjectModel
             static::ENTITY_ORDER,
             static::ENTITY_ORDER_SLIP,
             static::ENTITY_MANUAL,
+            static::ENTITY_ACCOUNTING_TRANSACTION,
         ], true);
     }
 }
