@@ -323,8 +323,7 @@ class StoreCreditCore extends ObjectModel
             $idCustomer <= 0 ||
             $absoluteAmountTaxIncl <= 0.0 ||
             empty($idShops) ||
-            !StoreCreditTransaction::isValidTransactionType($transactionType) ||
-            $transactionType === StoreCreditTransaction::TYPE_PAYMENT_INSTRUMENT ||
+            !in_array($transactionType, [StoreCreditTransaction::TYPE_MANUAL_ADJUSTMENT, StoreCreditTransaction::TYPE_REFUND_CREDIT], true) ||
             ($isDecrease && $transactionType !== StoreCreditTransaction::TYPE_MANUAL_ADJUSTMENT) ||
             ($note !== '' && !Validate::isCleanHtml($note))
         ) {
@@ -389,6 +388,109 @@ class StoreCreditCore extends ObjectModel
                 ],
             ]);
             return false;
+        }
+    }
+
+    /**
+     * @param int $idCustomer
+     * @param float $amountTaxIncl Positive to increase, negative to decrease store credit
+     * @param int $idAccountingTransaction
+     * @param int $idEmployee
+     * @param string $note
+     * @param array $idShops
+     *
+     * @return int Created store credit transaction id, or 0 on failure
+     */
+    public static function addAccountingAdjustment(
+        int $idCustomer,
+        float $amountTaxIncl,
+        int $idAccountingTransaction,
+        int $idEmployee = 0,
+        string $note = '',
+        array $idShops = []
+    ): int {
+        $amountTaxIncl = Tools::roundPrice((float)$amountTaxIncl);
+        $idAccountingTransaction = (int)$idAccountingTransaction;
+        $idEmployee = max(0, (int)$idEmployee);
+        $note = trim($note);
+        $isDecrease = $amountTaxIncl < 0.0;
+        $absoluteAmountTaxIncl = Tools::roundPrice(abs($amountTaxIncl));
+
+        if (
+            $idCustomer <= 0 ||
+            $idAccountingTransaction <= 0 ||
+            $absoluteAmountTaxIncl <= 0.0 ||
+            empty($idShops) ||
+            ($note !== '' && !Validate::isCleanHtml($note))
+        ) {
+            return 0;
+        }
+
+        try {
+            $idStoreCredit = static::getStoreCreditIdByCustomer($idCustomer);
+            if ($idStoreCredit <= 0) {
+                $idStoreCredit = static::createStoreCreditForCustomer($idCustomer);
+            }
+            if ($idStoreCredit <= 0) {
+                return 0;
+            }
+            if (!static::associateStoreCreditToShops($idStoreCredit, $idShops)) {
+                return 0;
+            }
+
+            $idStoreCreditTransaction = 0;
+            $writeTransaction = static function() use (
+                $idStoreCredit,
+                $idCustomer,
+                $idAccountingTransaction,
+                $absoluteAmountTaxIncl,
+                $idEmployee,
+                $note,
+                $isDecrease,
+                &$idStoreCreditTransaction
+            ): bool {
+                $transaction = new StoreCreditTransaction();
+                $transaction->id_store_credit = $idStoreCredit;
+                $transaction->id_customer = $idCustomer;
+                $transaction->transaction_sign = $isDecrease
+                    ? StoreCreditTransaction::SIGN_DECREASE
+                    : StoreCreditTransaction::SIGN_INCREASE;
+                $transaction->transaction_type = StoreCreditTransaction::TYPE_ACCOUNTING_ADJUSTMENT;
+                $transaction->entity_type = StoreCreditTransaction::ENTITY_ACCOUNTING_TRANSACTION;
+                $transaction->id_entity = $idAccountingTransaction;
+                $transaction->id_employee = $idEmployee;
+                $transaction->amount_tax_incl = $absoluteAmountTaxIncl;
+                $transaction->note = $note;
+
+                if (!$transaction->add()) {
+                    return false;
+                }
+
+                $idStoreCreditTransaction = (int)$transaction->id;
+                return $idStoreCreditTransaction > 0;
+            };
+
+            $success = $isDecrease
+                ? static::decreaseBalanceWithTransaction($idStoreCredit, $absoluteAmountTaxIncl, $writeTransaction)
+                : static::increaseBalanceWithTransaction($idStoreCredit, $absoluteAmountTaxIncl, $writeTransaction);
+
+            return $success ? $idStoreCreditTransaction : 0;
+        } catch (Exception $exception) {
+            Hook::triggerEvent('actionLogCaughtException', [
+                'exception' => $exception,
+                'extra_content' => [
+                    'source' => __METHOD__,
+                    'id_customer' => (int)$idCustomer,
+                    'transaction_type' => (int)StoreCreditTransaction::TYPE_ACCOUNTING_ADJUSTMENT,
+                    'id_accounting_transaction' => (int)$idAccountingTransaction,
+                    'id_employee' => (int)$idEmployee,
+                    'amount_tax_incl' => (float)$absoluteAmountTaxIncl,
+                    'is_decrease' => (bool)$isDecrease,
+                    'id_shops' => array_map('intval', $idShops),
+                    'note_length' => (int)Tools::strlen($note),
+                ],
+            ]);
+            return 0;
         }
     }
 

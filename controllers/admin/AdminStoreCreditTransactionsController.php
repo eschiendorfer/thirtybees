@@ -497,7 +497,7 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
         if ($amountTaxIncl < 0.0 && $transactionType !== StoreCreditTransaction::TYPE_MANUAL_ADJUSTMENT) {
             $this->errors[] = $this->l('Negative amount is only allowed for manual adjustment.');
         }
-        if (!StoreCreditTransaction::isValidTransactionType($transactionType) || $transactionType === StoreCreditTransaction::TYPE_PAYMENT_INSTRUMENT) {
+        if (!in_array($transactionType, [StoreCreditTransaction::TYPE_MANUAL_ADJUSTMENT, StoreCreditTransaction::TYPE_REFUND_CREDIT], true)) {
             $this->errors[] = $this->l('Invalid transaction type.');
         }
         if ($note !== '' && !Validate::isCleanHtml($note)) {
@@ -618,6 +618,9 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
         if ($transactionType === StoreCreditTransaction::TYPE_MANUAL_ADJUSTMENT) {
             return $this->l('Manual adjustment');
         }
+        if ($transactionType === StoreCreditTransaction::TYPE_ACCOUNTING_ADJUSTMENT) {
+            return $this->l('Accounting adjustment');
+        }
         return (string)$transactionType;
     }
 
@@ -637,6 +640,9 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
         }
         if ($entityType === StoreCreditTransaction::ENTITY_MANUAL) {
             return $this->l('Manual');
+        }
+        if ($entityType === StoreCreditTransaction::ENTITY_ACCOUNTING_TRANSACTION) {
+            return $this->l('Accounting transaction');
         }
         return (string)$entityType;
     }
@@ -670,6 +676,14 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
                 'vieworder' => 1,
             ]);
             return '<a href="' . $link . '">' . Tools::safeOutput($label) . '</a>';
+        }
+
+        if ($entityType === StoreCreditTransaction::ENTITY_ACCOUNTING_TRANSACTION) {
+            $link = $this->context->link->getAdminLink('AdminGenzoAccountingTransactions', true, [
+                'updateTransaction' => 1,
+                'id_transaction' => $idEntity,
+            ]);
+            return '<a href="' . $link . '">#' . (int)$idEntity . '</a>';
         }
 
         return (string)$idEntity;
