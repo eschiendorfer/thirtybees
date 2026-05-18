@@ -47,7 +47,7 @@ class AdminSlipControllerCore extends AdminController
         $this->table = 'order_slip';
         $this->className = 'OrderSlip';
 
-        $this->_select = 'a.`id_order_slip` AS id_pdf, o.`id_shop`, o.`reference`, CONCAT(c.`firstname`, \' \', c.`lastname`) AS `customer`, (a.`total_products_tax_incl`+a.`total_shipping_tax_incl`) AS total_tax_incl';
+        $this->_select = 'a.`id_order_slip` AS id_pdf, o.`id_shop`, o.`reference`, CONCAT(c.`firstname`, \' \', c.`lastname`) AS `customer`, COALESCE((SELECT NULLIF(op.`payment_method`, \'\') FROM `'._DB_PREFIX_.'order_payment` op WHERE op.`id_order_slip` = a.`id_order_slip` ORDER BY op.`id_order_payment` DESC LIMIT 1), o.`payment`) AS refund_payment_method, ROUND(ROUND((a.`total_products_tax_incl` + a.`total_shipping_tax_incl` - a.`adjustment_cart_rule_tax_incl` - a.`adjustment_fee_tax_incl`) * 20) / 20, 2) AS total_tax_incl';
         $this->_join .= ' LEFT JOIN '._DB_PREFIX_.'orders o ON (o.`id_order` = a.`id_order`)';
         $this->_join .= ' LEFT JOIN '._DB_PREFIX_.'customer c ON (o.`id_customer` = c.`id_customer`)';
         $this->_group = ' GROUP BY a.`id_order_slip`';
@@ -69,18 +69,23 @@ class AdminSlipControllerCore extends AdminController
                 'title' => $this->l('Customer'),
                 'havingFilter' => true,
             ],
-            'date_add'      => [
-                'title'      => $this->l('Date issued'),
-                'type'       => 'date',
-                'align'      => 'right',
-                'filter_key' => 'a!date_add',
-            ],
             'total_tax_incl' => [
                 'title' => $this->l('Total (tax incl.)'),
                 'align'         => 'text-right',
                 'type'      => 'price',
                 'havingFilter' => true,
                 'class'      => 'fixed-width-xs',
+                'callback' => 'formatTotalBadge',
+            ],
+            'refund_payment_method' => [
+                'title' => $this->l('Refund method'),
+                'havingFilter' => true,
+            ],
+            'date_add'      => [
+                'title'      => $this->l('Date issued'),
+                'type'       => 'date',
+                'align'      => 'right',
+                'filter_key' => 'a!date_add',
             ],
             'id_pdf'        => [
                 'title'          => $this->l('PDF'),
@@ -91,8 +96,6 @@ class AdminSlipControllerCore extends AdminController
                 'remove_onclick' => true,
             ],
         ];
-
-        $this->optionTitle = $this->l('Slip');
 
         $this->_orderBy = 'id_order_slip';
         $this->_orderWay = 'DESC';
@@ -118,37 +121,6 @@ class AdminSlipControllerCore extends AdminController
     }
 
     /**
-     * Post processing
-     *
-     * @return bool
-     *
-     * @throws PrestaShopDatabaseException
-     * @throws PrestaShopException
-     */
-    public function postProcess()
-    {
-        if (Tools::getValue('submitAddorder_slip')) {
-            if (!Validate::isDate(Tools::getValue('date_from'))) {
-                $this->errors[] = $this->l('Invalid "From" date');
-            }
-            if (!Validate::isDate(Tools::getValue('date_to'))) {
-                $this->errors[] = $this->l('Invalid "To" date');
-            }
-            if (!count($this->errors)) {
-                $orderSlips = OrderSlip::getSlipsIdByDate(Tools::getValue('date_from'), Tools::getValue('date_to'));
-                if (count($orderSlips)) {
-                    Tools::redirectAdmin($this->context->link->getAdminLink('AdminPdf').'&submitAction=generateOrderSlipsPDF&date_from='.urlencode(Tools::getValue('date_from')).'&date_to='.urlencode(Tools::getValue('date_to')));
-                }
-                $this->errors[] = $this->l('No order slips were found for this period.');
-            }
-        } else {
-            return parent::postProcess();
-        }
-
-        return false;
-    }
-
-    /**
      * Initialize content
      *
      * @return void
@@ -162,7 +134,6 @@ class AdminSlipControllerCore extends AdminController
         $this->initToolbar();
         $this->initPageHeaderToolbar();
         $this->content .= $this->renderList();
-        $this->content .= $this->renderForm();
         $this->content .= $this->renderOptions();
 
         $this->context->smarty->assign(
@@ -174,88 +145,6 @@ class AdminSlipControllerCore extends AdminController
                 'page_header_toolbar_btn'   => $this->page_header_toolbar_btn,
             ]
         );
-    }
-
-    /**
-     * Initialize toolbar
-     *
-     * @return void
-     */
-    public function initToolbar()
-    {
-        $this->toolbar_btn['save-date'] = [
-            'href' => '#',
-            'desc' => $this->l('Generate PDF file'),
-        ];
-    }
-
-    /**
-     * Initialize page header toolbar
-     *
-     * @return void
-     *
-     * @throws PrestaShopException
-     */
-    public function initPageHeaderToolbar()
-    {
-        $this->page_header_toolbar_btn['generate_pdf'] = [
-            'href' => static::$currentIndex.'&token='.$this->token,
-            'desc' => $this->l('Generate PDF', null, null, false),
-            'icon' => 'process-icon-save-date',
-        ];
-
-        parent::initPageHeaderToolbar();
-    }
-
-    /**
-     * Render form
-     *
-     * @return string
-     *
-     * @throws PrestaShopDatabaseException
-     * @throws PrestaShopException
-     * @throws SmartyException
-     */
-    public function renderForm()
-    {
-        $this->fields_form = [
-            'legend' => [
-                'title' => $this->l('Print a PDF'),
-                'icon'  => 'icon-print',
-            ],
-            'input'  => [
-                [
-                    'type'      => 'date',
-                    'label'     => $this->l('From'),
-                    'name'      => 'date_from',
-                    'maxlength' => 10,
-                    'required'  => true,
-                    'hint'      => $this->l('Format: 2011-12-31 (inclusive).'),
-                ],
-                [
-                    'type'      => 'date',
-                    'label'     => $this->l('To'),
-                    'name'      => 'date_to',
-                    'maxlength' => 10,
-                    'required'  => true,
-                    'hint'      => $this->l('Format: 2012-12-31 (inclusive).'),
-                ],
-            ],
-            'submit' => [
-                'title' => $this->l('Generate PDF file'),
-                'id'    => 'submitPrint',
-                'icon'  => 'process-icon-download-alt',
-            ],
-        ];
-
-        $this->fields_value = [
-            'date_from' => date('Y-m-d'),
-            'date_to'   => date('Y-m-d'),
-        ];
-
-        $this->show_toolbar = false;
-
-        return parent::renderForm();
     }
 
     /**
@@ -283,6 +172,11 @@ class AdminSlipControllerCore extends AdminController
         ]);
 
         return $this->createTemplate('_print_pdf_icon.tpl')->fetch();
+    }
+
+    public function formatTotalBadge($total, $row)
+    {
+        return '<span class="badge">'.Tools::displayPrice((float)$total).'</span>';
     }
 
     /**

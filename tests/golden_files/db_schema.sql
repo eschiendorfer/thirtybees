@@ -1539,13 +1539,18 @@ CREATE TABLE `PREFIX_order_payment` (
   `payment_method` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `conversion_rate` decimal(13,6) NOT NULL DEFAULT '1.000000',
   `transaction_id` varchar(254) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `payment_module` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `id_order_slip` int(10) unsigned NOT NULL DEFAULT '0',
+  `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'done',
   `card_number` varchar(254) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `card_brand` varchar(254) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `card_expiration` char(7) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `card_holder` varchar(254) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `date_add` datetime NOT NULL,
   PRIMARY KEY (`id_order_payment`),
-  KEY `order_reference` (`order_reference`)
+  KEY `order_reference` (`order_reference`),
+  KEY `id_order_slip` (`id_order_slip`),
+  KEY `status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `PREFIX_order_return` (
@@ -1597,6 +1602,12 @@ CREATE TABLE `PREFIX_order_slip` (
   `shipping_cost_amount` decimal(20,6) NOT NULL,
   `partial` tinyint(1) NOT NULL,
   `order_slip_type` tinyint(1) unsigned NOT NULL DEFAULT '0',
+  `reason_entity_type` varchar(64) NOT NULL DEFAULT '',
+  `reason_id_entity` int(11) unsigned NOT NULL DEFAULT '0',
+  `adjustment_cart_rule_tax_excl` decimal(20,6) NOT NULL DEFAULT '0.000000',
+  `adjustment_cart_rule_tax_incl` decimal(20,6) NOT NULL DEFAULT '0.000000',
+  `adjustment_fee_tax_excl` decimal(20,6) NOT NULL DEFAULT '0.000000',
+  `adjustment_fee_tax_incl` decimal(20,6) NOT NULL DEFAULT '0.000000',
   `date_add` datetime NOT NULL,
   `date_upd` datetime NOT NULL,
   PRIMARY KEY (`id_order_slip`),

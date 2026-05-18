@@ -27,10 +27,10 @@
 
 	<thead>
 		<tr>
-			<th class="product header small" width="60%">{l s='Product / Reference' pdf='true'}</th>
-			<th class="product header small" width="10%">{l s='Qty' pdf='true'}</th>
+			<th class="product header small" width="55%">{l s='Product / Reference' pdf='true'}</th>
+			<th class="product header small" width="15%">{l s='Reference' pdf='true'}</th>
 			<th class="product header-right small" width="15%">{l s='Unit price' pdf='true'}<br />{if $tax_excluded_display}{l s='(Tax Excl.)' pdf='true'}{else}{l s='(Tax Incl.)' pdf='true'}{/if}</th>
-			<th class="product header-right small" width="15%">{l s='Price' pdf='true'}<br />{if $tax_excluded_display}{l s='(Tax Excl.)' pdf='true'}{else}{l s='(Tax Incl.)' pdf='true'}{/if}</th>
+			<th class="product header-right small" width="15%">{l s='Refunded' pdf='true'}<br />{if $tax_excluded_display}{l s='(Tax Excl.)' pdf='true'}{else}{l s='(Tax Incl.)' pdf='true'}{/if}</th>
 		</tr>
 	</thead>
 
@@ -49,13 +49,13 @@
 						{$order_detail.product_name}
 					</td>
 					<td class="product center">
-						{$order_detail.product_quantity}
+						{$order_detail.product_reference}
 					</td>
 					<td class="product right">
 						{if $tax_excluded_display}
-							- {displayPrice currency=$order->id_currency price=$order_detail.unit_price_tax_excl}
+							- {displayPrice currency=$order->id_currency price=$order_detail.order_unit_price_tax_excl}
 						{else}
-							- {displayPrice currency=$order->id_currency price=$order_detail.unit_price_tax_incl}
+							- {displayPrice currency=$order->id_currency price=$order_detail.order_unit_price_tax_incl}
 						{/if}
 					</td>
 					<td class="product right">
@@ -70,7 +70,7 @@
 				{foreach $order_detail.customizedDatas as $customizationPerAddress}
 					{foreach $customizationPerAddress as $customizationId => $customization}
 						<tr class="customization_data {$bgcolor_class}">
-							<td>
+							<td colspan="2">
 								<table style="width: 100%;"><tr><td>
 									{foreach $customization.datas as $customization_types}
 										{if isset($customization.datas[Product::CUSTOMIZE_TEXTFIELD]) && count($customization.datas[Product::CUSTOMIZE_FILE]) > 0}
@@ -88,7 +88,6 @@
 								</td></tr></table>
 							</td>
 
-							<td class="center">({$customization.quantity})</td>
 							<td class="product"></td>
 							<td class="product"></td>
 						</tr>

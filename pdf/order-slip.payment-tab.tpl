@@ -24,9 +24,21 @@
 *}
 <table id="payment-tab" width="100%">
 	<tr>
-		<td class="payment center small grey bold" width="44%">{l s='Payment Method' pdf='true'}</td>
+		<td class="payment center small grey bold" width="44%">{l s='Refund method' pdf='true'}</td>
 		<td class="payment left white" width="56%">
-			{$order->payment}
+			{if $refund_payment_method}
+				{$refund_payment_method|escape:'html':'UTF-8'}
+			{else}
+				{l s='Original payment method:' pdf='true'} {$order->payment|escape:'html':'UTF-8'}
+			{/if}
 		</td>
 	</tr>
+	{if $refund_payment_date}
+		<tr>
+			<td class="payment center small grey bold" width="44%">{l s='Refund date' pdf='true'}</td>
+			<td class="payment left white" width="56%">
+				{dateFormat date=$refund_payment_date full=0}
+			</td>
+		</tr>
+	{/if}
 </table>

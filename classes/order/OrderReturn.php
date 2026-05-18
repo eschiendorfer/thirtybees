@@ -34,6 +34,12 @@
  */
 class OrderReturnCore extends ObjectModel
 {
+    public const STATE_WAITING_FOR_CONFIRMATION = 1;
+    public const STATE_WAITING_FOR_PACKAGE = 2;
+    public const STATE_PACKAGE_RECEIVED = 3;
+    public const STATE_RETURN_DENIED = 4;
+    public const STATE_RETURN_COMPLETED = 5;
+
     /**
      * @var array Object model definition
      */
@@ -111,6 +117,130 @@ class OrderReturnCore extends ObjectModel
     public static function deleteOrderReturnDetail($idOrderReturn, $idOrderDetail, $idCustomization = 0)
     {
         return Db::getInstance()->execute('DELETE FROM `'._DB_PREFIX_.'order_return_detail` WHERE `id_order_detail` = '.(int) $idOrderDetail.' AND `id_order_return` = '.(int) $idOrderReturn.' AND `id_customization` = '.(int) $idCustomization);
+    }
+
+    public static function isWaitingState(int $state): bool
+    {
+        return in_array($state, [
+            self::STATE_WAITING_FOR_CONFIRMATION,
+            self::STATE_WAITING_FOR_PACKAGE,
+        ], true);
+    }
+
+    public static function getWaitingReturnForOrder(int $idOrder): ?self
+    {
+        $idOrderReturn = (int)Db::readOnly()->getValue(
+            (new DbQuery())
+                ->select('`id_order_return`')
+                ->from('order_return')
+                ->where('`id_order` = ' . (int)$idOrder)
+                ->where('`state` IN (' . implode(',', [
+                    self::STATE_WAITING_FOR_CONFIRMATION,
+                    self::STATE_WAITING_FOR_PACKAGE,
+                ]) . ')')
+                ->orderBy('`date_add` DESC')
+        );
+
+        if ($idOrderReturn <= 0) {
+            return null;
+        }
+
+        $orderReturn = new self($idOrderReturn);
+        return Validate::isLoadedObject($orderReturn) ? $orderReturn : null;
+    }
+
+    public static function getOrCreateBackOfficeReturn(Order $order, int $state): ?self
+    {
+        $orderReturn = self::getWaitingReturnForOrder((int)$order->id);
+
+        if ($orderReturn) {
+            $orderReturn->state = $state;
+            return $orderReturn->save() ? $orderReturn : null;
+        }
+
+        $orderReturn = new self();
+        $orderReturn->id_customer = (int)$order->id_customer;
+        $orderReturn->id_order = (int)$order->id;
+        $orderReturn->state = $state;
+        $orderReturn->question = '';
+
+        if (!$orderReturn->add()) {
+            return null;
+        }
+
+        Hook::triggerEvent('actionOrderReturn', ['orderReturn' => $orderReturn]);
+
+        return $orderReturn;
+    }
+
+    public static function upsertReturnDetail(
+        int $idOrderReturn,
+        int $idOrderDetail,
+        int $quantity,
+        int $idCustomization = 0
+    ): bool {
+        $quantity = max(0, $quantity);
+        $where = '`id_order_return` = ' . (int)$idOrderReturn
+            . ' AND `id_order_detail` = ' . (int)$idOrderDetail
+            . ' AND `id_customization` = ' . (int)$idCustomization;
+
+        $exists = (bool)Db::readOnly()->getValue(
+            (new DbQuery())
+                ->select('1')
+                ->from('order_return_detail')
+                ->where($where)
+        );
+
+        if ($exists) {
+            if ($quantity <= 0) {
+                return (bool)Db::getInstance()->delete('order_return_detail', $where);
+            }
+
+            return (bool)Db::getInstance()->update(
+                'order_return_detail',
+                ['product_quantity' => (int)$quantity],
+                $where
+            );
+        }
+
+        if ($quantity <= 0) {
+            return true;
+        }
+
+        return (bool)Db::getInstance()->insert(
+            'order_return_detail',
+            [
+                'id_order_return' => (int)$idOrderReturn,
+                'id_order_detail' => (int)$idOrderDetail,
+                'id_customization' => (int)$idCustomization,
+                'product_quantity' => (int)$quantity,
+            ]
+        );
+    }
+
+    public static function getOpenReturnQuantityByOrderDetail(int $idOrderDetail): int
+    {
+        return (int)Db::readOnly()->getValue(
+            (new DbQuery())
+                ->select('COALESCE(SUM(ord.`product_quantity`), 0)')
+                ->from('order_return_detail', 'ord')
+                ->innerJoin('order_return', 'orx', 'orx.`id_order_return` = ord.`id_order_return`')
+                ->where('ord.`id_order_detail` = ' . (int)$idOrderDetail)
+                ->where('orx.`state` IN (' . implode(',', [
+                    self::STATE_WAITING_FOR_CONFIRMATION,
+                    self::STATE_WAITING_FOR_PACKAGE,
+                ]) . ')')
+        );
+    }
+
+    public function getDetailRows(): array
+    {
+        return Db::readOnly()->getArray(
+            (new DbQuery())
+                ->select('*')
+                ->from('order_return_detail')
+                ->where('`id_order_return` = ' . (int)$this->id)
+        );
     }
 
     /**

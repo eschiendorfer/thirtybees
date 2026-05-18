@@ -34,6 +34,11 @@
  */
 class OrderPaymentCore extends ObjectModel
 {
+    public const STATUS_DONE = 'done';
+    public const STATUS_PENDING = 'pending';
+    public const STATUS_FAILED = 'failed';
+    public const STATUS_MANUAL = 'manual';
+
     /** @var string $order_reference */
     public $order_reference;
     /** @var int $id_currency */
@@ -46,6 +51,12 @@ class OrderPaymentCore extends ObjectModel
     public $conversion_rate;
     /** @var string $transaction_id */
     public $transaction_id;
+    /** @var string $payment_module */
+    public $payment_module = '';
+    /** @var int $id_order_slip */
+    public $id_order_slip = 0;
+    /** @var string $status */
+    public $status = self::STATUS_DONE;
     /** @var string $card_number */
     public $card_number;
     /** @var string $card_brand */
@@ -71,6 +82,9 @@ class OrderPaymentCore extends ObjectModel
             'payment_method'  => ['type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'dbNullable' => false],
             'conversion_rate' => ['type' => self::TYPE_FLOAT, 'validate' => 'isFloat', 'size' => 13, 'decimals' => 6, 'dbDefault' => '1.000000'],
             'transaction_id'  => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 254],
+            'payment_module'  => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 64, 'dbDefault' => ''],
+            'id_order_slip'   => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '0'],
+            'status'          => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 16, 'dbDefault' => self::STATUS_DONE],
             'card_number'     => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 254],
             'card_brand'      => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 254                     ],
             'card_expiration' => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 7, 'dbType' => 'char(7)'],
@@ -80,6 +94,8 @@ class OrderPaymentCore extends ObjectModel
         'keys' => [
             'order_payment' => [
                 'order_reference' => ['type' => ObjectModel::KEY, 'columns' => ['order_reference']],
+                'id_order_slip' => ['type' => ObjectModel::KEY, 'columns' => ['id_order_slip']],
+                'status' => ['type' => ObjectModel::KEY, 'columns' => ['status']],
             ],
         ],
     ];
@@ -203,5 +219,38 @@ class OrderPaymentCore extends ObjectModel
         }
 
         return new OrderInvoice((int) $res);
+    }
+
+    public static function addRefundForOrderSlip(
+        Order $order,
+        int $idOrderSlip,
+        float $amount,
+        string $paymentMethod,
+        string $paymentModule,
+        string $status = self::STATUS_PENDING,
+        ?string $transactionId = null
+    ): bool {
+        $currency = new Currency((int)$order->id_currency);
+        $orderInvoice = null;
+        if ($order->hasInvoice()) {
+            foreach ($order->getInvoicesCollection() as $invoice) {
+                if (Validate::isLoadedObject($invoice)) {
+                    $orderInvoice = $invoice;
+                    break;
+                }
+            }
+        }
+
+        return $order->addOrderPayment(
+            -abs($amount),
+            $paymentMethod,
+            $transactionId,
+            $currency,
+            date('Y-m-d H:i:s'),
+            $orderInvoice,
+            $paymentModule,
+            $idOrderSlip,
+            $status
+        );
     }
 }

@@ -179,7 +179,8 @@ class AdminPdfControllerCore extends AdminController
             throw new PrestaShopException(Tools::displayError('The order slip cannot be found within your database.'));
         }
 
-        $this->generatePDF($orderSlip, PDF::TEMPLATE_ORDER_SLIP);
+        $pdf = new PDF($orderSlip, PDF::TEMPLATE_ORDER_SLIP, $this->context->smarty);
+        $pdf->render('I');
     }
 
     /**
@@ -294,31 +295,6 @@ class AdminPdfControllerCore extends AdminController
         }
 
         $this->generatePDF($orderInvoiceCollection, PDF::TEMPLATE_INVOICE);
-    }
-
-    /**
-     * Generate Order Slip PDFs
-     *
-     * @return void
-     *
-     * @throws PrestaShopDatabaseException
-     * @throws PrestaShopException
-     * @throws SmartyException
-     * @throws SmartyException
-     */
-    public function processGenerateOrderSlipsPDF()
-    {
-        $idOrderSlipsList = OrderSlip::getSlipsIdByDate(Tools::getValue('date_from'), Tools::getValue('date_to'));
-        if (!count($idOrderSlipsList)) {
-            throw new PrestaShopException(Tools::displayError('No order slips were found.'));
-        }
-
-        $orderSlips = [];
-        foreach ($idOrderSlipsList as $idOrderSlips) {
-            $orderSlips[] = new OrderSlip((int) $idOrderSlips);
-        }
-
-        $this->generatePDF($orderSlips, PDF::TEMPLATE_ORDER_SLIP);
     }
 
     /**

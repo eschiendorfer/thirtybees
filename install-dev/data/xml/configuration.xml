@@ -478,6 +478,9 @@
     <configuration id="PS_STOCK_CUSTOMER_ORDER_REASON" name="PS_STOCK_CUSTOMER_ORDER_REASON">
       <value>3</value>
     </configuration>
+    <configuration id="PS_STOCK_CUSTOMER_RETURN_REASON" name="PS_STOCK_CUSTOMER_RETURN_REASON">
+      <value>1</value>
+    </configuration>
     <configuration id="PS_UNIDENTIFIED_GROUP" name="PS_UNIDENTIFIED_GROUP">
       <value>1</value>
     </configuration>

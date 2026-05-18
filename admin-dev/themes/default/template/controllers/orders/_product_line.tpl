@@ -63,7 +63,7 @@
 				</small>
 			{/if}
 		</span>
-		{if $can_edit}
+		{if ($can_edit && $order->canEditProducts())}
 		<div class="product_price_edit" style="display:none;">
 			<input type="hidden" name="product_id_order_detail" class="edit_product_id_order_detail" value="{$product['id_order_detail']}" />
 			<div class="form-group">
@@ -100,7 +100,7 @@
 	</td>
 	<td class="productQuantity text-center">
 		<span class="product_quantity_show{if (int)$product['product_quantity'] - (int)$product['customized_product_quantity'] > 1} badge{/if}">{(int)$product['product_quantity'] - (int)$product['customized_product_quantity']}</span>
-		{if $can_edit}
+		{if ($can_edit && $order->canEditProducts())}
 		<span class="product_quantity_edit" style="display:none;">
 			<input type="text" name="product_quantity" class="edit_product_quantity" value="{$product['product_quantity']|htmlentities}"/>
 		</span>
@@ -153,68 +153,72 @@
 		{displayPrice price=$product_total currency=$currency->id}
 	</td>
 	<td colspan="2" style="display: none;" class="add_product_fields">&nbsp;</td>
-	<td class="cancelCheck standard_refund_fields current-edit" style="display:none">
-		<input type="hidden" name="totalQtyReturn" id="totalQtyReturn" value="{$product['product_quantity_return']}" />
-		<input type="hidden" name="totalQty" id="totalQty" value="{$product['product_quantity']}" />
-		<input type="hidden" name="productName" id="productName" value="{$product['product_name']}" />
-	{if ((!$order->hasBeenDelivered() OR Configuration::get('PS_ORDER_RETURN')) AND (int)($product['product_quantity_return']) < (int)($product['product_quantity']))}
-		<input type="checkbox" name="id_order_detail[{$product['id_order_detail']}]" id="id_order_detail[{$product['id_order_detail']}]" value="{$product['id_order_detail']}" onchange="setCancelQuantity(this, {$product['id_order_detail']}, {$product['product_quantity'] - $product['customizationQuantityTotal'] - $product['product_quantity_return'] - $product['product_quantity_refunded']})" {if ($product['product_quantity_return'] + $product['product_quantity_refunded'] >= $product['product_quantity'])}disabled="disabled" {/if}/>
-	{else}
-		--
-	{/if}
-	</td>
-	<td class="cancelQuantity standard_refund_fields current-edit" style="display:none">
-	{if ($product['product_quantity_return'] + $product['product_quantity_refunded'] >= $product['product_quantity'])}
-		<input type="hidden" name="cancelQuantity[{$product['id_order_detail']}]" value="0" />
-	{elseif (!$order->hasBeenDelivered() OR Configuration::get('PS_ORDER_RETURN'))}
-		<input type="text" id="cancelQuantity_{$product['id_order_detail']}" name="cancelQuantity[{$product['id_order_detail']}]" onchange="checkTotalRefundProductQuantity(this)" value="" />
-	{/if}
-
-	{if $product['customizationQuantityTotal']}
-		{assign var=productQuantity value=($product['product_quantity']-$product['customizationQuantityTotal'])}
-	{else}
-		{assign var=productQuantity value=$product['product_quantity']}
-	{/if}
-
-	{if ($order->hasBeenDelivered())}
-		{$product['product_quantity_refunded']}/{$productQuantity-$product['product_quantity_refunded']}
-	{elseif ($order->hasBeenPaid())}
-		{$product['product_quantity_return']}/{$productQuantity}
-	{else}
-		0/{$productQuantity}
-	{/if}
-	</td>
 	<td class="partial_refund_fields current-edit" colspan="2" style="display:none; width: 250px;">
-		{if $product['quantity_refundable'] > 0}
 		{if ($order->getTaxCalculationMethod() == $smarty.const.PS_TAX_EXC)}
 			{assign var='amount_refundable' value=$product['amount_refundable']}
 		{else}
 			{assign var='amount_refundable' value=$product['amount_refundable_tax_incl']}
 		{/if}
+		{if $amount_refundable > 0}
 		<div class="form-group">
-			<div class="{if $product['amount_refundable'] > 0}col-lg-4{else}col-lg-12{/if}">
-				<label class="control-label">
-					{l s='Quantity:'}
-				</label>
-				<div class="input-group">
-					<input onchange="checkPartialRefundProductQuantity(this)" type="text" name="partialRefundProductQuantity[{{$product['id_order_detail']}}]" value="0" />
-					<div class="input-group-addon">/ {$product['quantity_refundable']}</div>
-				</div>
-			</div>
-			<div class="{if $product['quantity_refundable'] > 0}col-lg-8{else}col-lg-12{/if}">
+			<div class="col-lg-12">
 				<label class="control-label">
 					<span class="title_box ">{l s='Amount:'}</span>
 					<small class="text-muted">({$smarty.capture.TaxMethod})</small>
 				</label>
 				<div class="input-group">
 					{if $currency->format % 2}<div class="input-group-addon">{$currency->sign}</div>{/if}
-					<input onchange="checkPartialRefundProductAmount(this)" type="text" name="partialRefundProduct[{$product['id_order_detail']}]" />
+					<input
+						onchange="checkPartialRefundProductAmount(this)"
+						type="text"
+						class="credit-product-amount-input"
+						name="partialRefundProduct[{$product['id_order_detail']}]"
+						data-id-order-detail="{$product['id_order_detail']|intval}"
+						data-credit-max="{$amount_refundable|floatval}"
+					/>
+					<input
+						type="hidden"
+						class="credit-product-quantity-input"
+						name="partialRefundProductQuantity[{$product['id_order_detail']}]"
+						data-id-order-detail="{$product['id_order_detail']|intval}"
+						value="0"
+					/>
 					{if !($currency->format % 2)}<div class="input-group-addon">{$currency->sign}</div>{/if}
 				</div>
 				<p class="help-block"><i class="icon-warning-sign"></i> {l s='(Max %s %s)' sprintf=[Tools::displayPrice($amount_refundable, $currency->id) , $smarty.capture.TaxMethod]}</p>
 			</div>
 		</div>
 		{/if}
+	</td>
+	<td class="order_product_action_fields current-edit" colspan="2" style="display:none; width: 250px;">
+		{if isset($product.order_action_capabilities)}
+			{assign var=order_action_cap value=$product.order_action_capabilities}
+		{else}
+			{assign var=order_action_cap value=false}
+		{/if}
+		<div class="form-group">
+			<div class="col-lg-4 order-product-action-quantity">
+				<label class="control-label">
+					{l s='Quantity:'}
+				</label>
+				<div class="input-group">
+					<input
+						type="text"
+						class="order-product-action-quantity-input"
+						name="order_product_action_quantity[{$product['id_order_detail']}]"
+						value="0"
+						data-cancelable-quantity="{if isset($order_action_cap.cancelable_quantity)}{$order_action_cap.cancelable_quantity|intval}{else}0{/if}"
+						data-returnable-quantity="{if isset($order_action_cap.returnable_quantity)}{$order_action_cap.returnable_quantity|intval}{else}0{/if}"
+						data-serviceable-quantity="{if isset($order_action_cap.serviceable_quantity)}{$order_action_cap.serviceable_quantity|intval}{else}0{/if}"
+					/>
+					<div class="input-group-addon">
+						<span class="order-product-action-limit order-product-action-limit-cancel" style="display:none;">/ {if isset($order_action_cap.cancelable_quantity)}{$order_action_cap.cancelable_quantity|intval}{else}0{/if}</span>
+						<span class="order-product-action-limit order-product-action-limit-return" style="display:none;">/ {if isset($order_action_cap.returnable_quantity)}{$order_action_cap.returnable_quantity|intval}{else}0{/if}</span>
+						<span class="order-product-action-limit order-product-action-limit-service" style="display:none;">/ {if isset($order_action_cap.serviceable_quantity)}{$order_action_cap.serviceable_quantity|intval}{else}0{/if}</span>
+					</div>
+				</div>
+			</div>
+		</div>
 	</td>
 	{if ($can_edit && $order->canEditProducts())}
 	<td class="product_invoice" style="display: none;">

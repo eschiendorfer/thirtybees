@@ -51,7 +51,6 @@ $function_array = [
     'delivery' => 'generateDeliverySlipPDF',
     'invoices' => 'generateInvoicesPDF',
     'invoices2' => 'generateInvoicesPDF2',
-    'slips' => 'generateOrderSlipsPDF',
     'deliveryslips' => 'generateDeliverySlipsPDF',
     'id_supply_order' => 'generateSupplyOrderFormPDF'
 ];

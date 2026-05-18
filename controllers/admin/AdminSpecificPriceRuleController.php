@@ -354,7 +354,7 @@ class AdminSpecificPriceRuleControllerCore extends AdminController
             'reduction'       => ($value = $this->getFieldValue($this->object, 'reduction')) ? $value : 0,
             'leave_bprice_on' => $price ? 0 : 1,
             'leave_bprice'    => $price ? 0 : 1,
-            'shop_id'         => (($value = $this->getFieldValue($this->object, 'id_shop')) ? $value : 1),
+            'shop_id'         => (($value = $this->getFieldValue($this->object, 'id_shop')) ? $value : (int) $this->context->shop->id),
         ];
 
         $attributeGroups = [];
@@ -383,6 +383,7 @@ class AdminSpecificPriceRuleControllerCore extends AdminController
             'features'         => $features,
             'categories'       => Category::getSimpleCategories((int) $this->context->language->id),
             'conditions'       => $this->object->getConditions(),
+            'current_shop_id'  => (int) $this->context->shop->id,
             'is_multishop'     => Shop::isFeatureActive(),
         ];
 

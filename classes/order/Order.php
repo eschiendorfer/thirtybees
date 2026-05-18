@@ -1001,7 +1001,7 @@ class OrderCore extends ObjectModel
     }
 
     /**
-     * Returns true, if order product list can be modified -- products can be added, deleted, or change quantity
+     * Returns true if the order product list can still be structurally modified before payment and shipment.
      *
      * @return bool
      *
@@ -1022,7 +1022,7 @@ class OrderCore extends ObjectModel
      */
     protected function resolveCanEditProducts(): bool
     {
-        if ($this->hasBeenDelivered()) {
+        if (!(new CancelEligibilityService())->canEditProductsInBackOffice($this)) {
             return false;
         }
         $responses = Hook::getResponses('actionCanEditOrderProducts', ['order' => $this]);
@@ -2208,7 +2208,17 @@ class OrderCore extends ObjectModel
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public function addOrderPayment($amountPaid, $paymentMethod = null, $paymentTransactionId = null, $currency = null, $date = null, $orderInvoice = null)
+    public function addOrderPayment(
+        $amountPaid,
+        $paymentMethod = null,
+        $paymentTransactionId = null,
+        $currency = null,
+        $date = null,
+        $orderInvoice = null,
+        $paymentModule = null,
+        $idOrderSlip = 0,
+        $status = OrderPayment::STATUS_DONE
+    )
     {
         $orderPayment = new OrderPayment();
         $orderPayment->order_reference = $this->reference;
@@ -2220,6 +2230,9 @@ class OrderCore extends ObjectModel
         $orderPayment->transaction_id = $paymentTransactionId;
         $orderPayment->amount = $amountPaid;
         $orderPayment->date_add = ($date ? $date : null);
+        $orderPayment->payment_module = (string)($paymentModule ?: $this->module);
+        $orderPayment->id_order_slip = (int)$idOrderSlip;
+        $orderPayment->status = (string)($status ?: OrderPayment::STATUS_DONE);
 
         // Add time to the date if needed
         if ($orderPayment->date_add != null && preg_match('/^[0-9]+-[0-9]+-[0-9]+$/', $orderPayment->date_add)) {

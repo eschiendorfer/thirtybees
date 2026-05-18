@@ -157,24 +157,48 @@
 						</span>
           {/if}
           &nbsp;
-          {if Configuration::get('PS_ORDER_RETURN')}
-            <a id="desc-order-standard_refund" class="btn btn-default" href="#refundForm">
-              <i class="icon-exchange"></i>
-              {if $order->hasBeenShipped()}
-                {l s='Return products'}
-              {elseif $order->hasBeenPaid()}
-                {l s='Standard refund'}
-              {else}
-                {l s='Cancel products'}
+          {if $can_edit}
+            {assign var=has_order_action_cancel value=false}
+            {assign var=has_order_action_return value=false}
+            {assign var=has_order_action_service value=false}
+            {foreach from=$products item=order_action_product}
+              {if isset($order_action_product.order_action_capabilities.cancelable_quantity) && $order_action_product.order_action_capabilities.cancelable_quantity > 0}
+                {assign var=has_order_action_cancel value=true}
               {/if}
+              {if isset($order_action_product.order_action_capabilities.returnable_quantity) && $order_action_product.order_action_capabilities.returnable_quantity > 0}
+                {assign var=has_order_action_return value=true}
+              {/if}
+              {if isset($order_action_product.order_action_capabilities.serviceable_quantity) && $order_action_product.order_action_capabilities.serviceable_quantity > 0}
+                {assign var=has_order_action_service value=true}
+              {/if}
+            {/foreach}
+            {if $has_order_action_cancel}
+            <a id="desc-order-action-cancel" class="btn btn-default order-product-action-button" href="#refundForm" onclick="selectOrderProductActionMode('cancel'); return false;">
+              <i class="icon-remove"></i>
+              {l s='Cancel products'}
             </a>
             &nbsp;
-          {/if}
-          {if $order->hasInvoice()}
-            <a id="desc-order-partial_refund" class="btn btn-default" href="#refundForm">
-              <i class="icon-exchange"></i>
-              {l s='Partial refund'}
+            {/if}
+            {if $has_order_action_return}
+            <a id="desc-order-action-return" class="btn btn-default order-product-action-button" href="#refundForm" onclick="selectOrderProductActionMode('return'); return false;">
+              <i class="icon-mail-reply"></i>
+              {l s='Return products'}
             </a>
+            &nbsp;
+            {/if}
+            {if $has_order_action_service}
+            <a id="desc-order-action-service" class="btn btn-default order-product-action-button" href="#refundForm" onclick="selectOrderProductActionMode('service'); return false;">
+              <i class="icon-wrench"></i>
+              {l s='Service case'}
+            </a>
+            &nbsp;
+            {/if}
+            {if $order->hasInvoice()}
+            <a id="desc-order-credit" class="btn btn-default order-credit-button" href="#refundForm">
+              <i class="icon-file-text"></i>
+              {l s='Gutschrift'}
+            </a>
+            {/if}
           {/if}
         </div>
         <!-- Tab nav -->
@@ -942,11 +966,126 @@
             {l s='Products'} <span class="badge">{$products|@count}</span>
           </div>
           <div id="refundForm">
-            <!--
-						<a href="#" class="standard_refund"><img src="../img/admin/add.gif" alt="{l s='Process a standard refund'}" /> {l s='Process a standard refund'}</a>
-						<a href="#" class="partial_refund"><img src="../img/admin/add.gif" alt="{l s='Process a partial refund'}" /> {l s='Process a partial refund'}</a>
-					-->
+            <div id="order_product_action_form" class="form-horizontal row-margin-top" style="display:none;">
+              <input type="hidden" id="order_product_action_type" name="order_product_action_type" value="" disabled="disabled" />
+              <div class="form-group">
+                <div class="col-lg-12">
+                  <button type="submit" name="submitOrderProductAction" class="btn btn-default">
+                    <i class="icon-check"></i>
+                    <span id="order_product_action_submit_label">{l s='Apply order action'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div id="credit_reason_form" class="partial_refund_fields form-horizontal row-margin-top" style="display:none;">
+              <div class="form-group">
+                <label class="control-label col-lg-2" for="reason_entity_type">{l s='Reason'}</label>
+                <div class="col-lg-3">
+                  <select id="reason_entity_type" name="reason_entity_type" class="form-control" disabled="disabled" required="required">
+                    <option value="" selected="selected" disabled="disabled">{l s='Please select'}</option>
+                    <option value="manual">{l s='Manual credit'}</option>
+                    <option value="order_return">{l s='Return'}</option>
+                    {if !empty($cancellation_credit_available)}
+                      <option value="cancellation">{l s='Cancellation'}</option>
+                    {/if}
+                    <option value="service_case" disabled="disabled">{l s='Service case'}</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group credit-reason-entity-group">
+                <label class="control-label col-lg-2" for="reason_id_entity">{l s='Reference'}</label>
+                <div class="col-lg-3">
+                  <select id="reason_id_entity" name="reason_id_entity" class="form-control" disabled="disabled">
+                    <option value="" disabled="disabled">{l s='Please select'}</option>
+                    {if !empty($cancellation_credit_available)}
+                      <option value="{$order->id|intval}" data-reason-type="cancellation">{$order->reference|escape:'html':'UTF-8'} - {l s='Cancellation'}</option>
+                    {/if}
+                    {foreach from=$credit_order_return_options item=credit_order_return}
+                      <option value="{$credit_order_return.id_order_return|intval}" data-reason-type="order_return">{$credit_order_return.label|escape:'html':'UTF-8'}</option>
+                    {/foreach}
+                  </select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="control-label col-lg-2" for="credit_refund_method">{l s='Refund method'}</label>
+                <div class="col-lg-3">
+                  <select id="credit_refund_method" name="order_product_refund_method" class="form-control" disabled="disabled" required="required">
+                    <option value="" selected="selected" disabled="disabled">{l s='Please select'}</option>
+                    <option value="store_credit" {if !isset($store_credit_refund_available) || !$store_credit_refund_available}disabled="disabled"{/if}>{l s='Store Credit'}</option>
+                    <option value="none">{l s='No refund'}</option>
+                    <option value="original_payment" {if empty($original_payment_refund_available)}disabled="disabled"{/if}>{if !empty($original_payment_refund_label)}{$original_payment_refund_label|escape:'html':'UTF-8'}{else}{l s='Original payment method'}{/if}</option>
+                  </select>
+                </div>
+              </div>
+            </div>
           </div>
+          <script type="text/javascript">
+            var orderCreditSuggestions = JSON.parse('{$credit_suggestions_json|escape:'javascript':'UTF-8'}');
+
+            function selectOrderProductActionMode(action) {
+              var submitLabels = {
+                'cancel': '{l s='Apply cancellation'}',
+                'return': '{l s='Apply return'}',
+                'service': '{l s='Apply service case'}'
+              };
+
+              $('.order-product-action-button').removeClass('btn-primary').addClass('btn-default');
+              $('#desc-order-action-' + action).removeClass('btn-default').addClass('btn-primary');
+
+              $('.partial_refund_fields, .order_product_action_fields').css('display', 'none');
+              $('.partial_refund_fields :input, .order_product_action_fields :input').prop('disabled', true);
+              var $orderActionCells = $('#orderProducts td.order_product_action_fields');
+              $('#orderProducts th.order_product_action_fields').css('display', 'table-cell');
+              $orderActionCells.css('display', 'table-cell');
+              $orderActionCells.find(':input').prop('disabled', false);
+              $('.order-product-action-limit').hide();
+              $('.order-product-action-limit-' + action).show();
+              $('#order_product_action_product_header').text('{l s='Quantity'}');
+
+              if ($('#order_product_action_type').val() !== action) {
+                $('input.order-product-action-quantity-input').val('0');
+              }
+
+              var $orderProductActionForm = $('#order_product_action_form');
+              $orderProductActionForm.insertAfter($('#orderProducts').closest('.table-responsive'));
+              $orderProductActionForm.show();
+              $orderProductActionForm.find(':input').prop('disabled', false);
+              $('#order_product_action_type').val(action);
+              $('#order_product_action_submit_label').text(submitLabels[action]);
+
+              $('.order-product-action-quantity').removeClass('col-lg-4').addClass('col-lg-12');
+
+              $orderActionCells.find('input.order-product-action-quantity-input').each(function () {
+                var $quantityInput = $(this);
+                var $actionCell = $quantityInput.closest('td.order_product_action_fields');
+                var availableQuantity = parseInt($quantityInput.attr('data-' + action + 'able-quantity'), 10);
+
+                if (isNaN(availableQuantity)) {
+                  availableQuantity = parseInt(
+                    $actionCell.find('.order-product-action-limit-' + action).text().replace(/[^0-9]/g, ''),
+                    10
+                  );
+                }
+
+                var hasLimit = !isNaN(availableQuantity);
+                var isAvailable = !hasLimit || availableQuantity > 0;
+
+                $quantityInput.prop('disabled', !isAvailable);
+                if (!isAvailable) {
+                  $quantityInput.val('0');
+                }
+                $actionCell.toggleClass('text-muted', !isAvailable);
+              });
+
+              if (typeof scrollToOrderProductsPanel === 'function') {
+                scrollToOrderProductsPanel();
+              } else if ($('#start_products').length) {
+                $('html, body').animate({
+                  scrollTop: Math.max(0, $('#start_products').offset().top - 110)
+                }, 250);
+              }
+            }
+          </script>
 
           {capture "TaxMethod"}
             {if ($order->getTaxCalculationMethod() == $smarty.const.PS_TAX_EXC)}
@@ -994,18 +1133,11 @@
                 </th>
                 <th style="display: none;" class="add_product_fields"></th>
                 <th style="display: none;" class="edit_product_fields"></th>
-                <th style="display: none;" class="standard_refund_fields">
-                  <i class="icon-minus-sign"></i>
-                  {if ($order->hasBeenDelivered() || $order->hasBeenShipped())}
-                    {l s='Return'}
-                  {elseif ($order->hasBeenPaid())}
-                    {l s='Refund'}
-                  {else}
-                    {l s='Cancel'}
-                  {/if}
-                </th>
                 <th style="display:none" class="partial_refund_fields">
-                  <span class="title_box ">{l s='Partial refund'}</span>
+                  <span class="title_box ">{l s='Gutschrift'}</span>
+                </th>
+                <th style="display:none" class="order_product_action_fields">
+                  <span class="title_box " id="order_product_action_product_header">{l s='Quantity'}</span>
                 </th>
                 {if $order->canEditProducts()}
                   <th></th>
@@ -1019,7 +1151,7 @@
                 {* Include product line partial *}
                 {include file='controllers/orders/_product_line.tpl'}
               {/foreach}
-              {if $can_edit}
+              {if ($can_edit && $order->canEditProducts())}
                 {include file='controllers/orders/_new_product.tpl'}
               {/if}
               </tbody>
@@ -1142,16 +1274,7 @@
                       <td class="amount text-right nowrap">
                         {displayPrice price=$order_shipping_price currency=$currency->id}
                       </td>
-                      <td class="partial_refund_fields current-edit" style="display:none;">
-                        <div class="input-group">
-                          <div class="input-group-addon">
-                            {$currency->prefix}
-                            {$currency->suffix}
-                          </div>
-                          <input type="text" name="partialRefundShippingCost" value="0"/>
-                        </div>
-                        <p class="help-block"><i class="icon-warning-sign"></i> {l s='(%s)' sprintf=$smarty.capture.TaxMethod}</p>
-                      </td>
+                      <td class="partial_refund_fields current-edit" style="display:none;"></td>
                     </tr>
                     {if ($order->getTaxCalculationMethod() == $smarty.const.PS_TAX_EXC)}
                       <tr id="total_taxes">
@@ -1173,117 +1296,75 @@
               </div>
             </div>
           </div>
-          <div style="display: none;" class="standard_refund_fields form-horizontal panel">
-            <div class="form-group">
-              {if Configuration::get('PS_ORDER_RETURN')}
-                <p class="checkbox">
-                  <label for="reinjectQuantities">
-                    <input type="checkbox" id="reinjectQuantities" name="reinjectQuantities"/>
-                    {l s='Re-stock products'}
-                  </label>
-                </p>
-              {/if}
-              {if ((!$order->hasBeenDelivered() && $order->hasBeenPaid()) || ($order->hasBeenDelivered() && Configuration::get('PS_ORDER_RETURN')))}
-                <p class="checkbox">
-                  <label for="generateCreditSlip">
-                    <input type="checkbox" id="generateCreditSlip" name="generateCreditSlip" onclick="toggleShippingCost()"/>
-                    {l s='Generate a credit slip'}
-                  </label>
-                </p>
-                <p class="checkbox">
-                  <label for="generateDiscount">
-                    <input type="checkbox" id="generateDiscount" name="generateDiscount" onclick="toggleShippingCost()"/>
-                    {l s='Generate a voucher'}
-                  </label>
-                </p>
-                <p class="checkbox" id="spanShippingBack" style="display:none;">
-                  <label for="shippingBack">
-                    <input type="checkbox" id="shippingBack" name="shippingBack"/>
-                    {l s='Repay shipping costs'}
-                  </label>
-                </p>
-                {if $order->total_discounts_tax_excl > 0 || $order->total_discounts_tax_incl > 0}
-                  <br/>
-                  <p>{l s='This order has been partially paid by voucher. Choose the amount you want to refund:'}</p>
-                  <p class="radio">
-                    <label id="lab_refund_total_1" for="refund_total_1">
-                      <input type="radio" value="0" name="refund_total_voucher_off" id="refund_total_1" checked="checked"/>
-                      {l s='Include amount of initial voucher: '}
-                    </label>
-                  </p>
-                  <p class="radio">
-                    <label id="lab_refund_total_2" for="refund_total_2">
-                      <input type="radio" value="1" name="refund_total_voucher_off" id="refund_total_2"/>
-                      {l s='Exclude amount of initial voucher: '}
-                    </label>
-                  </p>
-                  <div class="nowrap radio-inline">
-                    <label id="lab_refund_total_3" class="pull-left" for="refund_total_3">
-                      {l s='Amount of your choice: '}
-                      <input type="radio" value="2" name="refund_total_voucher_off" id="refund_total_3"/>
-                    </label>
-                    <div class="input-group col-lg-1 pull-left">
-                      <div class="input-group-addon">
-                        {$currency->prefix}
-                        {$currency->suffix}
-                      </div>
-                      <input type="text" class="input fixed-width-md" name="refund_total_voucher_choose" value="0"/>
-                    </div>
-                  </div>
-                {/if}
-              {/if}
-            </div>
-            {if (!$order->hasBeenDelivered() || ($order->hasBeenDelivered() && Configuration::get('PS_ORDER_RETURN')))}
-              <div class="row">
-                <input type="submit" name="cancelProduct" value="{if $order->hasBeenDelivered()}{l s='Return products'}{elseif $order->hasBeenPaid()}{l s='Refund products'}{else}{l s='Cancel products'}{/if}" class="btn btn-default"/>
-              </div>
-            {/if}
-          </div>
           <div style="display:none;" class="partial_refund_fields">
-            <p class="checkbox">
-              <label for="reinjectQuantitiesRefund">
-                <input type="checkbox" id="reinjectQuantitiesRefund" name="reinjectQuantities"/>
-                {l s='Re-stock products'}
-              </label>
-            </p>
-            <p class="checkbox">
-              <label for="generateDiscountRefund">
-                <input type="checkbox" id="generateDiscountRefund" name="generateDiscountRefund" onclick="toggleShippingCost()"/>
-                {l s='Generate a voucher'}
-              </label>
-            </p>
-            {if $order->total_discounts_tax_excl > 0 || $order->total_discounts_tax_incl > 0}
-              <p>{l s='This order has been partially paid by voucher. Choose the amount you want to refund:'}</p>
-              <p class="radio">
-                <label id="lab_refund_1" for="refund_1">
-                  <input type="radio" value="0" name="refund_voucher_off" id="refund_1" checked="checked"/>
-                  {l s='Product(s) price: '}
-                </label>
-              </p>
-              <p class="radio">
-                <label id="lab_refund_2" for="refund_2">
-                  <input type="radio" value="1" name="refund_voucher_off" id="refund_2"/>
-                  {l s='Product(s) price, excluding amount of initial voucher: '}
-                </label>
-              </p>
-              <div class="nowrap radio-inline">
-                <label id="lab_refund_3" class="pull-left" for="refund_3">
-                  {l s='Amount of your choice: '}
-                  <input type="radio" value="2" name="refund_voucher_off" id="refund_3"/>
-                </label>
-                <div class="input-group col-lg-1 pull-left">
-                  <div class="input-group-addon">
-                    {$currency->prefix}
-                    {$currency->suffix}
-                  </div>
-                  <input type="text" class="input fixed-width-md" name="refund_voucher_choose" value="0"/>
+            <div class="form-horizontal">
+              <div class="form-group">
+                <div class="col-lg-7">
+                  <table class="table" id="credit_totals">
+                    <tbody>
+                      <tr>
+                        <td>{l s='Products'}</td>
+                        <td class="text-right" id="credit_products_total_display">0.00</td>
+                      </tr>
+                      <tr>
+                        <td>{l s='Cart rule adjustment'}</td>
+                        <td class="text-right">
+                          <div style="white-space: nowrap;">
+                            <div class="input-group" style="width: 95px; display: inline-table;">
+                              <input type="text" id="credit_cart_rule_adjustment_rate" class="form-control credit-adjustment-rate-input text-right" value="0" disabled="disabled" />
+                              <div class="input-group-addon">%</div>
+                            </div>
+                            <div class="input-group" style="width: 160px; display: inline-table; margin-left: 5px;">
+                              <div class="input-group-addon">- {$currency->prefix}{$currency->suffix}</div>
+                              <input type="text" id="credit_cart_rule_adjustment" name="credit_cart_rule_adjustment" class="form-control credit-adjustment-amount-input text-right" value="0" disabled="disabled" />
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>{l s='Shipping'}</td>
+                        <td class="text-right">
+                          <div class="input-group" style="width: 160px; margin-left: auto;">
+                            <div class="input-group-addon">{$currency->prefix}{$currency->suffix}</div>
+                            <input type="text" name="partialRefundShippingCost" class="form-control text-right" value="0" disabled="disabled" />
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>{l s='Subtotal'}</td>
+                        <td class="text-right" id="credit_subtotal_display">0.00</td>
+                      </tr>
+                      <tr>
+                        <td>{l s='Fee adjustment'}</td>
+                        <td class="text-right">
+                          <div style="white-space: nowrap;">
+                            <div class="input-group" style="width: 95px; display: inline-table;">
+                              <input type="text" id="credit_fee_adjustment_rate" class="form-control credit-adjustment-rate-input text-right" value="0" disabled="disabled" />
+                              <div class="input-group-addon">%</div>
+                            </div>
+                            <div class="input-group" style="width: 160px; display: inline-table; margin-left: 5px;">
+                              <div class="input-group-addon">- {$currency->prefix}{$currency->suffix}</div>
+                              <input type="text" id="credit_fee_adjustment" name="credit_fee_adjustment" class="form-control credit-adjustment-amount-input text-right" value="0" disabled="disabled" />
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="success">
+                        <td><strong>{l s='Credit total'}</strong></td>
+                        <td class="text-right"><strong id="credit_total_display">0.00</strong></td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            {/if}
-            <br/>
-            <button type="submit" name="partialRefund" class="btn btn-default">
-              <i class="icon-check"></i> {l s='Partial refund'}
-            </button>
+              <div class="form-group">
+                <div class="col-lg-10">
+                  <button type="submit" name="partialRefund" class="btn btn-default">
+                    <i class="icon-check"></i> {l s='Gutschrift erstellen'}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </form>

@@ -345,15 +345,7 @@ class AdminOrdersControllerCore extends AdminController
             $this->toolbar_title[] = sprintf($this->l('Order %1$s from %2$s %3$s'), $order->reference, $customer->firstname, $customer->lastname);
             $this->addMetaTitle($this->toolbar_title[count($this->toolbar_title) - 1]);
 
-            if ($order->hasBeenShipped()) {
-                $type = $this->l('Return products');
-            } elseif ($order->hasBeenPaid()) {
-                $type = $this->l('Standard refund');
-            } else {
-                $type = $this->l('Cancel products');
-            }
-
-            if (!$order->hasBeenShipped() && !$this->lite_display) {
+            if ($order->canEditProducts() && !$this->lite_display) {
                 $this->toolbar_btn['new'] = [
                     'short' => 'Create',
                     'href'  => '#',
@@ -362,20 +354,11 @@ class AdminOrdersControllerCore extends AdminController
                 ];
             }
 
-            if (Configuration::get('PS_ORDER_RETURN') && !$this->lite_display) {
-                $this->toolbar_btn['standard_refund'] = [
-                    'short' => 'Create',
-                    'href'  => '',
-                    'desc'  => $type,
-                    'class' => 'process-icon-standardRefund',
-                ];
-            }
-
             if ($order->hasInvoice() && !$this->lite_display) {
                 $this->toolbar_btn['partial_refund'] = [
                     'short' => 'Create',
                     'href'  => '',
-                    'desc'  => $this->l('Partial refund'),
+                    'desc'  => $this->l('Gutschrift'),
                     'class' => 'process-icon-partialRefund',
                 ];
             }
@@ -404,6 +387,7 @@ class AdminOrdersControllerCore extends AdminController
 
         if ($this->hasEditPermission() && $this->display == 'view') {
             $this->addJS(_PS_JS_DIR_.'admin/orders.js');
+            $this->addJS(_PS_JS_DIR_.'admin/orders-refund.js');
             $this->addJS(_PS_JS_DIR_.'tools.js');
             $this->addJqueryPlugin('autocomplete');
         }
@@ -799,485 +783,76 @@ class AdminOrdersControllerCore extends AdminController
             } else {
                 $this->errors[] = Tools::displayError('You do not have permission to delete this.');
             }
+        } elseif (Tools::isSubmit('submitOrderProductAction') && isset($order)) {
+            if ($this->hasEditPermission()) {
+                if ($this->processOrderProductAction($order) && !count($this->errors)) {
+                    Tools::redirectAdmin(static::$currentIndex.'&id_order='.$order->id.'&vieworder&conf=4&token='.$this->token);
+                }
+            } else {
+                $this->errors[] = Tools::displayError('You do not have permission to edit this.');
+            }
         } /* Partial refund from order */
         elseif (Tools::isSubmit('partialRefund') && isset($order)) {
             if ($this->hasEditPermission()) {
-                if (Tools::isSubmit('partialRefundProduct') &&
-                    ($refunds = Tools::getArrayValue('partialRefundProduct', [])) &&
-                    ($quantitites = Tools::getArrayValue('partialRefundProductQuantity'))
-                ) {
-                    $amount = 0;
-                    $orderDetailList = [];
-                    $fullQuantityList = [];
-
-                    foreach ($refunds as $idOrderDetail => $providedAmountStr) {
-                        $idOrderDetail = (int)$idOrderDetail;
-                        $quantity = (int)($quantitites[$idOrderDetail] ?? 0);
-                        if ($quantity > 0) {
-                            $orderDetail = new OrderDetail($idOrderDetail);
-
-                            $resume = OrderSlip::getProductSlipResume($idOrderDetail);
-                            $quantityRefundable = (int)$orderDetail->product_quantity - (int)$resume['product_quantity'];
-                            if ($quantity <= $quantityRefundable) {
-                                $amountRefundableTaxIncl = Tools::roundPrice($orderDetail->total_price_tax_incl - $resume['amount_tax_incl']);
-
-                                $fullQuantityList[$idOrderDetail] = $quantity;
-
-                                if (empty($providedAmountStr)) {
-                                    $refundAmount = Tools::roundPrice($orderDetail->unit_price_tax_incl * $quantity);
-                                } else {
-                                    $refundAmount = Tools::parseNumber($providedAmountStr);
-                                }
-                                $refundAmount = min($refundAmount, $amountRefundableTaxIncl);
-
-                                $amount += $refundAmount;
-
-                                $orderDetailList[$idOrderDetail] = [
-                                    'id_order_detail' => $idOrderDetail,
-                                    'quantity' => $quantity,
-                                    'amount' => $refundAmount,
-                                    'unit_price' => Tools::roundPrice($refundAmount / $quantity),
-                                ];
-
-                                if (Tools::isSubmit('reinjectQuantities')) {
-                                    $this->reinjectQuantity($orderDetail, $quantity);
-                                }
-                            }
-                        }
-                    }
-
-                    $shippingCostAmount = Tools::getNumberValue('partialRefundShippingCost');
-                    if ($amount == 0 && $shippingCostAmount == 0) {
-                        if (!empty($refunds)) {
-                            $this->errors[] = Tools::displayError('Please enter a quantity to proceed with your refund.');
-                        } else {
-                            $this->errors[] = Tools::displayError('Please enter an amount to proceed with your refund.');
-                        }
-
-                        return false;
-                    }
-
-                    $chosen = false;
-                    $voucher = 0;
-
-                    if (Tools::getIntValue('refund_voucher_off') === 1) {
-                        $voucher = Tools::getNumberValue('order_discount_price');
-                        $amount -= $voucher;
-                    } elseif (Tools::getIntValue('refund_voucher_off') === 2) {
-                        $chosen = true;
-                        $voucher = Tools::getNumberValue('refund_voucher_choose');
-                        $amount = $voucher;
-                    }
-
-                    if ($shippingCostAmount > 0) {
-                        if (!Tools::getValue('TaxMethod')) {
-                            $tax = new Tax();
-                            $tax->rate = $order->carrier_tax_rate;
-                            $taxCalculator = new TaxCalculator([$tax]);
-                            $amount += $taxCalculator->addTaxes($shippingCostAmount);
-                        } else {
-                            $amount += $shippingCostAmount;
-                        }
-                    }
-
-                    $this->updateOrderCarrierWeight($order);
-
-                    if ($amount >= 0) {
-                        if (!OrderSlip::create(
-                            $order,
-                            $orderDetailList,
-                            $shippingCostAmount,
-                            $voucher,
-                            $chosen,
-                            !Tools::getValue('TaxMethod')
-                        )) {
-                            $this->errors[] = Tools::displayError('You cannot generate a partial credit slip.');
-                        } else {
-                            Hook::triggerEvent(
-                                'actionOrderSlipAdd',
-                                [
-                                    'order' => $order,
-                                    'productList' => $orderDetailList,
-                                    'qtyList' => $fullQuantityList
-                                ], $order->id_shop
-                            );
-                            $customer = new Customer((int) ($order->id_customer));
-                            $params['{lastname}'] = $customer->lastname;
-                            $params['{firstname}'] = $customer->firstname;
-                            $params['{id_order}'] = $order->id;
-                            $params['{order_name}'] = $order->getUniqReference();
-                            $params['{credit_slips_url}'] = $this->context->link->getPageLink('order-slip');
-                            @Mail::Send(
-                                (int) $order->id_lang,
-                                'credit_slip',
-                                Mail::l('New credit slip regarding your order', (int) $order->id_lang),
-                                $params,
-                                $customer->email,
-                                $customer->firstname.' '.$customer->lastname,
-                                null,
-                                null,
-                                null,
-                                null,
-                                _PS_MAIL_DIR_,
-                                true,
-                                (int) $order->id_shop
-                            );
-                        }
-
-                        foreach ($orderDetailList as &$product) {
-                            $orderDetail = new OrderDetail((int) $product['id_order_detail']);
-                            if (Configuration::get('PS_ADVANCED_STOCK_MANAGEMENT')) {
-                                StockAvailable::synchronize($orderDetail->product_id);
-                            }
-                        }
-
-                        // Generate voucher
-                        if (Tools::isSubmit('generateDiscountRefund') && !count($this->errors) && $amount > 0) {
-                            $cartRule = new CartRule();
-                            $cartRule->description = sprintf($this->l('Credit slip for order #%d'), $order->id);
-                            $languageIds = Language::getIDs(false);
-                            foreach ($languageIds as $idLang) {
-                                // Define a temporary name
-                                $cartRule->name[$idLang] = sprintf('V0C%1$dO%2$d', $order->id_customer, $order->id);
-                            }
-
-                            // Define a temporary code
-                            $cartRule->code = sprintf('V0C%1$dO%2$d', $order->id_customer, $order->id);
-                            $cartRule->quantity = 1;
-                            $cartRule->quantity_per_user = 1;
-
-                            // Specific to the customer
-                            $cartRule->id_customer = $order->id_customer;
-                            $now = time();
-                            $cartRule->date_from = date('Y-m-d H:i:s', $now);
-                            $cartRule->date_to = date('Y-m-d H:i:s', strtotime('+1 year'));
-                            $cartRule->partial_use = 1;
-                            $cartRule->active = 1;
-
-                            $cartRule->reduction_amount = $amount;
-                            $cartRule->reduction_tax = $order->getTaxCalculationMethod() != PS_TAX_EXC;
-                            $cartRule->minimum_amount_currency = $order->id_currency;
-                            $cartRule->reduction_currency = $order->id_currency;
-
-                            if (!$cartRule->add()) {
-                                $this->errors[] = Tools::displayError('You cannot generate a voucher.');
-                            } else {
-                                // Update the voucher code and name
-                                foreach ($languageIds as $idLang) {
-                                    $cartRule->name[$idLang] = sprintf('V%1$dC%2$dO%3$d', $cartRule->id, $order->id_customer, $order->id);
-                                }
-                                $cartRule->code = sprintf('V%1$dC%2$dO%3$d', $cartRule->id, $order->id_customer, $order->id);
-
-                                if (!$cartRule->update()) {
-                                    $this->errors[] = Tools::displayError('You cannot generate a voucher.');
-                                } else {
-                                    $currency = $this->context->currency;
-                                    $customer = new Customer((int) ($order->id_customer));
-                                    $params['{lastname}'] = $customer->lastname;
-                                    $params['{firstname}'] = $customer->firstname;
-                                    $params['{id_order}'] = $order->id;
-                                    $params['{order_name}'] = $order->getUniqReference();
-                                    $params['{voucher_amount}'] = Tools::displayPrice($cartRule->reduction_amount, $currency, false);
-                                    $params['{voucher_num}'] = $cartRule->code;
-                                    @Mail::Send(
-                                        (int) $order->id_lang,
-                                        'voucher',
-                                        sprintf(Mail::l('New voucher for your order #%s', (int) $order->id_lang), $order->reference),
-                                        $params,
-                                        $customer->email,
-                                        $customer->firstname.' '.$customer->lastname,
-                                        null,
-                                        null,
-                                        null,
-                                        null,
-                                        _PS_MAIL_DIR_,
-                                        true,
-                                        (int) $order->id_shop
-                                    );
-                                }
-                            }
-                        }
-                    } else {
-                        if (!empty($refunds)) {
-                            $this->errors[] = Tools::displayError('Please enter a quantity to proceed with your refund.');
-                        } else {
-                            $this->errors[] = Tools::displayError('Please enter an amount to proceed with your refund.');
-                        }
-                    }
-
-                    // Redirect if no errors
-                    if (!count($this->errors)) {
-                        Tools::redirectAdmin(static::$currentIndex.'&id_order='.$order->id.'&vieworder&conf=30&token='.$this->token);
-                    }
-                } else {
-                    $this->errors[] = Tools::displayError('The partial refund data is incorrect.');
+                $creditSlipRequest = $this->buildCreditSlipRequest($order);
+                if ($creditSlipRequest === null) {
+                    return false;
                 }
-            } else {
-                $this->errors[] = Tools::displayError('You do not have permission to delete this.');
-            }
-        } /* Cancel product from order */
-        elseif (Tools::isSubmit('cancelProduct') && isset($order)) {
-            if ($this->hasDeletePermission()) {
-                if (!Tools::isSubmit('id_order_detail') && !Tools::isSubmit('id_customization')) {
-                    $this->errors[] = Tools::displayError('You must select a product.');
-                } elseif (!Tools::isSubmit('cancelQuantity') && !Tools::isSubmit('cancelCustomizationQuantity')) {
-                    $this->errors[] = Tools::displayError('You must enter a quantity.');
+
+                $orderDetailList = $creditSlipRequest['order_detail_list'];
+                $effectiveRefundAmount = (float)$creditSlipRequest['effective_tax_incl'];
+
+                $this->updateOrderCarrierWeight($order);
+
+                $idOrderSlip = $this->getRefundCreator()->createCreditSlipFromRequest($order, $creditSlipRequest);
+                if ($idOrderSlip <= 0) {
+                    $this->errors[] = Tools::displayError('You cannot generate a partial credit slip.');
                 } else {
-                    $productList = Tools::getValue('id_order_detail');
-                    if ($productList) {
-                        $productList = array_map('intval', $productList);
+                    $customer = new Customer((int) ($order->id_customer));
+                    $params['{lastname}'] = $customer->lastname;
+                    $params['{firstname}'] = $customer->firstname;
+                    $params['{id_order}'] = $order->id;
+                    $params['{order_name}'] = $order->getUniqReference();
+                    $params['{credit_slips_url}'] = $this->context->link->getPageLink('order-slip');
+                    @Mail::Send(
+                        (int) $order->id_lang,
+                        'credit_slip',
+                        Mail::l('New credit slip regarding your order', (int) $order->id_lang),
+                        $params,
+                        $customer->email,
+                        $customer->firstname.' '.$customer->lastname,
+                        null,
+                        null,
+                        null,
+                        null,
+                        _PS_MAIL_DIR_,
+                        true,
+                        (int) $order->id_shop
+                    );
+                }
+
+                foreach ($orderDetailList as &$product) {
+                    $orderDetail = new OrderDetail((int) $product['id_order_detail']);
+                    if (Configuration::get('PS_ADVANCED_STOCK_MANAGEMENT')) {
+                        StockAvailable::synchronize($orderDetail->product_id);
                     }
+                }
 
-                    $customizationList = Tools::getValue('id_customization');
-                    if ($customizationList) {
-                        $customizationList = array_map('intval', $customizationList);
+                if ($this->isStoreCreditSubmitForPartialRefund() && !count($this->errors) && $effectiveRefundAmount > 0) {
+                    $idStoreCreditTransaction = $this->createRefundStoreCredit($order, $idOrderSlip, $effectiveRefundAmount);
+                    if ($idStoreCreditTransaction > 0 && !$this->getRefundCreator()->addStoreCreditRefundPayment(
+                        $order,
+                        $idOrderSlip,
+                        $effectiveRefundAmount,
+                        $idStoreCreditTransaction
+                    )) {
+                        $this->errors[] = Tools::displayError('Refund payment could not be saved.');
                     }
+                }
 
-                    $qtyList = Tools::getValue('cancelQuantity');
-                    if ($qtyList) {
-                        $qtyList = array_map('intval', $qtyList);
-                    }
-
-                    $customizationQtyList = Tools::getValue('cancelCustomizationQuantity');
-                    if ($customizationQtyList) {
-                        $customizationQtyList = array_map('intval', $customizationQtyList);
-                    }
-
-                    $fullProductList = $productList;
-                    $fullQuantityList = $qtyList;
-
-                    if ($customizationList) {
-                        foreach ($customizationList as $key => $idOrderDetail) {
-                            $fullProductList[(int) $idOrderDetail] = $idOrderDetail;
-                            if (isset($customizationQtyList[$key])) {
-                                $fullQuantityList[(int) $idOrderDetail] += $customizationQtyList[$key];
-                            }
-                        }
-                    }
-
-                    if ($productList || $customizationList) {
-                        if ($productList) {
-                            $idCart = Cart::getCartIdByOrderId($order->id);
-                            $customizationQuantities = Customization::countQuantityByCart($idCart);
-
-                            foreach ($productList as $key => $idOrderDetail) {
-                                $qtyCancelProduct = abs($qtyList[$key]);
-                                if (!$qtyCancelProduct) {
-                                    $this->errors[] = Tools::displayError('No quantity has been selected for this product.');
-                                }
-
-                                $orderDetail = new OrderDetail($idOrderDetail);
-                                $customizationQuantity = 0;
-                                if (array_key_exists($orderDetail->product_id, $customizationQuantities) && array_key_exists($orderDetail->product_attribute_id, $customizationQuantities[$orderDetail->product_id])) {
-                                    $customizationQuantity = (int) $customizationQuantities[$orderDetail->product_id][$orderDetail->product_attribute_id];
-                                }
-
-                                if (($orderDetail->product_quantity - $customizationQuantity - $orderDetail->product_quantity_refunded - $orderDetail->product_quantity_return) < $qtyCancelProduct) {
-                                    $this->errors[] = Tools::displayError('An invalid quantity was selected for this product.');
-                                }
-                            }
-                        }
-                        if ($customizationList) {
-                            $customizationQuantities = Customization::retrieveQuantitiesFromIds(array_keys($customizationList));
-
-                            foreach ($customizationList as $idCustomization => $idOrderDetail) {
-                                $qtyCancelProduct = abs($customizationQtyList[$idCustomization]);
-                                $customizationQuantity = $customizationQuantities[$idCustomization];
-
-                                if (!$qtyCancelProduct) {
-                                    $this->errors[] = Tools::displayError('No quantity has been selected for this product.');
-                                }
-
-                                if ($qtyCancelProduct > ($customizationQuantity['quantity'] - ($customizationQuantity['quantity_refunded'] + $customizationQuantity['quantity_returned']))) {
-                                    $this->errors[] = Tools::displayError('An invalid quantity was selected for this product.');
-                                }
-                            }
-                        }
-
-                        if (!count($this->errors) && $productList) {
-                            foreach ($productList as $key => $idOrderDetail) {
-                                $qtyCancelProduct = abs($qtyList[$key]);
-                                $orderDetail = new OrderDetail((int) ($idOrderDetail));
-
-                                if (Tools::isSubmit('reinjectQuantities') && $qtyCancelProduct > 0) {
-                                    $this->reinjectQuantity($orderDetail, $qtyCancelProduct);
-                                }
-
-                                // Delete product
-                                $orderDetail = new OrderDetail((int) $idOrderDetail);
-                                if (!$order->deleteProduct($order, $orderDetail, $qtyCancelProduct)) {
-                                    $this->errors[] = Tools::displayError('An error occurred while attempting to delete the product.').' <span class="bold">'.$orderDetail->product_name.'</span>';
-                                }
-                                // Update weight SUM
-                                $this->updateOrderCarrierWeight($order);
-
-                                if (Configuration::get('PS_ADVANCED_STOCK_MANAGEMENT') && StockAvailable::dependsOnStock($orderDetail->product_id)) {
-                                    StockAvailable::synchronize($orderDetail->product_id);
-                                }
-                                Hook::triggerEvent(
-                                    'actionProductCancel',
-                                    [
-                                        'order' => $order,
-                                        'id_order_detail' => (int) $idOrderDetail
-                                    ],
-                                    $order->id_shop
-                                );
-                            }
-                        }
-                        if (!count($this->errors) && $customizationList) {
-                            foreach ($customizationList as $idCustomization => $idOrderDetail) {
-                                $orderDetail = new OrderDetail((int) ($idOrderDetail));
-                                $qtyCancelProduct = abs($customizationQtyList[$idCustomization]);
-                                if (!$order->deleteCustomization($idCustomization, $qtyCancelProduct, $orderDetail)) {
-                                    $this->errors[] = Tools::displayError('An error occurred while attempting to delete product customization.').' '.$idCustomization;
-                                }
-                            }
-                        }
-                        // E-mail params
-                        if ((Tools::isSubmit('generateCreditSlip') || Tools::isSubmit('generateDiscount')) && !count($this->errors)) {
-                            $customer = new Customer((int) ($order->id_customer));
-                            $params['{lastname}'] = $customer->lastname;
-                            $params['{firstname}'] = $customer->firstname;
-                            $params['{id_order}'] = $order->id;
-                            $params['{order_name}'] = $order->getUniqReference();
-                            $params['{credit_slips_url}'] = $this->context->link->getPageLink('order-slip');
-                        }
-
-                        // Generate credit slip
-                        if (Tools::isSubmit('generateCreditSlip') && !count($this->errors)) {
-                            $productList = [];
-                            $amount = $orderDetail->unit_price_tax_incl * $fullQuantityList[$idOrderDetail];
-
-                            $chosen = false;
-                            if (Tools::getIntValue('refund_total_voucher_off') === 1) {
-                                $amount -= Tools::getNumberValue('order_discount_price');
-                            } elseif (Tools::getIntValue('refund_total_voucher_off') === 2) {
-                                $chosen = true;
-                                $amount = Tools::getNumberValue('refund_total_voucher_choose');
-                            }
-                            foreach ($fullProductList as $idOrderDetail) {
-                                $orderDetail = new OrderDetail((int) $idOrderDetail);
-                                $productList[$idOrderDetail] = [
-                                    'id_order_detail' => $idOrderDetail,
-                                    'quantity'        => $fullQuantityList[$idOrderDetail],
-                                    'unit_price'      => $orderDetail->unit_price_tax_excl,
-                                    'amount'          => $amount ?? $orderDetail->unit_price_tax_incl * $fullQuantityList[$idOrderDetail],
-                                ];
-                            }
-
-                            $refundShipping = Tools::isSubmit('shippingBack');
-                            if (!OrderSlip::create($order, $productList, $refundShipping, $amount, $chosen)) {
-                                $this->errors[] = Tools::displayError('A credit slip cannot be generated. ');
-                            } else {
-                                Hook::triggerEvent(
-                                    'actionOrderSlipAdd',
-                                    [
-                                        'order' => $order,
-                                        'productList' => $fullProductList,
-                                        'qtyList' => $fullQuantityList
-                                    ], $order->id_shop
-                                );
-                                @Mail::Send(
-                                    (int) $order->id_lang,
-                                    'credit_slip',
-                                    Mail::l('New credit slip regarding your order', (int) $order->id_lang),
-                                    $params,
-                                    $customer->email,
-                                    $customer->firstname.' '.$customer->lastname,
-                                    null,
-                                    null,
-                                    null,
-                                    null,
-                                    _PS_MAIL_DIR_,
-                                    true,
-                                    (int) $order->id_shop
-                                );
-                            }
-                        }
-
-                        // Generate voucher
-                        if (Tools::isSubmit('generateDiscount') && !count($this->errors)) {
-                            $cartRule = new CartRule();
-                            $languageIds = Language::getIDs((bool) $order);
-                            $cartRule->description = sprintf($this->l('Credit card slip for order #%d'), $order->id);
-                            foreach ($languageIds as $idLang) {
-                                // Define a temporary name
-                                $cartRule->name[$idLang] = 'V0C'.(int) $order->id_customer.'O'.(int) $order->id;
-                            }
-                            // Define a temporary code
-                            $cartRule->code = 'V0C'.(int) $order->id_customer.'O'.(int) $order->id;
-
-                            $cartRule->quantity = 1;
-                            $cartRule->quantity_per_user = 1;
-                            // Specific to the customer
-                            $cartRule->id_customer = $order->id_customer;
-                            $now = time();
-                            $cartRule->date_from = date('Y-m-d H:i:s', $now);
-                            $cartRule->date_to = date('Y-m-d H:i:s', $now + (3600 * 24 * 365.25)); /* 1 year */
-                            $cartRule->active = 1;
-
-                            $products = $order->getProducts(false, $fullProductList, $fullQuantityList);
-
-                            $total = 0;
-                            foreach ($products as $product) {
-                                $total += $product['unit_price_tax_incl'] * $product['product_quantity'];
-                            }
-
-                            if (Tools::isSubmit('shippingBack')) {
-                                $total += $order->total_shipping;
-                            }
-
-                            if (Tools::getIntValue('refund_total_voucher_off') === 1) {
-                                $total -= Tools::getNumberValue('order_discount_price');
-                            } elseif (Tools::getIntValue('refund_total_voucher_off') === 2) {
-                                $total = Tools::getNumberValue('refund_total_voucher_choose');
-                            }
-
-                            $cartRule->reduction_amount = $total;
-                            $cartRule->reduction_tax = true;
-                            $cartRule->minimum_amount_currency = $order->id_currency;
-                            $cartRule->reduction_currency = $order->id_currency;
-
-                            if (!$cartRule->add()) {
-                                $this->errors[] = Tools::displayError('You cannot generate a voucher.');
-                            } else {
-                                // Update the voucher code and name
-                                foreach ($languageIds as $idLang) {
-                                    $cartRule->name[$idLang] = 'V'.(int) ($cartRule->id).'C'.(int) ($order->id_customer).'O'.$order->id;
-                                }
-                                $cartRule->code = 'V'.(int) ($cartRule->id).'C'.(int) ($order->id_customer).'O'.$order->id;
-                                if (!$cartRule->update()) {
-                                    $this->errors[] = Tools::displayError('You cannot generate a voucher.');
-                                } else {
-                                    $currency = $this->context->currency;
-                                    $params['{voucher_amount}'] = Tools::displayPrice($cartRule->reduction_amount, $currency, false);
-                                    $params['{voucher_num}'] = $cartRule->code;
-                                    @Mail::Send(
-                                        (int) $order->id_lang,
-                                        'voucher',
-                                        sprintf(Mail::l('New voucher for your order #%s', (int) $order->id_lang), $order->reference),
-                                        $params,
-                                        $customer->email,
-                                        $customer->firstname.' '.$customer->lastname,
-                                        null,
-                                        null,
-                                        null,
-                                        null,
-                                        _PS_MAIL_DIR_,
-                                        true,
-                                        (int) $order->id_shop
-                                    );
-                                }
-                            }
-                        }
-                    } else {
-                        $this->errors[] = Tools::displayError('No product or quantity has been selected.');
-                    }
-
-                    // Redirect if no errors
-                    if (!count($this->errors)) {
-                        Tools::redirectAdmin(static::$currentIndex.'&id_order='.$order->id.'&vieworder&conf=31&token='.$this->token);
-                    }
+                // Redirect if no errors
+                if (!count($this->errors)) {
+                    Tools::redirectAdmin(static::$currentIndex.'&id_order='.$order->id.'&vieworder&conf=30&token='.$this->token);
                 }
             } else {
                 $this->errors[] = Tools::displayError('You do not have permission to delete this.');
@@ -1944,6 +1519,7 @@ class AdminOrdersControllerCore extends AdminController
             $product['amount_refund'] = Tools::displayPrice($resume['amount_tax_incl'], $currency);
             $product['refund_history'] = OrderSlip::getProductSlipDetail($product['id_order_detail']);
             $product['return_history'] = OrderReturn::getProductReturnDetail($product['id_order_detail']);
+            $product['order_action_capabilities'] = $this->getOrderProductActionCapabilities($order, $product);
 
             // if the current stock requires a warning
             if ($product['current_stock'] <= 0 && $displayOutOfStockWarning) {
@@ -2018,6 +1594,12 @@ class AdminOrdersControllerCore extends AdminController
             'iso_code_lang'                => $this->context->language->iso_code,
             'id_lang'                      => $this->context->language->id,
             'can_edit'                     => (bool)$this->hasEditPermission(),
+            'store_credit_refund_available' => $this->isStoreCreditRefundAvailable(),
+            'original_payment_refund_available' => $this->getRefundPolicy()->isOriginalPaymentRefundAvailable($order),
+            'original_payment_refund_label' => $this->getOriginalPaymentRefundLabel($order),
+            'cancellation_credit_available' => (bool)$this->getRefundEligibilityService()->getOpenCancellationQuantities($order),
+            'credit_order_return_options'  => $this->getCreditOrderReturnOptions($order, $products),
+            'credit_suggestions_json'      => $this->getCreditSuggestionsJson($order, $products),
             'current_id_lang'              => $this->context->language->id,
             'invoices'                     => $this->getOrderInvoices($order),
             'payment_methods'              => $paymentMethods,
@@ -2225,18 +1807,18 @@ class AdminOrdersControllerCore extends AdminController
             );
         }
 
-        $oldCartRules = $this->context->cart->getCartRules();
-
-        if ($order->hasBeenShipped()) {
+        if (!$order->canEditProducts()) {
             $this->ajaxDie(
                 json_encode(
                     [
                         'result' => false,
-                        'error'  => Tools::displayError('You cannot add products to delivered orders. '),
+                        'error'  => Tools::displayError('You cannot edit this order.'),
                     ]
                 )
             );
         }
+
+        $oldCartRules = $this->context->cart->getCartRules();
 
         $productInformations = $_POST['add_product'];
         $invoiceInformations = $_POST['add_invoice'] ?? [];
@@ -3114,7 +2696,7 @@ class AdminOrdersControllerCore extends AdminController
             ]));
         }
 
-        // We can't edit a delivered order
+        // Product lines can only be edited before payment and before shipment.
         if (! $order->canEditProducts()) {
             $this->ajaxDie(json_encode([
                 'result' => false,
@@ -3189,7 +2771,7 @@ class AdminOrdersControllerCore extends AdminController
             ]));
         }
 
-        // We can't edit a delivered order
+        // Product lines can only be deleted before payment and before shipment.
         if (! $order->canEditProducts()) {
             $this->ajaxDie(json_encode([
                 'result' => false,
@@ -3198,17 +2780,399 @@ class AdminOrdersControllerCore extends AdminController
         }
     }
 
+    protected function getRefundPolicy(): RefundPolicy
+    {
+        return new RefundPolicy();
+    }
+
+    protected function getRefundEligibilityService(): RefundEligibilityService
+    {
+        return new RefundEligibilityService($this->getRefundPolicy(), $this->getCancelEligibilityService());
+    }
+
+    protected function getRefundCalculator(): RefundCalculator
+    {
+        $policy = $this->getRefundPolicy();
+
+        return new RefundCalculator($policy, new RefundEligibilityService($policy, $this->getCancelEligibilityService()));
+    }
+
+    protected function getRefundCreator(): RefundCreator
+    {
+        return new RefundCreator($this->context);
+    }
+
+    protected function getCancelEligibilityService(): CancelEligibilityService
+    {
+        return new CancelEligibilityService();
+    }
+
+    protected function processOrderProductAction(Order $order): bool
+    {
+        $refundPolicy = $this->getRefundPolicy();
+        $action = (string)Tools::getValue('order_product_action_type');
+        $quantities = Tools::getArrayValue('order_product_action_quantity', []);
+
+        if (!in_array($action, $refundPolicy->getValidActions(), true)) {
+            $this->errors[] = Tools::displayError('The selected action is invalid.');
+            return false;
+        }
+
+        if (
+            $action === RefundPolicy::ACTION_CANCEL
+            && !$this->getCancelEligibilityService()->canCancelProductsInBackOffice($order)
+        ) {
+            $this->errors[] = Tools::displayError('This order cannot be cancelled from the Back Office.');
+            return false;
+        }
+
+        if ($action === RefundPolicy::ACTION_SERVICE) {
+            $this->errors[] = Tools::displayError('Service cases are not available yet.');
+            return false;
+        }
+
+        $selectedQuantities = [];
+        $capabilityKey = $action === RefundPolicy::ACTION_RETURN ? 'returnable_quantity' : $action.'able_quantity';
+
+        foreach ((array)$quantities as $idOrderDetail => $rawQuantity) {
+            $idOrderDetail = (int)$idOrderDetail;
+            $quantity = (int)$rawQuantity;
+
+            if ($quantity <= 0) {
+                continue;
+            }
+
+            $orderDetail = new OrderDetail($idOrderDetail);
+            if (!Validate::isLoadedObject($orderDetail) || (int)$orderDetail->id_order !== (int)$order->id) {
+                $this->errors[] = Tools::displayError('The selected product line is invalid.');
+                continue;
+            }
+
+            $capabilities = $this->getOrderDetailActionCapabilities($order, $orderDetail);
+            if ($quantity > (int)$capabilities[$capabilityKey]) {
+                $this->errors[] = Tools::displayError('Selected quantity exceeds the available quantity for this action.');
+                continue;
+            }
+
+            $selectedQuantities[$idOrderDetail] = $quantity;
+        }
+
+        if (count($this->errors)) {
+            return false;
+        }
+
+        if (!$selectedQuantities) {
+            $this->errors[] = Tools::displayError('You must select a product quantity.');
+            return false;
+        }
+
+        if ($action === RefundPolicy::ACTION_RETURN) {
+            if (!$this->syncBackOfficeOrderReturn($order, $selectedQuantities, OrderReturn::STATE_WAITING_FOR_PACKAGE)) {
+                return false;
+            }
+        } elseif ($action === RefundPolicy::ACTION_CANCEL) {
+            if (!$this->markOrderDetailsRefunded($selectedQuantities)) {
+                return false;
+            }
+        }
+
+        if (count($this->errors)) {
+            return false;
+        }
+
+        return !count($this->errors);
+    }
+
+    protected function getOrderDetailActionCapabilities(Order $order, OrderDetail $orderDetail): array
+    {
+        return $this->getRefundEligibilityService()->getOrderDetailActionCapabilities($order, $orderDetail);
+    }
+
+    protected function bookReturnedQuantitiesForOrderDetails(array $quantitiesByOrderDetail, bool $reinject): bool
+    {
+        foreach ($quantitiesByOrderDetail as $idOrderDetail => $quantity) {
+            $orderDetail = new OrderDetail((int)$idOrderDetail);
+            if (!Validate::isLoadedObject($orderDetail)) {
+                $this->errors[] = Tools::displayError('The selected product line is invalid.');
+                return false;
+            }
+
+            $remaining = max(
+                0,
+                (int)$orderDetail->product_quantity
+                - (int)$orderDetail->product_quantity_return
+                - (int)$orderDetail->product_quantity_refunded
+            );
+            $quantityToBook = min((int)$quantity, $remaining);
+
+            if ($quantityToBook <= 0) {
+                continue;
+            }
+
+            $orderDetail->product_quantity_return += $quantityToBook;
+            if (!$orderDetail->update()) {
+                $this->errors[] = Tools::displayError('Returned quantities could not be booked.');
+                return false;
+            }
+
+            if ($reinject) {
+                $this->reinjectQuantity($orderDetail, $quantityToBook, false, Configuration::get('PS_STOCK_CUSTOMER_RETURN_REASON') ?: Configuration::get('PS_STOCK_CUSTOMER_ORDER_REASON'));
+                if (count($this->errors)) {
+                    return false;
+                }
+            }
+
+            if (Configuration::get('PS_ADVANCED_STOCK_MANAGEMENT')) {
+                StockAvailable::synchronize($orderDetail->product_id);
+            }
+        }
+
+        return true;
+    }
+
+    protected function markOrderDetailsRefunded(array $quantitiesByOrderDetail): bool
+    {
+        foreach ($quantitiesByOrderDetail as $idOrderDetail => $quantity) {
+            $orderDetail = new OrderDetail((int)$idOrderDetail);
+            if (!Validate::isLoadedObject($orderDetail)) {
+                $this->errors[] = Tools::displayError('The selected product line is invalid.');
+                return false;
+            }
+
+            $remaining = max(
+                0,
+                (int)$orderDetail->product_quantity
+                - (int)$orderDetail->product_quantity_refunded
+                - (int)$orderDetail->product_quantity_return
+            );
+            $quantityToMark = min((int)$quantity, $remaining);
+
+            if ($quantityToMark <= 0) {
+                continue;
+            }
+
+            $orderDetail->product_quantity_refunded += $quantityToMark;
+            if (!$orderDetail->update()) {
+                $this->errors[] = Tools::displayError('Refunded quantities could not be booked.');
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    protected function getOrderProductActionCapabilities(Order $order, array $product): array
+    {
+        return $this->getRefundEligibilityService()->getOrderProductActionCapabilities($order, $product);
+    }
+
+    protected function buildCreditSlipRequest(Order $order): ?array
+    {
+        $result = $this->getRefundCalculator()->buildCreditSlipRequest($order, [
+            'display_includes_tax' => (int)Tools::getValue('TaxMethod') === 1,
+            'refund_method' => (string)Tools::getValue('order_product_refund_method', ''),
+            'reason_entity_type' => (string)Tools::getValue('reason_entity_type', ''),
+            'reason_id_entity' => (int)Tools::getValue('reason_id_entity', 0),
+            'product_amounts' => Tools::getArrayValue('partialRefundProduct', []),
+            'product_quantities' => Tools::getArrayValue('partialRefundProductQuantity', []),
+            'shipping_amount' => Tools::getValue('partialRefundShippingCost', '0'),
+            'cart_rule_adjustment' => Tools::getValue('credit_cart_rule_adjustment', null),
+            'fee_adjustment' => Tools::getValue('credit_fee_adjustment', null),
+        ]);
+
+        foreach ($result['errors'] as $error) {
+            $this->errors[] = Tools::displayError($error);
+        }
+
+        return $result['request'];
+    }
+
+    protected function getCreditOrderReturnOptions(Order $order, array $products): array
+    {
+        $options = [];
+        foreach ($this->getRefundEligibilityService()->getOpenOrderReturnRows($order, (int)$this->context->language->id) as $row) {
+            $options[] = [
+                'id_order_return' => (int)$row['id_order_return'],
+                'label' => sprintf(
+                    '#%d - %s - %s',
+                    (int)$row['id_order_return'],
+                    (string)($row['state_name'] ?: $row['state']),
+                    Tools::displayDate($row['date_add'])
+                ),
+            ];
+        }
+
+        return $options;
+    }
+
+    protected function getCreditSuggestionsJson(Order $order, array $products): string
+    {
+        $displayIncludesTax = $order->getTaxCalculationMethod() !== PS_TAX_EXC;
+
+        $json = json_encode(
+            $this->getRefundCalculator()->buildCreditSuggestions(
+                $order,
+                $products,
+                (int)$this->context->language->id,
+                $displayIncludesTax
+            ),
+            JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT
+        );
+
+        return is_string($json) ? $json : '{}';
+    }
+
+    protected function buildOrderReturnCreditSuggestion(
+        Order $order,
+        array $products,
+        int $idOrderReturn,
+        bool $displayIncludesTax
+    ): array {
+        return $this->getRefundCalculator()->buildOrderReturnCreditSuggestion(
+            $order,
+            $products,
+            $idOrderReturn,
+            $displayIncludesTax
+        );
+    }
+
+    protected function getOpenCreditOrderReturnRows(Order $order): array
+    {
+        return $this->getRefundEligibilityService()->getOpenOrderReturnRows(
+            $order,
+            (int)$this->context->language->id
+        );
+    }
+
+    protected function getOrderReturnQuantities(int $idOrderReturn): array
+    {
+        return $this->getRefundEligibilityService()->getOrderReturnQuantities($idOrderReturn);
+    }
+
+    protected function isValidCreditOrderReturn(Order $order, int $idOrderReturn): bool
+    {
+        return $this->getRefundEligibilityService()->isValidOrderReturn($order, $idOrderReturn);
+    }
+
+    protected function getOrderPercentCartRuleRate(Order $order): float
+    {
+        return $this->getRefundCalculator()->getOrderPercentCartRuleRate($order);
+    }
+
+    protected function getOrderDetailRemainingCreditAmounts(OrderDetail $orderDetail): array
+    {
+        return $this->getRefundEligibilityService()->getOrderDetailRemainingCreditAmounts($orderDetail);
+    }
+
+    protected function getRemainingShippingCreditAmounts(Order $order): array
+    {
+        return $this->getRefundEligibilityService()->getRemainingShippingCreditAmounts($order);
+    }
+
+    protected function getTaxAmountsForDisplayAmount(float $amount, float $taxRate, bool $displayIncludesTax): array
+    {
+        return $this->getRefundCalculator()->getTaxAmountsForDisplayAmount($amount, $taxRate, $displayIncludesTax);
+    }
+
+    protected function roundCreditAmount(float $amount): float
+    {
+        return $this->getRefundPolicy()->roundAmount($amount);
+    }
+
+    protected function normalizePercent(float $rate): float
+    {
+        return $this->getRefundPolicy()->normalizePercent($rate);
+    }
+
+    protected function getFirstOrderInvoice(Order $order)
+    {
+        foreach ($order->getInvoicesCollection() as $invoice) {
+            if (Validate::isLoadedObject($invoice)) {
+                return $invoice;
+            }
+        }
+
+        return null;
+    }
+
+    protected function getOriginalPaymentRefundLabel(Order $order): string
+    {
+        $payment = trim((string)$order->payment);
+
+        return $payment !== '' ? $payment : $this->l('Original payment method');
+    }
+
+    protected function isStoreCreditSubmitForPartialRefund(): bool
+    {
+        return $this->isStoreCreditRefundAvailable()
+            && Tools::getValue('order_product_refund_method') === 'store_credit';
+    }
+
+    protected function isStoreCreditRefundAvailable(): bool
+    {
+        return $this->getRefundCreator()->isStoreCreditRefundAvailable();
+    }
+
+    protected function createRefundStoreCredit(Order $order, int $idOrderSlip, float $amountTaxIncl): int
+    {
+        if ($idOrderSlip <= 0 || $amountTaxIncl <= 0.0) {
+            $this->errors[] = Tools::displayError('Unable to create store credit without a valid credit slip.');
+            return 0;
+        }
+
+        if (!$this->isStoreCreditRefundAvailable()) {
+            $this->errors[] = Tools::displayError('Store credit is not available.');
+            return 0;
+        }
+
+        $idStoreCreditTransaction = $this->getRefundCreator()->createRefundStoreCredit($order, $idOrderSlip, $amountTaxIncl);
+        if ($idStoreCreditTransaction <= 0) {
+            $this->errors[] = Tools::displayError('Store credit refund could not be created.');
+        }
+
+        return $idStoreCreditTransaction;
+    }
+
+    protected function syncBackOfficeOrderReturn(Order $order, array $quantitiesByOrderDetail, int $state): bool
+    {
+        $orderReturn = OrderReturn::getOrCreateBackOfficeReturn($order, $state);
+        if (!$orderReturn) {
+            $this->errors[] = Tools::displayError('Unable to create or update the order return.');
+            return false;
+        }
+
+        foreach ($quantitiesByOrderDetail as $idOrderDetail => $quantity) {
+            $orderDetail = new OrderDetail((int)$idOrderDetail);
+            if (!Validate::isLoadedObject($orderDetail) || (int)$orderDetail->id_order !== (int)$order->id) {
+                $this->errors[] = Tools::displayError('The order return content is invalid.');
+                return false;
+            }
+
+            if (!OrderReturn::upsertReturnDetail(
+                (int)$orderReturn->id,
+                (int)$idOrderDetail,
+                (int)$quantity
+            )) {
+                $this->errors[] = Tools::displayError('An error occurred while saving the order return details.');
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /**
      * @param OrderDetail $orderDetail
      * @param int $qtyCancelProduct
      * @param bool $delete
+     * @param int|null $idMvtReason
      *
      * @return void
      *
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    protected function reinjectQuantity($orderDetail, $qtyCancelProduct, $delete = false)
+    protected function reinjectQuantity($orderDetail, $qtyCancelProduct, $delete = false, $idMvtReason = null)
     {
         // Reinject product
         $reinjectableQuantity = (int) $orderDetail->product_quantity - (int) $orderDetail->product_quantity_reinjected;
@@ -3234,7 +3198,24 @@ class AdminOrdersControllerCore extends AdminController
                 }
 
                 $leftToReinject -= $quantityToReinject;
-                if (Pack::isPack((int) $product->id)) {
+                if (
+                    class_exists('\\ErpModule\\ProductExtensionErp')
+                    && class_exists('\\ErpModule\\ProductBundleErp')
+                    && \ErpModule\ProductExtensionErp::checkIfBundle($orderDetail->product_id)
+                ) {
+                    $items = \ErpModule\ProductBundleErp::getItems($orderDetail->product_id, $orderDetail->product_attribute_id);
+                    foreach ($items as $item) {
+                        $manager->addProduct(
+                            $item['item_id_product'],
+                            0,
+                            new Warehouse($movement['id_warehouse']),
+                            $quantityToReinject * $item['quantity'],
+                            $idMvtReason,
+                            $movement['price_te'],
+                            true
+                        );
+                    }
+                } elseif (Pack::isPack((int) $product->id)) {
                     // Gets items
                     if ($product->shouldAdjustPackItemsQuantities()) {
                         $productsPack = Pack::getItems((int) $product->id, (int) Configuration::get('PS_LANG_DEFAULT'));
@@ -3246,7 +3227,7 @@ class AdminOrdersControllerCore extends AdminController
                                     $productPack->id_pack_product_attribute,
                                     new Warehouse($movement['id_warehouse']),
                                     $productPack->pack_quantity * $quantityToReinject,
-                                    null,
+                                    $idMvtReason,
                                     $movement['price_te'],
                                     true
                                 );
@@ -3259,7 +3240,7 @@ class AdminOrdersControllerCore extends AdminController
                             $orderDetail->product_attribute_id,
                             new Warehouse($movement['id_warehouse']),
                             $quantityToReinject,
-                            null,
+                            $idMvtReason,
                             $movement['price_te'],
                             true
                         );
@@ -3270,16 +3251,19 @@ class AdminOrdersControllerCore extends AdminController
                         $orderDetail->product_attribute_id,
                         new Warehouse($movement['id_warehouse']),
                         $quantityToReinject,
-                        null,
+                        $idMvtReason,
                         $movement['price_te'],
                         true
                     );
                 }
+                $orderDetail->product_quantity_reinjected += $quantityToReinject;
             }
 
             $idProduct = $orderDetail->product_id;
             if ($delete) {
                 $orderDetail->delete();
+            } else {
+                $orderDetail->update();
             }
             StockAvailable::synchronize($idProduct);
         } elseif ($orderDetail->id_warehouse == 0) {
@@ -3292,6 +3276,9 @@ class AdminOrdersControllerCore extends AdminController
 
             if ($delete) {
                 $orderDetail->delete();
+            } else {
+                $orderDetail->product_quantity_reinjected += $quantityToReinject;
+                $orderDetail->update();
             }
         } else {
             $this->errors[] = Tools::displayError('This product cannot be re-stocked.');

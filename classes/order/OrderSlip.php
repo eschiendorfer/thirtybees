@@ -34,6 +34,9 @@
  */
 class OrderSlipCore extends ObjectModel
 {
+    public const QUANTITY_EFFECT_RETURNED = 'returned';
+    public const QUANTITY_EFFECT_REFUNDED = 'refunded';
+
     /**
      * @var array Object model definition
      */
@@ -53,6 +56,12 @@ class OrderSlipCore extends ObjectModel
             'shipping_cost_amount'    => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbNullable' => false],
             'partial'                 => ['type' => self::TYPE_INT, 'dbType' => 'tinyint(1)', 'dbNullable' => false],
             'order_slip_type'         => ['type' => self::TYPE_INT, 'validate' => 'isInt', 'size' => 1, 'dbDefault' => '0'],
+            'reason_entity_type'      => ['type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'size' => 64, 'dbDefault' => ''],
+            'reason_id_entity'        => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '0'],
+            'adjustment_cart_rule_tax_excl' => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbDefault' => '0.000000'],
+            'adjustment_cart_rule_tax_incl' => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbDefault' => '0.000000'],
+            'adjustment_fee_tax_excl'       => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbDefault' => '0.000000'],
+            'adjustment_fee_tax_incl'       => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbDefault' => '0.000000'],
             'date_add'                => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
             'date_upd'                => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
         ],
@@ -93,6 +102,18 @@ class OrderSlipCore extends ObjectModel
     public $date_upd;
     /** @var int */
     public $order_slip_type = 0;
+    /** @var string */
+    public $reason_entity_type = '';
+    /** @var int */
+    public $reason_id_entity = 0;
+    /** @var float */
+    public $adjustment_cart_rule_tax_excl = 0.0;
+    /** @var float */
+    public $adjustment_cart_rule_tax_incl = 0.0;
+    /** @var float */
+    public $adjustment_fee_tax_excl = 0.0;
+    /** @var float */
+    public $adjustment_fee_tax_incl = 0.0;
 
     /**
      * @var array Webservice parameters
@@ -160,9 +181,18 @@ class OrderSlipCore extends ObjectModel
 
         $products = [];
         foreach ($orderDetails as $key => $product) {
-            if (isset($slipQuantity[$product['id_order_detail']]) && $slipQuantity[$product['id_order_detail']]['product_quantity']) {
-                $products[$key] = $product;
-                $products[$key] = array_merge($products[$key], $slipQuantity[$product['id_order_detail']]);
+            if (
+                isset($slipQuantity[$product['id_order_detail']])
+                && (
+                    (int)$slipQuantity[$product['id_order_detail']]['product_quantity'] > 0
+                    || (float)$slipQuantity[$product['id_order_detail']]['amount_tax_excl'] > 0.0
+                    || (float)$slipQuantity[$product['id_order_detail']]['amount_tax_incl'] > 0.0
+                )
+            ) {
+                $product['order_unit_price_tax_excl'] = $product['unit_price_tax_excl'];
+                $product['order_unit_price_tax_incl'] = $product['unit_price_tax_incl'];
+                $product['order_product_quantity'] = $product['product_quantity'];
+                $products[$key] = array_merge($product, $slipQuantity[$product['id_order_detail']]);
             }
         }
 
@@ -282,7 +312,16 @@ class OrderSlipCore extends ObjectModel
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public static function create(Order $order, $productList, $shippingCost = false, $amount = 0, $amountChoosen = false, $addTax = true)
+    public static function create(
+        Order $order,
+        $productList,
+        $shippingCost = false,
+        $amount = 0,
+        $amountChoosen = false,
+        $addTax = true,
+        ?array $quantityEffects = null,
+        ?array $creditMetadata = null
+    )
     {
         $currency = new Currency((int) $order->id_currency);
         $orderSlip = new OrderSlip();
@@ -325,19 +364,46 @@ class OrderSlipCore extends ObjectModel
         $orderSlip->total_products_tax_excl = 0;
         $orderSlip->total_products_tax_incl = 0;
 
+        if ($quantityEffects === null) {
+            $quantityEffects = [
+                self::QUANTITY_EFFECT_REFUNDED => !Tools::isSubmit('cancelProduct'),
+            ];
+        }
+
+        $productListToAdd = [];
+        $markReturned = !empty($quantityEffects[self::QUANTITY_EFFECT_RETURNED]);
+        $markRefunded = !empty($quantityEffects[self::QUANTITY_EFFECT_REFUNDED]);
+        $hasAmountOnlyProduct = false;
+
         foreach ($productList as &$product) {
             $orderDetail = new OrderDetail((int) $product['id_order_detail']);
-            $quantity = (int)$product['quantity'];
+            $quantity = max(0, (int)$product['quantity']);
+            $lineAmount = Tools::roundPrice((float)($product['amount'] ?? 0));
             $orderSlipResume = static::getProductSlipResume((int) $orderDetail->id);
 
-            if ($quantity + $orderSlipResume['product_quantity'] > $orderDetail->product_quantity) {
+            if ($quantity > 0 && $quantity + $orderSlipResume['product_quantity'] > $orderDetail->product_quantity) {
                 $quantity = (int)($orderDetail->product_quantity - $orderSlipResume['product_quantity']);
             }
 
-            if (! Tools::isSubmit('cancelProduct') && $quantity !== 0) {
-                $orderDetail->product_quantity_refunded += $quantity;
-                $orderDetail->save();
+            if ($quantity === 0 && $lineAmount <= 0.0) {
+                continue;
             }
+
+            if ($quantity === 0 && $lineAmount > 0.0) {
+                $hasAmountOnlyProduct = true;
+            }
+
+            $product['quantity'] = $quantity;
+
+            if ($markReturned) {
+                $orderDetail->product_quantity_return += $quantity;
+            }
+
+            if ($markRefunded && $lineAmount > 0.0) {
+                $orderDetail->product_quantity_refunded += $quantity;
+            }
+
+            $orderDetail->save();
 
             // Use taxes from the given order detail.
             $tax = new Tax();
@@ -347,7 +413,7 @@ class OrderSlipCore extends ObjectModel
             // In case of a distinction between product value in the order and
             // product value in the refund (choosen by the merchant on refund
             // creation), these prices are reduced already.
-            $unitPrice = (float)$product['unit_price'];
+            $unitPrice = (float)($product['unit_price'] ?? $lineAmount);
             if ($addTax == true) {
                 $product['unit_price_tax_excl'] = Tools::roundPrice($unitPrice);
                 $product['unit_price_tax_incl'] = $taxCalculator->addTaxes($unitPrice);
@@ -356,11 +422,13 @@ class OrderSlipCore extends ObjectModel
                 $product['unit_price_tax_excl'] = $taxCalculator->removeTaxes($unitPrice);
             }
 
-            $product['total_price_tax_excl'] = Tools::roundPrice($product['unit_price_tax_excl'] * $quantity);
-            $product['total_price_tax_incl'] = Tools::roundPrice($product['unit_price_tax_incl'] * $quantity);
+            $quantityMultiplier = $quantity > 0 ? $quantity : 1;
+            $product['total_price_tax_excl'] = Tools::roundPrice($product['unit_price_tax_excl'] * $quantityMultiplier);
+            $product['total_price_tax_incl'] = Tools::roundPrice($product['unit_price_tax_incl'] * $quantityMultiplier);
 
             $orderSlip->total_products_tax_excl += $product['total_price_tax_excl'];
             $orderSlip->total_products_tax_incl += $product['total_price_tax_incl'];
+            $productListToAdd[] = $product;
         }
         unset($product);
 
@@ -376,6 +444,14 @@ class OrderSlipCore extends ObjectModel
         if (((float) $amount && $amountChoosen) || $orderSlip->shipping_cost_amount > 0) {
             $orderSlip->order_slip_type = 2;
         }
+        if ($hasAmountOnlyProduct) {
+            $orderSlip->partial = 1;
+            $orderSlip->order_slip_type = 2;
+        }
+
+        if ($creditMetadata !== null) {
+            $orderSlip->setCreditMetadata($creditMetadata);
+        }
 
         if (!$orderSlip->add()) {
             return false;
@@ -383,11 +459,48 @@ class OrderSlipCore extends ObjectModel
 
         $res = true;
 
-        foreach ($productList as $product) {
+        foreach ($productListToAdd as $product) {
             $res = $orderSlip->addProductOrderSlip($product) && $res;
         }
 
         return $res;
+    }
+
+    public function setCreditMetadata(array $metadata): void
+    {
+        $this->reason_entity_type = substr((string)($metadata['reason_entity_type'] ?? ''), 0, 64);
+        $this->reason_id_entity = max(0, (int)($metadata['reason_id_entity'] ?? 0));
+        $this->adjustment_cart_rule_tax_excl = Tools::roundPrice(max(0.0, (float)($metadata['adjustment_cart_rule_tax_excl'] ?? 0.0)));
+        $this->adjustment_cart_rule_tax_incl = Tools::roundPrice(max(0.0, (float)($metadata['adjustment_cart_rule_tax_incl'] ?? 0.0)));
+        $this->adjustment_fee_tax_excl = Tools::roundPrice(max(0.0, (float)($metadata['adjustment_fee_tax_excl'] ?? 0.0)));
+        $this->adjustment_fee_tax_incl = Tools::roundPrice(max(0.0, (float)($metadata['adjustment_fee_tax_incl'] ?? 0.0)));
+    }
+
+    public function getRefundTotalTaxIncl(): float
+    {
+        return static::roundRefundTotal(
+            (float)$this->total_products_tax_incl
+            + (float)$this->total_shipping_tax_incl
+            - (float)$this->adjustment_cart_rule_tax_incl
+            - (float)$this->adjustment_fee_tax_incl
+        );
+    }
+
+    public function getRefundTotalTaxExcl(): float
+    {
+        return static::roundRefundTotal(
+            (float)$this->total_products_tax_excl
+            + (float)$this->total_shipping_tax_excl
+            - (float)$this->adjustment_cart_rule_tax_excl
+            - (float)$this->adjustment_fee_tax_excl
+        );
+    }
+
+    protected static function roundRefundTotal(float $amount): float
+    {
+        $roundingUnit = class_exists('RefundPolicy') ? RefundPolicy::ROUNDING_UNIT : 0.05;
+
+        return Tools::roundPrice(round(max(0.0, $amount) / $roundingUnit) * $roundingUnit);
     }
 
     /**
