@@ -260,7 +260,7 @@ class HTMLTemplateInvoiceCore extends HTMLTemplate
 
         $storeCreditUsedTaxIncl = OrderInvoice::getStoreCreditUsedForOrder((int)$this->order->id);
         $showStoreCreditOnInvoice = self::isFirstInvoiceForOrder($this->order, (int)$this->order_invoice->id);
-        $outstandingInvoiceAmountTaxIncl = $this->order_invoice->getOutstandingAmountTaxIncl();
+        $outstandingInvoiceAmountTaxIncl = Tools::roundPrice(max(0.0, (float)$this->order_invoice->total_paid_tax_incl - (float)$storeCreditUsedTaxIncl));
         $showOutstandingInvoiceAmountOnInvoice = $showStoreCreditOnInvoice && $storeCreditUsedTaxIncl > 0.0;
         $paymentMethodsPdf = $this->order->getDisplayPaymentMethods(false, true);
         $paymentMethodsPdfText = $this->order->getDisplayPaymentMethodsText(' + ', false, true);

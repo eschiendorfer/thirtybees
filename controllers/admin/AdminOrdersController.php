@@ -1732,8 +1732,8 @@ class AdminOrdersControllerCore extends AdminController
             $storeCreditAvailableTaxIncl = 0.0;
         }
 
-        $outstandingInvoiceAmountTaxIncl = Tools::roundPrice((float)$order->getOutstandingAmountTaxIncl());
-        $storeCreditMaxApplicableTaxIncl = Tools::roundPrice(min($storeCreditAvailableTaxIncl, $outstandingInvoiceAmountTaxIncl));
+        $storeCreditMaxApplicableTaxIncl = Tools::roundPrice(min($storeCreditAvailableTaxIncl, Tools::roundPrice((float)$order->getOutstandingAmountTaxIncl())));
+        $outstandingInvoiceAmountTaxIncl = Tools::roundPrice(max(0.0, (float)$order->total_paid_tax_incl - (float)$storeCreditUsedTaxIncl));
 
         // Smarty assign
         $this->tpl_view_vars = [

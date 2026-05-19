@@ -157,7 +157,7 @@ class OrderConfirmationControllerCore extends FrontController
         }
 
         try {
-            $outstandingAmountTaxIncl = Tools::roundPrice((float)$order->getOutstandingAmountTaxIncl());
+            $outstandingAmountTaxIncl = Tools::roundPrice(max(0.0, (float)$order->total_paid_tax_incl - (float)$storeCreditUsedTaxIncl));
         } catch (Exception $exception) {
             $outstandingAmountTaxIncl = 0.0;
         }

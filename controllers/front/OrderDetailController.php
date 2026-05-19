@@ -224,7 +224,7 @@ class OrderDetailControllerCore extends FrontController
                 } catch (Exception $exception) {
                     $storeCreditUsedTaxIncl = 0.0;
                 }
-                $outstandingAmountTaxIncl = Tools::roundPrice((float)$order->getOutstandingAmountTaxIncl());
+                $outstandingAmountTaxIncl = Tools::roundPrice(max(0.0, (float)$order->total_paid_tax_incl - (float)$storeCreditUsedTaxIncl));
                 $orderPaymentMethodsText = trim((string)$order->getDisplayPaymentMethodsText(' + ', false, true));
                 if ($orderPaymentMethodsText === '' && (string)$order->payment !== '') {
                     $orderPaymentMethodsText = (string)$order->payment;
