@@ -349,7 +349,7 @@ class AdminReturnControllerCore extends AdminController
                                 null,
                                 null,
                                 _PS_MAIL_DIR_,
-                                true,
+                                false,
                                 (int) $order->id_shop
                             );
                         }
