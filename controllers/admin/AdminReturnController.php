@@ -69,6 +69,7 @@ class AdminReturnControllerCore extends AdminController
             'customer' => [
                 'title' => $this->l('Customer'),
                 'havingFilter' => true,
+                'callback' => 'getCustomerLink',
             ],
             'name' => [
                 'title' => $this->l('Status'),
@@ -196,6 +197,15 @@ class AdminReturnControllerCore extends AdminController
             'submit' => [
                 'title' => $this->l('Save'),
             ],
+            'buttons' => [
+                'save-and-stay' => [
+                    'title' => $this->l('Save and stay'),
+                    'name'  => 'submitAdd'.$this->table.'AndStay',
+                    'type'  => 'submit',
+                    'class' => 'btn btn-default pull-right',
+                    'icon'  => 'process-icon-save',
+                ],
+            ],
         ];
 
         $order = new Order($this->object->id_order);
@@ -208,15 +218,29 @@ class AdminReturnControllerCore extends AdminController
 
         // Classic products
         $products = OrderReturn::getOrdersReturnProducts($this->object->id, $order);
+        foreach ($products as &$product) {
+            $orderDetail = new OrderDetail((int)$product['id_order_detail']);
+            $product['return_registered_quantity'] = (int)$product['product_quantity'];
+            $product['return_quantity_max'] = Validate::isLoadedObject($orderDetail) ? (int)$orderDetail->product_quantity : (int)$product['product_quantity'];
+            $product['return_received_quantity'] = Validate::isLoadedObject($orderDetail) ? (int)$orderDetail->product_quantity_return : 0;
+            $product['return_reinjected_quantity'] = Validate::isLoadedObject($orderDetail) ? (int)$orderDetail->product_quantity_reinjected : 0;
+        }
+        unset($product);
 
         // Prepare customer explanation for display
         $this->object->question = '<span class="normal-text">'.nl2br($this->object->question).'</span>';
 
         $this->tpl_form_vars = [
             'customer'               => new Customer($this->object->id_customer),
-            'url_customer'           => 'index.php?tab=AdminCustomers&id_customer='.(int) $this->object->id_customer.'&viewcustomer&token='.Tools::getAdminToken('AdminCustomers'.(int) (Tab::getIdFromClassName('AdminCustomers')).(int) $this->context->employee->id),
+            'url_customer'           => $this->context->link->getAdminLink('AdminCustomers', true, [
+                'id_customer' => (int)$this->object->id_customer,
+                'viewcustomer' => 1,
+            ]),
             'text_order'             => sprintf($this->l('Order #%1$d from %2$s'), $order->id, Tools::displayDate($order->date_upd)),
-            'url_order'              => 'index.php?tab=AdminOrders&id_order='.(int) $order->id.'&vieworder&token='.Tools::getAdminToken('AdminOrders'.(int) Tab::getIdFromClassName('AdminOrders').(int) $this->context->employee->id),
+            'url_order'              => $this->context->link->getAdminLink('AdminOrders', true, [
+                'id_order' => (int)$order->id,
+                'vieworder' => 1,
+            ]),
             'picture_folder'         => _THEME_PROD_PIC_DIR_,
             'returnedCustomizations' => $returnedCustomizations,
             'customizedDatas'        => Product::getAllCustomizedDatas((int) ($order->id_cart)),
@@ -296,30 +320,39 @@ class AdminReturnControllerCore extends AdminController
                     $orderReturn = new OrderReturn($idOrderReturn);
                     $order = new Order($orderReturn->id_order);
                     $customer = new Customer($orderReturn->id_customer);
-                    $orderReturn->state = Tools::getIntValue('state');
-                    if ($orderReturn->save()) {
+                    $newState = Tools::getIntValue('state');
+                    $quantityTargets = $this->collectReturnQuantityTargets($orderReturn);
+                    if (count($this->errors)) {
+                        return;
+                    }
+
+                    $orderReturn->state = $newState;
+                    if ($orderReturn->save() && $this->applyReturnQuantityTargets($orderReturn, $quantityTargets)) {
                         $orderReturnState = new OrderReturnState($orderReturn->state);
+
                         $vars = [
                             '{lastname}'           => $customer->lastname,
                             '{firstname}'          => $customer->firstname,
                             '{id_order_return}'    => $idOrderReturn,
                             '{state_order_return}' => ($orderReturnState->name[(int)$order->id_lang] ?? $orderReturnState->name[(int)Configuration::get('PS_LANG_DEFAULT')]),
                         ];
-                        Mail::Send(
-                            (int) $order->id_lang,
-                            'order_return_state',
-                            Mail::l('Your order return status has changed', $order->id_lang),
-                            $vars,
-                            $customer->email,
-                            $customer->firstname.' '.$customer->lastname,
-                            null,
-                            null,
-                            null,
-                            null,
-                            _PS_MAIL_DIR_,
-                            true,
-                            (int) $order->id_shop
-                        );
+                        if ((int)$orderReturnState->id === OrderReturn::STATE_RETURN_COMPLETED) {
+                            Mail::Send(
+                                (int) $order->id_lang,
+                                'order_return_state',
+                                Mail::l('Your order return status has changed', $order->id_lang),
+                                $vars,
+                                $customer->email,
+                                $customer->firstname.' '.$customer->lastname,
+                                null,
+                                null,
+                                null,
+                                null,
+                                _PS_MAIL_DIR_,
+                                true,
+                                (int) $order->id_shop
+                            );
+                        }
 
                         if (Tools::isSubmit('submitAddorder_returnAndStay')) {
                             Tools::redirectAdmin(static::$currentIndex.'&conf=4&token='.$this->token.'&updateorder_return&id_order_return='.(int) $idOrderReturn);
@@ -337,6 +370,390 @@ class AdminReturnControllerCore extends AdminController
         parent::postProcess();
     }
 
+    protected function collectReturnQuantityTargets(OrderReturn $orderReturn): array
+    {
+        $registeredQuantities = Tools::getValue('return_registered_quantity', []);
+        $receivedQuantities = Tools::getValue('return_received_quantity', []);
+        $restockedQuantities = Tools::getValue('return_restocked_quantity', []);
+
+        if (!is_array($registeredQuantities)) {
+            return [];
+        }
+
+        $targets = [];
+        $hasRegisteredQuantity = false;
+        foreach ($registeredQuantities as $idOrderDetail => $rawRegisteredQuantity) {
+            $idOrderDetail = (int)$idOrderDetail;
+            $orderDetail = new OrderDetail($idOrderDetail);
+            if (!Validate::isLoadedObject($orderDetail) || (int)$orderDetail->id_order !== (int)$orderReturn->id_order) {
+                $this->errors[] = Tools::displayError('The order return content is invalid.');
+                return [];
+            }
+
+            $registeredQuantity = (int)$rawRegisteredQuantity;
+            $receivedQuantity = is_array($receivedQuantities) && array_key_exists($idOrderDetail, $receivedQuantities)
+                ? (int)$receivedQuantities[$idOrderDetail]
+                : (int)$orderDetail->product_quantity_return;
+            $restockedQuantity = is_array($restockedQuantities) && array_key_exists($idOrderDetail, $restockedQuantities)
+                ? (int)$restockedQuantities[$idOrderDetail]
+                : (int)$orderDetail->product_quantity_reinjected;
+            $orderedQuantity = (int)$orderDetail->product_quantity;
+
+            if ($registeredQuantity < 0 || $receivedQuantity < 0 || $restockedQuantity < 0) {
+                $this->errors[] = Tools::displayError('Returned quantities cannot be negative.');
+                return [];
+            }
+
+            if ($registeredQuantity > $orderedQuantity || $receivedQuantity > $orderedQuantity) {
+                $this->errors[] = Tools::displayError('Returned quantities cannot be greater than the ordered quantity.');
+                return [];
+            }
+
+            if ($restockedQuantity > $receivedQuantity) {
+                $this->errors[] = Tools::displayError('Restocked quantity cannot be greater than received quantity.');
+                return [];
+            }
+
+            if ($registeredQuantity > 0) {
+                $hasRegisteredQuantity = true;
+            }
+
+            $targets[$idOrderDetail] = [
+                'registered' => $registeredQuantity,
+                'received'   => $receivedQuantity,
+                'restocked'  => $restockedQuantity,
+            ];
+        }
+
+        if ($targets && !$hasRegisteredQuantity) {
+            $this->errors[] = Tools::displayError('You need at least one product.');
+            return [];
+        }
+
+        return $targets;
+    }
+
+    protected function applyReturnQuantityTargets(OrderReturn $orderReturn, array $quantityTargets): bool
+    {
+        foreach ($quantityTargets as $idOrderDetail => $target) {
+            if (!OrderReturn::upsertReturnDetail((int)$orderReturn->id, (int)$idOrderDetail, (int)$target['registered'])) {
+                $this->errors[] = Tools::displayError('An error occurred while saving the order return details.');
+                return false;
+            }
+
+            $orderDetail = new OrderDetail((int)$idOrderDetail);
+            if (!Validate::isLoadedObject($orderDetail)) {
+                $this->errors[] = Tools::displayError('The order return content is invalid.');
+                return false;
+            }
+
+            if ((int)$orderDetail->product_quantity_return !== (int)$target['received']) {
+                $orderDetail->product_quantity_return = (int)$target['received'];
+                if (!$orderDetail->update()) {
+                    $this->errors[] = Tools::displayError('Returned quantities could not be booked.');
+                    return false;
+                }
+            }
+
+            if (!$this->setRestockedQuantity($orderDetail, (int)$target['restocked'])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    protected function setRestockedQuantity(OrderDetail $orderDetail, int $targetQuantity): bool
+    {
+        $currentQuantity = (int)$orderDetail->product_quantity_reinjected;
+        if ($targetQuantity === $currentQuantity) {
+            return true;
+        }
+
+        $idMovementReason = $this->getCustomerReturnStockMovementReasonId();
+        if ($targetQuantity > $currentQuantity) {
+            $this->reinjectQuantity($orderDetail, $targetQuantity - $currentQuantity, false, $idMovementReason);
+            return !count($this->errors);
+        }
+
+        return $this->removeRestockedQuantity($orderDetail, $currentQuantity - $targetQuantity, $idMovementReason);
+    }
+
+    protected function removeRestockedQuantity(OrderDetail $orderDetail, int $quantity, int $idMovementReason): bool
+    {
+        $quantityToRemove = min($quantity, (int)$orderDetail->product_quantity_reinjected);
+        if ($quantityToRemove <= 0) {
+            return true;
+        }
+
+        $product = new Product($orderDetail->product_id, false, (int)$this->context->language->id, (int)$orderDetail->id_shop);
+
+        if (Configuration::get('PS_ADVANCED_STOCK_MANAGEMENT') && $product->advanced_stock_management && (int)$orderDetail->id_warehouse !== 0) {
+            $manager = StockManagerFactory::getManager();
+            $warehouse = new Warehouse((int)$orderDetail->id_warehouse);
+            if (!Validate::isLoadedObject($warehouse)) {
+                $this->errors[] = Tools::displayError('This product cannot be re-stocked.');
+                return false;
+            }
+
+            if (
+                class_exists('\\ErpModule\\ProductExtensionErp')
+                && class_exists('\\ErpModule\\ProductBundleErp')
+                && \ErpModule\ProductExtensionErp::checkIfBundle($orderDetail->product_id)
+            ) {
+                $items = \ErpModule\ProductBundleErp::getItems($orderDetail->product_id, $orderDetail->product_attribute_id);
+                foreach ($items as $item) {
+                    if (!$this->removeAdvancedStockProduct(
+                        $manager,
+                        (int)$item['item_id_product'],
+                        0,
+                        $warehouse,
+                        $quantityToRemove * (int)$item['quantity'],
+                        $idMovementReason,
+                        (int)$orderDetail->id_order
+                    )) {
+                        return false;
+                    }
+                }
+            } elseif (Pack::isPack((int)$product->id)) {
+                if ($product->shouldAdjustPackItemsQuantities()) {
+                    $productsPack = Pack::getItems((int)$product->id, (int)Configuration::get('PS_LANG_DEFAULT'));
+                    foreach ($productsPack as $productPack) {
+                        if ((int)$productPack->advanced_stock_management === 1 && !$this->removeAdvancedStockProduct(
+                            $manager,
+                            (int)$productPack->id,
+                            (int)$productPack->id_pack_product_attribute,
+                            $warehouse,
+                            (int)$productPack->pack_quantity * $quantityToRemove,
+                            $idMovementReason,
+                            (int)$orderDetail->id_order
+                        )) {
+                            return false;
+                        }
+                    }
+                }
+                if ($product->shouldAdjustPackQuantity() && !$this->removeAdvancedStockProduct(
+                    $manager,
+                    (int)$orderDetail->product_id,
+                    (int)$orderDetail->product_attribute_id,
+                    $warehouse,
+                    $quantityToRemove,
+                    $idMovementReason,
+                    (int)$orderDetail->id_order,
+                    1
+                )) {
+                    return false;
+                }
+            } elseif (!$this->removeAdvancedStockProduct(
+                $manager,
+                (int)$orderDetail->product_id,
+                (int)$orderDetail->product_attribute_id,
+                $warehouse,
+                $quantityToRemove,
+                $idMovementReason,
+                (int)$orderDetail->id_order
+            )) {
+                return false;
+            }
+
+            $orderDetail->product_quantity_reinjected -= $quantityToRemove;
+            if (!$orderDetail->update()) {
+                $this->errors[] = Tools::displayError('Restocked quantities could not be corrected.');
+                return false;
+            }
+            StockAvailable::synchronize((int)$orderDetail->product_id);
+
+            return true;
+        }
+
+        if ((int)$orderDetail->id_warehouse === 0) {
+            if (!StockAvailable::updateQuantity(
+                (int)$orderDetail->product_id,
+                (int)$orderDetail->product_attribute_id,
+                -$quantityToRemove,
+                (int)$orderDetail->id_shop
+            )) {
+                $this->errors[] = Tools::displayError('Restocked quantities could not be corrected.');
+                return false;
+            }
+
+            $orderDetail->product_quantity_reinjected -= $quantityToRemove;
+            if (!$orderDetail->update()) {
+                $this->errors[] = Tools::displayError('Restocked quantities could not be corrected.');
+                return false;
+            }
+
+            return true;
+        }
+
+        $this->errors[] = Tools::displayError('This product cannot be re-stocked.');
+        return false;
+    }
+
+    protected function removeAdvancedStockProduct(
+        $manager,
+        int $idProduct,
+        int $idProductAttribute,
+        Warehouse $warehouse,
+        int $quantity,
+        int $idMovementReason,
+        int $idOrder,
+        int $ignorePack = 0
+    ): bool {
+        if ($quantity <= 0) {
+            return true;
+        }
+
+        $removedProducts = $manager->removeProduct(
+            $idProduct,
+            $idProductAttribute,
+            $warehouse,
+            $quantity,
+            $idMovementReason,
+            true,
+            $idOrder,
+            $ignorePack,
+            $this->context->employee
+        );
+
+        if (!is_array($removedProducts) || !$this->hasRemovedStock($removedProducts)) {
+            $this->errors[] = Tools::displayError('Restocked quantities could not be corrected.');
+            return false;
+        }
+
+        return true;
+    }
+
+    protected function hasRemovedStock(array $removedProducts): bool
+    {
+        foreach ($removedProducts as $removedProduct) {
+            if (!is_array($removedProduct)) {
+                continue;
+            }
+            if (isset($removedProduct['quantity']) && (int)$removedProduct['quantity'] > 0) {
+                return true;
+            }
+            if ($this->hasRemovedStock($removedProduct)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function getCustomerReturnStockMovementReasonId(): int
+    {
+        $idMovementReason = (int)Configuration::get('PS_STOCK_CUSTOMER_RETURN_REASON');
+        if ($idMovementReason > 0 && StockMvtReason::exists($idMovementReason)) {
+            return $idMovementReason;
+        }
+
+        return (int)Configuration::get('PS_STOCK_MVT_INC_REASON_DEFAULT');
+    }
+
+    protected function reinjectQuantity($orderDetail, $qtyCancelProduct, $delete = false, $idMvtReason = null)
+    {
+        $reinjectableQuantity = (int) $orderDetail->product_quantity - (int) $orderDetail->product_quantity_reinjected;
+        $quantityToReinject = $qtyCancelProduct > $reinjectableQuantity ? $reinjectableQuantity : $qtyCancelProduct;
+
+        $product = new Product($orderDetail->product_id, false, (int) $this->context->language->id, (int) $orderDetail->id_shop);
+
+        if (Configuration::get('PS_ADVANCED_STOCK_MANAGEMENT') && $product->advanced_stock_management && $orderDetail->id_warehouse != 0) {
+            $manager = StockManagerFactory::getManager();
+            $movements = StockMvt::getNegativeStockMvts(
+                $orderDetail->id_order,
+                $orderDetail->product_id,
+                $orderDetail->product_attribute_id,
+                $quantityToReinject
+            );
+            $leftToReinject = $quantityToReinject;
+            foreach ($movements as $movement) {
+                if ($leftToReinject > $movement['physical_quantity']) {
+                    $quantityToReinject = $movement['physical_quantity'];
+                }
+
+                $leftToReinject -= $quantityToReinject;
+                if (
+                    class_exists('\\ErpModule\\ProductExtensionErp')
+                    && class_exists('\\ErpModule\\ProductBundleErp')
+                    && \ErpModule\ProductExtensionErp::checkIfBundle($orderDetail->product_id)
+                ) {
+                    $items = \ErpModule\ProductBundleErp::getItems($orderDetail->product_id, $orderDetail->product_attribute_id);
+                    foreach ($items as $item) {
+                        $manager->addProduct(
+                            $item['item_id_product'],
+                            0,
+                            new Warehouse($movement['id_warehouse']),
+                            $quantityToReinject * $item['quantity'],
+                            $idMvtReason,
+                            $movement['price_te'],
+                            true
+                        );
+                    }
+                } elseif (Pack::isPack((int) $product->id)) {
+                    if ($product->shouldAdjustPackItemsQuantities()) {
+                        $productsPack = Pack::getItems((int) $product->id, (int) Configuration::get('PS_LANG_DEFAULT'));
+                        foreach ($productsPack as $productPack) {
+                            if ($productPack->advanced_stock_management == 1) {
+                                $manager->addProduct(
+                                    $productPack->id,
+                                    $productPack->id_pack_product_attribute,
+                                    new Warehouse($movement['id_warehouse']),
+                                    $productPack->pack_quantity * $quantityToReinject,
+                                    $idMvtReason,
+                                    $movement['price_te'],
+                                    true
+                                );
+                            }
+                        }
+                    }
+                    if ($product->shouldAdjustPackQuantity()) {
+                        $manager->addProduct(
+                            $orderDetail->product_id,
+                            $orderDetail->product_attribute_id,
+                            new Warehouse($movement['id_warehouse']),
+                            $quantityToReinject,
+                            $idMvtReason,
+                            $movement['price_te'],
+                            true
+                        );
+                    }
+                } else {
+                    $manager->addProduct(
+                        $orderDetail->product_id,
+                        $orderDetail->product_attribute_id,
+                        new Warehouse($movement['id_warehouse']),
+                        $quantityToReinject,
+                        $idMvtReason,
+                        $movement['price_te'],
+                        true
+                    );
+                }
+                $orderDetail->product_quantity_reinjected += $quantityToReinject;
+            }
+
+            $idProduct = $orderDetail->product_id;
+            $delete ? $orderDetail->delete() : $orderDetail->update();
+            StockAvailable::synchronize($idProduct);
+        } elseif ($orderDetail->id_warehouse == 0) {
+            StockAvailable::updateQuantity(
+                $orderDetail->product_id,
+                $orderDetail->product_attribute_id,
+                $quantityToReinject,
+                $orderDetail->id_shop
+            );
+
+            if ($delete) {
+                $orderDetail->delete();
+            } else {
+                $orderDetail->product_quantity_reinjected += $quantityToReinject;
+                $orderDetail->update();
+            }
+        } else {
+            $this->errors[] = Tools::displayError('This product cannot be re-stocked.');
+        }
+    }
+
     /**
      * @param int $reference
      * @param array $row
@@ -350,7 +767,19 @@ class AdminReturnControllerCore extends AdminController
             'id_order' => (int)$row['id_order']
         ];
         $link = Context::getContext()->link->getAdminLink('AdminOrders', true, $params);
-        return "<a href='{$link}'>{$reference}</a>";
+
+        return '<a href="'.Tools::safeOutput($link).'">'.Tools::safeOutput($reference).'</a>';
+    }
+
+    public static function getCustomerLink($customer, $row)
+    {
+        $params = [
+            'viewcustomer' => true,
+            'id_customer'  => (int)$row['id_customer'],
+        ];
+        $link = Context::getContext()->link->getAdminLink('AdminCustomers', true, $params);
+
+        return '<a href="'.Tools::safeOutput($link).'">'.Tools::safeOutput($customer).'</a>';
     }
 
 }

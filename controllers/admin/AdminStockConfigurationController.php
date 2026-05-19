@@ -130,6 +130,14 @@ class AdminStockConfigurationControllerCore extends AdminController
                         'identifier' => 'id_stock_mvt_reason',
                         'visibility' => Shop::CONTEXT_ALL,
                     ],
+                    'PS_STOCK_CUSTOMER_RETURN_REASON' => [
+                        'title'      => $this->l('Default label for stock movements when a customer return is corrected'),
+                        'cast'       => 'intval',
+                        'type'       => 'select',
+                        'list'       => $reasonsInc,
+                        'identifier' => 'id_stock_mvt_reason',
+                        'visibility' => Shop::CONTEXT_ALL,
+                    ],
                     'PS_STOCK_MVT_SUPPLY_ORDER'       => [
                         'title'      => $this->l('Default label for increasing stock when a supply order is received'),
                         'cast'       => 'intval',

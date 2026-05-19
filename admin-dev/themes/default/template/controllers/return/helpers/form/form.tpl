@@ -27,14 +27,16 @@
 
 {block name="input"}
 	{if $input.type == 'text_customer'}
-		<span>{$customer->firstname} {$customer->lastname}</span>
-		<p>
-			<a class="text-muted" href="{$url_customer}">{l s='View details on the customer page'}</a>
+		<p class="form-control-static" style="padding-top: 7px; margin-bottom: 0;">
+			<a href="{$url_customer|escape:'html':'UTF-8'}">
+				{$customer->firstname|escape:'html':'UTF-8'} {$customer->lastname|escape:'html':'UTF-8'}
+			</a>
 		</p>
 	{elseif $input.type == 'text_order'}
-		<span>{$text_order}</span>
-		<p>
-			<a class="text-muted" href="{$url_order}">{l s='View details on the order page'}</a>
+		<p class="form-control-static" style="padding-top: 7px; margin-bottom: 0;">
+			<a href="{$url_order|escape:'html':'UTF-8'}">
+				{$text_order|escape:'html':'UTF-8'}
+			</a>
 		</p>
 	{elseif $input.type == 'pdf_order_return'}
 		<p>
@@ -52,7 +54,9 @@
 				<tr>
 					<th>{l s='Reference'}</th>
 					<th>{l s='Product name'}</th>
-					<th class="text-center">{l s='Quantity'}</th>
+					<th class="text-left">{l s='Registered quantity'}</th>
+					<th class="text-left">{l s='Received quantity'}</th>
+					<th class="text-left">{l s='Restocked quantity'}</th>
 					<th class="text-center">{l s='Action'}</th>
 				</tr>
 			</thead>
@@ -62,6 +66,8 @@
 						<td>{$returnedCustomization['reference']}</td>
 						<td>{$returnedCustomization['name']}</td>
 						<td class="text-center">{$returnedCustomization['product_quantity']|intval}</td>
+						<td class="text-center">--</td>
+						<td class="text-center">--</td>
 						<td class="text-center">
 							<a class="btn btn-default" href="{$current|escape:'html':'UTF-8'}&amp;deleteorder_return_detail&amp;id_order_detail={$returnedCustomization['id_order_detail']}&amp;id_order_return={$id_order_return}&amp;id_customization={$returnedCustomization['id_customization']}&amp;token={$token|escape:'html':'UTF-8'}">
 								<i class="icon-remove"></i>
@@ -75,7 +81,7 @@
 					{assign var='addressDeliveryId' value=$returnedCustomization.id_address_delivery}
 					{foreach $customizedDatas.$productId.$productAttributeId.$addressDeliveryId.$customizationId.datas as $type => $datas}
 						<tr>
-							<td colspan="4">
+							<td colspan="6">
 								<div class="form-horizontal">
 									{if $type == Product::CUSTOMIZE_FILE}
 										{foreach from=$datas item='data'}
@@ -109,10 +115,54 @@
 					{if !isset($quantityDisplayed[$product['id_order_detail']]) || $product['product_quantity']|intval > $quantityDisplayed[$product['id_order_detail']]|intval}
 						<tr>
 							<td>{$product['product_reference']}</td>
-							<td class="text-center">{$product['product_name']}</td>
-							<td class="text-center">{$product['product_quantity']}</td>
+							<td>{$product['product_name']}</td>
 							<td class="text-center">
-								<a class="btn btn-default"  href="{$current|escape:'html':'UTF-8'}&amp;deleteorder_return_detail&amp;id_order_detail={$product['id_order_detail']}&amp;id_order_return={$id_order_return}&amp;token={$token|escape:'html':'UTF-8'}">
+								<div class="input-group fixed-width-md">
+									<input
+										type="number"
+										min="0"
+										max="{$product['return_quantity_max']|intval}"
+										step="1"
+										class="form-control return-quantity-input return-registered-quantity"
+										name="return_registered_quantity[{$product['id_order_detail']|intval}]"
+										value="{$product['return_registered_quantity']|intval}"
+										data-order-detail="{$product['id_order_detail']|intval}"
+									/>
+									<span class="input-group-addon">/ {$product['return_quantity_max']|intval}</span>
+								</div>
+							</td>
+							<td class="text-center">
+								<div class="input-group fixed-width-md">
+									<input
+										type="number"
+										min="0"
+										max="{$product['return_quantity_max']|intval}"
+										step="1"
+										class="form-control return-quantity-input return-received-quantity"
+										name="return_received_quantity[{$product['id_order_detail']|intval}]"
+										value="{$product['return_received_quantity']|intval}"
+										data-order-detail="{$product['id_order_detail']|intval}"
+									/>
+									<span class="input-group-addon">/ {$product['return_quantity_max']|intval}</span>
+								</div>
+							</td>
+							<td class="text-center">
+								<div class="input-group fixed-width-md">
+									<input
+										type="number"
+										min="0"
+										max="{$product['return_received_quantity']|intval}"
+										step="1"
+										class="form-control return-quantity-input return-restocked-quantity"
+										name="return_restocked_quantity[{$product['id_order_detail']|intval}]"
+										value="{$product['return_reinjected_quantity']|intval}"
+										data-order-detail="{$product['id_order_detail']|intval}"
+									/>
+									<span class="input-group-addon">/ <span class="return-restocked-max" data-order-detail="{$product['id_order_detail']|intval}">{$product['return_received_quantity']|intval}</span></span>
+								</div>
+							</td>
+							<td class="text-center">
+								<a class="btn btn-default" href="{$current|escape:'html':'UTF-8'}&amp;deleteorder_return_detail&amp;id_order_detail={$product['id_order_detail']}&amp;id_order_return={$id_order_return}&amp;token={$token|escape:'html':'UTF-8'}">
 									<i class="icon-remove"></i>
 									{l s='Delete'}
 								</a>
@@ -122,6 +172,68 @@
 				{/foreach}
 			</tbody>
 		</table>
+		<script type="text/javascript">
+			(function () {
+				var packageReceivedState = 3;
+
+				function asQuantity(value) {
+					var quantity = parseInt(value, 10);
+					return isNaN(quantity) ? 0 : quantity;
+				}
+
+				function clampInput(input) {
+					var $input = $(input);
+					var min = asQuantity($input.attr('min'));
+					var max = asQuantity($input.attr('max'));
+					var value = asQuantity($input.val());
+
+					if (value < min) {
+						value = min;
+					}
+					if (value > max) {
+						value = max;
+					}
+
+					$input.val(value);
+				}
+
+				function syncRestockedLimit(idOrderDetail) {
+					var $received = $('.return-received-quantity[data-order-detail="' + idOrderDetail + '"]');
+					var $restocked = $('.return-restocked-quantity[data-order-detail="' + idOrderDetail + '"]');
+					var received = asQuantity($received.val());
+
+					$restocked.attr('max', received);
+					$('.return-restocked-max[data-order-detail="' + idOrderDetail + '"]').text(received);
+					clampInput($restocked);
+				}
+
+				$('.return-quantity-input').on('input change', function () {
+					$(this).data('changed', true);
+					clampInput(this);
+
+					if ($(this).hasClass('return-received-quantity')) {
+						syncRestockedLimit($(this).data('order-detail'));
+					}
+				});
+
+				$('select[name="state"]').on('change', function () {
+					if (asQuantity($(this).val()) !== packageReceivedState) {
+						return;
+					}
+
+					$('.return-registered-quantity').each(function () {
+						var idOrderDetail = $(this).data('order-detail');
+						var registered = asQuantity($(this).val());
+						var $received = $('.return-received-quantity[data-order-detail="' + idOrderDetail + '"]');
+
+						if (!$received.data('changed') && asQuantity($received.val()) < registered) {
+							$received.val(registered);
+							syncRestockedLimit(idOrderDetail);
+						}
+					});
+				});
+			}());
+		</script>
 	{else}
 		{$smarty.block.parent}
 	{/if}

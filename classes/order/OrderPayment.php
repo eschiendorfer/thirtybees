@@ -34,6 +34,11 @@
  */
 class OrderPaymentCore extends ObjectModel
 {
+    public const STATUS_DONE = 'done';
+    public const STATUS_PENDING = 'pending';
+    public const STATUS_FAILED = 'failed';
+    public const STATUS_MANUAL = 'manual';
+
     /** @var string $order_reference */
     public $order_reference;
     /** @var int $id_currency */
@@ -42,12 +47,16 @@ class OrderPaymentCore extends ObjectModel
     public $amount;
     /** @var string $payment_method */
     public $payment_method;
-    /** @var string $payment_module */
-    public $payment_module;
     /** @var float $conversion_rate */
     public $conversion_rate;
     /** @var string $transaction_id */
     public $transaction_id;
+    /** @var string $payment_module */
+    public $payment_module = '';
+    /** @var int $id_order_slip */
+    public $id_order_slip = 0;
+    /** @var string $status */
+    public $status = self::STATUS_DONE;
     /** @var string $card_number */
     public $card_number;
     /** @var string $card_brand */
@@ -69,23 +78,27 @@ class OrderPaymentCore extends ObjectModel
         'primary' => 'id_order_payment',
         'primaryKeyDbType' => 'int(11)',
         'fields'  => [
-            'order_reference'         => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 9],
-            'id_currency'             => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true, 'size' => 10],
-            'amount'                  => ['type' => self::TYPE_PRICE, 'validate' => 'isNegativePrice', 'required' => true],
-            'payment_method'          => ['type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'dbNullable' => false],
-            'payment_module'  => ['type' => self::TYPE_STRING, 'validate' => 'isModuleName', 'size' => 64, 'dbNullable' => true],
-            'conversion_rate'         => ['type' => self::TYPE_FLOAT, 'validate' => 'isFloat', 'size' => 13, 'decimals' => 6, 'dbDefault' => '1.000000'],
-            'transaction_id'          => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 254],
-            'card_number'             => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 254],
-            'card_brand'              => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 254                     ],
-            'card_expiration'         => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 7, 'dbType' => 'char(7)'],
-            'card_holder'             => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 254],
+            'order_reference' => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 9],
+            'id_currency'     => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true, 'size' => 10],
+            'amount'          => ['type' => self::TYPE_PRICE, 'validate' => 'isNegativePrice', 'required' => true],
+            'payment_method'  => ['type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'dbNullable' => false],
+            'conversion_rate' => ['type' => self::TYPE_FLOAT, 'validate' => 'isFloat', 'size' => 13, 'decimals' => 6, 'dbDefault' => '1.000000'],
+            'transaction_id'  => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 254],
+            'payment_module'  => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 64, 'dbDefault' => '', 'dbNullable' => false],
+            'id_order_slip'   => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '0'],
+            'status'          => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 16, 'dbDefault' => self::STATUS_DONE],
+            'card_number'     => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 254],
+            'card_brand'      => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 254                     ],
+            'card_expiration' => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 7, 'dbType' => 'char(7)'],
+            'card_holder'     => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 254],
             'payment_cost_accounting' => ['type' => self::TYPE_FLOAT, 'validate' => 'isFloat', 'size' => 13, 'decimals' => 6, 'dbDefault' => '0.000000'],
-            'date_add'                => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
+            'date_add'        => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
         ],
         'keys' => [
             'order_payment' => [
                 'order_reference' => ['type' => ObjectModel::KEY, 'columns' => ['order_reference']],
+                'id_order_slip' => ['type' => ObjectModel::KEY, 'columns' => ['id_order_slip']],
+                'status' => ['type' => ObjectModel::KEY, 'columns' => ['status']],
             ],
         ],
     ];
@@ -234,5 +247,38 @@ class OrderPaymentCore extends ObjectModel
         }
 
         $this->payment_cost_accounting = Tools::ps_round($fee_absolute*$conversionRate + ($fee_relative/100*$transaction_amount), 6);
+    }
+
+    public static function addRefundForOrderSlip(
+        Order $order,
+        int $idOrderSlip,
+        float $amount,
+        string $paymentMethod,
+        string $paymentModule,
+        string $status = self::STATUS_PENDING,
+        ?string $transactionId = null
+    ): bool {
+        $currency = new Currency((int)$order->id_currency);
+        $orderInvoice = null;
+        if ($order->hasInvoice()) {
+            foreach ($order->getInvoicesCollection() as $invoice) {
+                if (Validate::isLoadedObject($invoice)) {
+                    $orderInvoice = $invoice;
+                    break;
+                }
+            }
+        }
+
+        return $order->addOrderPayment(
+            -abs($amount),
+            $paymentMethod,
+            $transactionId,
+            $currency,
+            date('Y-m-d H:i:s'),
+            $orderInvoice,
+            $paymentModule,
+            $idOrderSlip,
+            $status
+        );
     }
 }

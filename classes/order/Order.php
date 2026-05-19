@@ -1001,7 +1001,7 @@ class OrderCore extends ObjectModel
     }
 
     /**
-     * Returns true, if order product list can be modified -- products can be added, deleted, or change quantity
+     * Returns true if the order product list can still be structurally modified before payment and shipment.
      *
      * @return bool
      *
@@ -1022,7 +1022,7 @@ class OrderCore extends ObjectModel
      */
     protected function resolveCanEditProducts(): bool
     {
-        if ($this->hasBeenDelivered()) {
+        if (!(new CancelEligibilityService())->canEditProductsInBackOffice($this)) {
             return false;
         }
         $responses = Hook::getResponses('actionCanEditOrderProducts', ['order' => $this]);
@@ -2210,7 +2210,17 @@ class OrderCore extends ObjectModel
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public function addOrderPayment($amountPaid, $paymentMethod = null, $paymentTransactionId = null, $currency = null, $date = null, $orderInvoice = null, $paymentModule = null)
+    public function addOrderPayment(
+        $amountPaid,
+        $paymentMethod = null,
+        $paymentTransactionId = null,
+        $currency = null,
+        $date = null,
+        $orderInvoice = null,
+        $paymentModule = null,
+        $idOrderSlip = 0,
+        $status = OrderPayment::STATUS_DONE
+    )
     {
         $orderPayment = new OrderPayment();
         $orderPayment->order_reference = $this->reference;
@@ -2219,11 +2229,13 @@ class OrderCore extends ObjectModel
         $orderPayment->conversion_rate = ($currency ? $currency->conversion_rate : 1);
         // if payment_method is define, we used this
         $orderPayment->payment_method = ($paymentMethod ? $paymentMethod : $this->payment);
-        $orderPayment->payment_module = $paymentModule;
         $orderPayment->transaction_id = $paymentTransactionId;
         $orderPayment->amount = $amountPaid;
         $orderPayment->date_add = ($date ? $date : null);
-        $orderPayment->setPaymentCostAccounting($this->module, $orderPayment->amount, $orderPayment->id_currency, $orderPayment->conversion_rate);
+        $orderPayment->payment_module = (string)($paymentModule ?: $this->module);
+        $orderPayment->id_order_slip = (int)$idOrderSlip;
+        $orderPayment->status = (string)($status ?: OrderPayment::STATUS_DONE);
+        $orderPayment->setPaymentCostAccounting($orderPayment->payment_module, $orderPayment->amount, $orderPayment->id_currency, $orderPayment->conversion_rate);
 
         // Add time to the date if needed
         if ($orderPayment->date_add != null && preg_match('/^[0-9]+-[0-9]+-[0-9]+$/', $orderPayment->date_add)) {
