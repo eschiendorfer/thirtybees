@@ -243,6 +243,31 @@ class StoreCreditTransactionCore extends ObjectModel
     }
 
     /**
+     * @param int $idOrderSlip
+     *
+     * @return int
+     *
+     * @throws PrestaShopException
+     */
+    public static function getRefundCreditTransactionIdForOrderSlip(int $idOrderSlip): int
+    {
+        if ($idOrderSlip <= 0) {
+            return 0;
+        }
+
+        $sql = (new DbQuery())
+            ->select('id_store_credit_transaction')
+            ->from('store_credit_transaction')
+            ->where('entity_type = ' . (int)static::ENTITY_ORDER_SLIP)
+            ->where('id_entity = ' . (int)$idOrderSlip)
+            ->where('transaction_sign = ' . (int)static::SIGN_INCREASE)
+            ->where('transaction_type = ' . (int)static::TYPE_REFUND_CREDIT)
+            ->orderBy('id_store_credit_transaction DESC');
+
+        return max(0, (int)Db::readOnly()->getValue($sql));
+    }
+
+    /**
      * @param int $idStoreCredit
      * @param int $idCustomer
      * @param int $idOrder

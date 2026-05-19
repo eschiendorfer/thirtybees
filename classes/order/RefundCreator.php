@@ -42,48 +42,26 @@ class RefundCreatorCore
         );
     }
 
-    public function isStoreCreditRefundAvailable(): bool
-    {
-        return class_exists('StoreCredit')
-            && (
-                method_exists('StoreCredit', 'addRefundCredit')
-                || method_exists('StoreCredit', 'addAccountingAdjustment')
-            );
-    }
-
     public function createRefundStoreCredit(Order $order, int $idOrderSlip, float $amountTaxIncl): int
     {
-        if ($idOrderSlip <= 0 || $amountTaxIncl <= 0.0 || !$this->isStoreCreditRefundAvailable()) {
+        if ($idOrderSlip <= 0 || $amountTaxIncl <= 0.0) {
             return 0;
         }
 
         $idEmployee = (int)$this->context->employee->id;
-        $note = sprintf('Refund credit for order slip #%d', $idOrderSlip);
-        $idShops = [(int)$order->id_shop];
 
-        if (method_exists('StoreCredit', 'addRefundCredit')) {
-            return max(0, (int)StoreCredit::addRefundCredit(
-                (int)$order->id_customer,
-                (float)$amountTaxIncl,
-                (int)$idOrderSlip,
-                $idEmployee,
-                $note,
-                $idShops
-            ));
+        if (!StoreCredit::addRefundCreditForOrderSlip(
+            (int)$order->id_shop,
+            (int)$order->id_customer,
+            (int)$order->id,
+            (int)$idOrderSlip,
+            (float)$amountTaxIncl,
+            $idEmployee
+        )) {
+            return 0;
         }
 
-        if (method_exists('StoreCredit', 'addAccountingAdjustment')) {
-            return max(0, (int)StoreCredit::addAccountingAdjustment(
-                (int)$order->id_customer,
-                (float)$amountTaxIncl,
-                (int)$idOrderSlip,
-                $idEmployee,
-                $note,
-                $idShops
-            ));
-        }
-
-        return 0;
+        return StoreCreditTransaction::getRefundCreditTransactionIdForOrderSlip((int)$idOrderSlip);
     }
 
     public function addStoreCreditRefundPayment(Order $order, int $idOrderSlip, float $amountTaxIncl, int $idStoreCreditTransaction): bool

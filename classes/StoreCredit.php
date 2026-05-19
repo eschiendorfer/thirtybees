@@ -242,6 +242,15 @@ class StoreCreditCore extends ObjectModel
         }
 
         try {
+            $orderSlip = new OrderSlip($idOrderSlip);
+            if (
+                !Validate::isLoadedObject($orderSlip) ||
+                (int)$orderSlip->id_order !== $idOrder ||
+                (int)$orderSlip->id_customer !== $idCustomer
+            ) {
+                return false;
+            }
+
             if (StoreCreditTransaction::existsTransaction(
                 StoreCreditTransaction::ENTITY_ORDER_SLIP,
                 $idOrderSlip,

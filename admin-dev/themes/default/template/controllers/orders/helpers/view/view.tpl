@@ -1036,7 +1036,7 @@
                 <div class="col-lg-3">
                   <select id="credit_refund_method" name="order_product_refund_method" class="form-control" disabled="disabled" required="required">
                     <option value="" selected="selected" disabled="disabled">{l s='Please select'}</option>
-                    <option value="store_credit" {if !isset($store_credit_refund_available) || !$store_credit_refund_available}disabled="disabled"{/if}>{l s='Store Credit'}</option>
+                    <option value="store_credit">{l s='Store Credit'}</option>
                     <option value="none">{l s='No refund'}</option>
                     <option value="original_payment" {if empty($original_payment_refund_available)}disabled="disabled"{/if}>{if !empty($original_payment_refund_label)}{$original_payment_refund_label|escape:'html':'UTF-8'}{else}{l s='Original payment method'}{/if}</option>
                   </select>

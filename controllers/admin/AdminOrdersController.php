@@ -1780,7 +1780,6 @@ class AdminOrdersControllerCore extends AdminController
             'iso_code_lang'                => $this->context->language->iso_code,
             'id_lang'                      => $this->context->language->id,
             'can_edit'                     => (bool)$this->hasEditPermission(),
-            'store_credit_refund_available' => $this->isStoreCreditRefundAvailable(),
             'original_payment_refund_available' => $this->getRefundPolicy()->isOriginalPaymentRefundAvailable($order),
             'original_payment_refund_label' => $this->getOriginalPaymentRefundLabel($order),
             'cancellation_credit_available' => (bool)$this->getRefundEligibilityService()->getOpenCancellationQuantities($order),
@@ -3279,24 +3278,13 @@ class AdminOrdersControllerCore extends AdminController
 
     protected function isStoreCreditSubmitForPartialRefund(): bool
     {
-        return $this->isStoreCreditRefundAvailable()
-            && Tools::getValue('order_product_refund_method') === 'store_credit';
-    }
-
-    protected function isStoreCreditRefundAvailable(): bool
-    {
-        return $this->getRefundCreator()->isStoreCreditRefundAvailable();
+        return Tools::getValue('order_product_refund_method') === 'store_credit';
     }
 
     protected function createRefundStoreCredit(Order $order, int $idOrderSlip, float $amountTaxIncl): int
     {
         if ($idOrderSlip <= 0 || $amountTaxIncl <= 0.0) {
             $this->errors[] = Tools::displayError('Unable to create store credit without a valid credit slip.');
-            return 0;
-        }
-
-        if (!$this->isStoreCreditRefundAvailable()) {
-            $this->errors[] = Tools::displayError('Store credit is not available.');
             return 0;
         }
 
