@@ -3147,9 +3147,9 @@ class AdminOrdersControllerCore extends AdminController
         return true;
     }
 
-    protected function getOrderProductActionCapabilities(Order $order, array $product): array
+    protected function getOrderProductActionCapabilities(Order $order, array $product, $orderDetailExtension = null): array
     {
-        return $this->getRefundEligibilityService()->getOrderProductActionCapabilities($order, $product);
+        return $this->getRefundEligibilityService()->getOrderProductActionCapabilities($order, $product, $orderDetailExtension);
     }
 
     protected function buildCreditSlipRequest(Order $order): ?array
