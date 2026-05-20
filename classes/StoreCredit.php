@@ -305,6 +305,105 @@ class StoreCreditCore extends ObjectModel
     }
 
     /**
+     * Converts a bought voucher cart rule into store credit and records the source cart rule.
+     *
+     * @param int $idShop
+     * @param int $idCustomer
+     * @param int $idCartRule
+     * @param float $amountTaxIncl
+     * @param string $voucherCode
+     * @param int $idEmployee
+     *
+     * @return int Created or existing store credit transaction id, or 0 on failure
+     *
+     * @throws PrestaShopException
+     */
+    public static function addVoucherConversion(
+        int $idShop,
+        int $idCustomer,
+        int $idCartRule,
+        float $amountTaxIncl,
+        string $voucherCode = '',
+        int $idEmployee = 0
+    ): int {
+        $amountTaxIncl = Tools::roundPrice(max(0.0, $amountTaxIncl));
+        $idEmployee = max(0, (int)$idEmployee);
+        $voucherCode = trim($voucherCode);
+        $note = $voucherCode !== ''
+            ? 'Gutschein-Code: ' . $voucherCode
+            : 'Gutschein in Shopguthaben umgewandelt';
+
+        if (
+            $idShop <= 0 ||
+            $idCustomer <= 0 ||
+            $idCartRule <= 0 ||
+            $amountTaxIncl <= 0.0 ||
+            !Validate::isCleanHtml($note)
+        ) {
+            return 0;
+        }
+
+        $existingTransactionId = StoreCreditTransaction::getVoucherConversionTransactionIdForCartRule($idCartRule);
+        if ($existingTransactionId > 0) {
+            return $existingTransactionId;
+        }
+
+        try {
+            $idStoreCredit = static::getStoreCreditIdByCustomer($idCustomer);
+            if ($idStoreCredit <= 0) {
+                $idStoreCredit = static::createStoreCreditForCustomer($idCustomer);
+            }
+            if ($idStoreCredit <= 0) {
+                return 0;
+            }
+            if (!static::associateStoreCreditToShop($idStoreCredit, $idShop)) {
+                return 0;
+            }
+
+            $idStoreCreditTransaction = 0;
+            $success = static::increaseBalanceWithTransaction(
+                $idStoreCredit,
+                $amountTaxIncl,
+                static function() use ($idStoreCredit, $idCustomer, $idCartRule, $amountTaxIncl, $idEmployee, $note, &$idStoreCreditTransaction): bool {
+                    $transaction = new StoreCreditTransaction();
+                    $transaction->id_store_credit = $idStoreCredit;
+                    $transaction->id_customer = $idCustomer;
+                    $transaction->transaction_sign = StoreCreditTransaction::SIGN_INCREASE;
+                    $transaction->transaction_type = StoreCreditTransaction::TYPE_VOUCHER_CONVERSION;
+                    $transaction->entity_type = StoreCreditTransaction::ENTITY_CART_RULE;
+                    $transaction->id_entity = $idCartRule;
+                    $transaction->id_employee = $idEmployee;
+                    $transaction->amount_tax_incl = $amountTaxIncl;
+                    $transaction->note = $note;
+
+                    if (!$transaction->add()) {
+                        return false;
+                    }
+
+                    $idStoreCreditTransaction = (int)$transaction->id;
+                    return $idStoreCreditTransaction > 0;
+                }
+            );
+
+            return $success ? $idStoreCreditTransaction : 0;
+        } catch (Exception $exception) {
+            Hook::triggerEvent('actionLogCaughtException', [
+                'exception' => $exception,
+                'extra_content' => [
+                    'source' => __METHOD__,
+                    'id_shop' => (int)$idShop,
+                    'id_customer' => (int)$idCustomer,
+                    'id_cart_rule' => (int)$idCartRule,
+                    'amount_tax_incl' => (float)$amountTaxIncl,
+                    'voucher_code' => $voucherCode,
+                    'id_employee' => (int)$idEmployee,
+                ],
+            ]);
+            return 0;
+        }
+    }
+
+    /**
      * @param int $idCustomer
      * @param float $amountTaxIncl
      * @param int $transactionType

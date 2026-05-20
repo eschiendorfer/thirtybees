@@ -507,6 +507,7 @@ class AdminCartsControllerCore extends AdminController
             'delivery_option_list' => $this->getDeliveryOptionList(),
             'cart'                 => $this->context->cart,
             'currency'             => new Currency($this->context->cart->id_currency),
+            'store_credit'         => $this->getStoreCreditSummary(),
             'addresses'            => $addresses,
             'id_cart'              => $idCart,
             'order_message'        => $messageContent,
@@ -559,6 +560,37 @@ class AdminCartsControllerCore extends AdminController
         }
 
         return $summary;
+    }
+
+    /**
+     * @return array
+     *
+     * @throws PrestaShopException
+     */
+    protected function getStoreCreditSummary(): array
+    {
+        $cart = $this->context->cart;
+        $currency = $this->context->currency;
+        $availableAmount = 0.0;
+        $usedAmount = 0.0;
+
+        if (Validate::isLoadedObject($cart) && (int)$cart->id_customer > 0) {
+            $availableAmount = Tools::roundPrice(
+                StoreCredit::getCustomerAvailableAmount((int)$cart->id_shop, (int)$cart->id_customer)
+            );
+
+            if ((bool)$cart->use_store_credit && $availableAmount > 0.0) {
+                $usedAmount = Tools::roundPrice($cart->getOrderTotal(true, Cart::ONLY_STORE_CREDIT));
+            }
+        }
+
+        return [
+            'available'           => $availableAmount,
+            'available_formatted' => Tools::displayPrice($availableAmount, $currency),
+            'used'                => $usedAmount,
+            'used_formatted'      => Tools::displayPrice($usedAmount, $currency),
+            'enabled'             => Validate::isLoadedObject($cart) ? (bool)$cart->use_store_credit : true,
+        ];
     }
 
     /**
@@ -764,6 +796,21 @@ class AdminCartsControllerCore extends AdminController
                 $this->context->cart->gift_message = $giftMessage;
             }
             $this->context->cart->save();
+            $this->ajaxDie(json_encode($this->ajaxReturnVars()));
+        }
+    }
+
+    /**
+     * @throws PrestaShopException
+     */
+    public function ajaxProcessUpdateStoreCreditUsage()
+    {
+        if ($this->hasEditPermission()) {
+            if (Validate::isLoadedObject($this->context->cart)) {
+                $this->context->cart->use_store_credit = (bool)Tools::getIntValue('use_store_credit');
+                $this->context->cart->save();
+            }
+
             $this->ajaxDie(json_encode($this->ajaxReturnVars()));
         }
     }

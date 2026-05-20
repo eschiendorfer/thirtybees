@@ -165,7 +165,10 @@ class ParentOrderControllerCore extends FrontController
                         $this->errors[] = Tools::displayError('The voucher code is invalid.');
                     } else {
                         if (($cartRule = new CartRule(CartRule::getIdByCode($code))) && Validate::isLoadedObject($cartRule)) {
-                            if ($error = $cartRule->checkValidity($this->context, false, true)) {
+                            require_once _PS_MODULE_DIR_ . 'genzo_crm/autoload.php';
+                            if (\CrmModule\CartRuleExtension::isBoughtVoucherCartRule($cartRule)) {
+                                $this->processStoreCreditVoucherConversion($cartRule, $code);
+                            } elseif ($error = $cartRule->checkValidity($this->context, false, true)) {
                                 $this->errors[] = $error;
                             } else {
                                 $this->context->cart->addCartRule($cartRule->id);
@@ -201,6 +204,92 @@ class ParentOrderControllerCore extends FrontController
         }
 
         $this->context->smarty->assign('back', Tools::safeOutput(Tools::getValue('back')));
+    }
+
+    /**
+     * @param CartRule $cartRule
+     * @param string $code
+     *
+     * @return bool
+     *
+     * @throws PrestaShopException
+     */
+    protected function processStoreCreditVoucherConversion(CartRule $cartRule, string $code): bool
+    {
+        $idCustomer = (int)$this->context->customer->id;
+        if ($idCustomer <= 0) {
+            $this->errors[] = Tools::displayError('You must be logged in to use this voucher.');
+
+            return false;
+        }
+
+        $idCartRule = (int)$cartRule->id;
+        if (StoreCreditTransaction::getVoucherConversionTransactionIdForCartRule($idCartRule) > 0) {
+            $this->redirectToOrderProcess(['voucherAlreadyConvertedToStoreCredit' => 1]);
+        }
+
+        if ((int)$cartRule->id_customer > 0 && (int)$cartRule->id_customer !== $idCustomer) {
+            $this->errors[] = Tools::displayError('You cannot use this voucher.');
+
+            return false;
+        }
+
+        if (!(bool)$cartRule->active || (int)$cartRule->quantity <= 0) {
+            $this->errors[] = Tools::displayError('This voucher is no longer available.');
+
+            return false;
+        }
+
+        $amountTaxIncl = Tools::roundPrice((float)$cartRule->reduction_amount);
+        if ($amountTaxIncl <= 0.0) {
+            $this->errors[] = Tools::displayError('The voucher amount is invalid.');
+
+            return false;
+        }
+
+        $idStoreCreditTransaction = StoreCredit::addVoucherConversion(
+            (int)$this->context->shop->id,
+            $idCustomer,
+            $idCartRule,
+            $amountTaxIncl,
+            $code
+        );
+        if ($idStoreCreditTransaction <= 0) {
+            $this->errors[] = Tools::displayError('Unable to convert voucher to store credit.');
+
+            return false;
+        }
+
+        $cartRule->active = false;
+        $cartRule->quantity = 0;
+        $cartRule->update();
+
+        $cart = $this->context->cart;
+        if (Validate::isLoadedObject($cart)) {
+            $cart->removeCartRule($idCartRule);
+            $cart->use_store_credit = true;
+            $cart->update();
+        }
+
+        $this->redirectToOrderProcess(['voucherConvertedToStoreCredit' => 1]);
+
+        return true;
+    }
+
+    /**
+     * @param array $params
+     *
+     * @return void
+     */
+    protected function redirectToOrderProcess(array $params = []): void
+    {
+        $query = $params ? '&' . http_build_query($params, '', '&') : '';
+
+        if (Configuration::get('PS_ORDER_PROCESS_TYPE') == 1) {
+            Tools::redirect('index.php?controller=order-opc' . $query);
+        }
+
+        Tools::redirect('index.php?controller=order' . $query);
     }
 
     /**

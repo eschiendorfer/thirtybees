@@ -52,10 +52,12 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
         $this->_join = implode('', [
             ' LEFT JOIN `' . _DB_PREFIX_ . 'employee` `e` ON (`e`.`id_employee` = `a`.`id_employee`)',
             ' LEFT JOIN `' . _DB_PREFIX_ . 'orders` `o` ON (`a`.`entity_type` = ' . (int)StoreCreditTransaction::ENTITY_ORDER . ' AND `o`.`id_order` = `a`.`id_entity`)',
+            ' LEFT JOIN `' . _DB_PREFIX_ . 'cart_rule` `cr` ON (`a`.`entity_type` = ' . (int)StoreCreditTransaction::ENTITY_CART_RULE . ' AND `cr`.`id_cart_rule` = `a`.`id_entity`)',
         ]);
         $this->_select = implode(', ', [
             'CONCAT(`e`.`firstname`, " ", `e`.`lastname`) AS `employee_name`',
             '`o`.`reference` AS `order_reference`',
+            '`cr`.`code` AS `cart_rule_code`',
         ]);
 
         if ($idCustomer) {
@@ -621,6 +623,9 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
         if ($transactionType === StoreCreditTransaction::TYPE_ACCOUNTING_ADJUSTMENT) {
             return $this->l('Accounting adjustment');
         }
+        if ($transactionType === StoreCreditTransaction::TYPE_VOUCHER_CONVERSION) {
+            return $this->l('Voucher conversion');
+        }
         return (string)$transactionType;
     }
 
@@ -643,6 +648,9 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
         }
         if ($entityType === StoreCreditTransaction::ENTITY_ACCOUNTING_TRANSACTION) {
             return $this->l('Accounting transaction');
+        }
+        if ($entityType === StoreCreditTransaction::ENTITY_CART_RULE) {
+            return $this->l('Cart rule');
         }
         return (string)$entityType;
     }
@@ -684,6 +692,18 @@ class AdminStoreCreditTransactionsControllerCore extends AdminController
                 'id_transaction' => $idEntity,
             ]);
             return '<a href="' . $link . '">#' . (int)$idEntity . '</a>';
+        }
+
+        if ($entityType === StoreCreditTransaction::ENTITY_CART_RULE) {
+            $label = trim((string)($row['cart_rule_code'] ?? ''));
+            if ($label === '') {
+                $label = (string)$idEntity;
+            }
+            $link = $this->context->link->getAdminLink('AdminCartRules', true, [
+                'id_cart_rule' => $idEntity,
+                'updatecart_rule' => 1,
+            ]);
+            return '<a href="' . $link . '">' . Tools::safeOutput($label) . '</a>';
         }
 
         return (string)$idEntity;

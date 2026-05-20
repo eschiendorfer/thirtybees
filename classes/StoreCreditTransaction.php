@@ -29,11 +29,13 @@ class StoreCreditTransactionCore extends ObjectModel
     const TYPE_REFUND_CREDIT = 2;
     const TYPE_MANUAL_ADJUSTMENT = 3;
     const TYPE_ACCOUNTING_ADJUSTMENT = 4;
+    const TYPE_VOUCHER_CONVERSION = 5;
 
     const ENTITY_ORDER = 1;
     const ENTITY_ORDER_SLIP = 2;
     const ENTITY_MANUAL = 3;
     const ENTITY_ACCOUNTING_TRANSACTION = 4;
+    const ENTITY_CART_RULE = 5;
 
     /**
      * @var int
@@ -118,6 +120,7 @@ class StoreCreditTransactionCore extends ObjectModel
                     self::TYPE_REFUND_CREDIT,
                     self::TYPE_MANUAL_ADJUSTMENT,
                     self::TYPE_ACCOUNTING_ADJUSTMENT,
+                    self::TYPE_VOUCHER_CONVERSION,
                 ],
             ],
             'entity_type'      => [
@@ -129,6 +132,7 @@ class StoreCreditTransactionCore extends ObjectModel
                     self::ENTITY_ORDER_SLIP,
                     self::ENTITY_MANUAL,
                     self::ENTITY_ACCOUNTING_TRANSACTION,
+                    self::ENTITY_CART_RULE,
                 ],
             ],
             'id_entity'        => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbNullable' => true],
@@ -174,23 +178,6 @@ class StoreCreditTransactionCore extends ObjectModel
             ->where('transaction_type = ' . (int)$transactionType);
 
         return (bool)Db::readOnly()->getValue($sql);
-    }
-
-    /**
-     * @param int $idOrder
-     *
-     * @return bool
-     *
-     * @throws PrestaShopException
-     */
-    public static function hasOrderConsumption(int $idOrder): bool
-    {
-        return static::existsTransaction(
-            static::ENTITY_ORDER,
-            $idOrder,
-            static::SIGN_DECREASE,
-            static::TYPE_PAYMENT_INSTRUMENT
-        );
     }
 
     /**
@@ -262,6 +249,31 @@ class StoreCreditTransactionCore extends ObjectModel
             ->where('id_entity = ' . (int)$idOrderSlip)
             ->where('transaction_sign = ' . (int)static::SIGN_INCREASE)
             ->where('transaction_type = ' . (int)static::TYPE_REFUND_CREDIT)
+            ->orderBy('id_store_credit_transaction DESC');
+
+        return max(0, (int)Db::readOnly()->getValue($sql));
+    }
+
+    /**
+     * @param int $idCartRule
+     *
+     * @return int
+     *
+     * @throws PrestaShopException
+     */
+    public static function getVoucherConversionTransactionIdForCartRule(int $idCartRule): int
+    {
+        if ($idCartRule <= 0) {
+            return 0;
+        }
+
+        $sql = (new DbQuery())
+            ->select('id_store_credit_transaction')
+            ->from('store_credit_transaction')
+            ->where('entity_type = ' . (int)static::ENTITY_CART_RULE)
+            ->where('id_entity = ' . (int)$idCartRule)
+            ->where('transaction_sign = ' . (int)static::SIGN_INCREASE)
+            ->where('transaction_type = ' . (int)static::TYPE_VOUCHER_CONVERSION)
             ->orderBy('id_store_credit_transaction DESC');
 
         return max(0, (int)Db::readOnly()->getValue($sql));
@@ -447,6 +459,7 @@ class StoreCreditTransactionCore extends ObjectModel
             static::TYPE_REFUND_CREDIT,
             static::TYPE_MANUAL_ADJUSTMENT,
             static::TYPE_ACCOUNTING_ADJUSTMENT,
+            static::TYPE_VOUCHER_CONVERSION,
         ], true);
     }
 
@@ -462,6 +475,7 @@ class StoreCreditTransactionCore extends ObjectModel
             static::ENTITY_ORDER_SLIP,
             static::ENTITY_MANUAL,
             static::ENTITY_ACCOUNTING_TRANSACTION,
+            static::ENTITY_CART_RULE,
         ], true);
     }
 }
