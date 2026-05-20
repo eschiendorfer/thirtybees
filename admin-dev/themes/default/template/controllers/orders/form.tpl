@@ -165,6 +165,9 @@
 				}
 			});
 		});
+		$('#summary_part').on('change', 'input:radio[name="bo_use_store_credit"]', function() {
+			updateStoreCreditUsage($('input[name=bo_use_store_credit]:checked').val());
+		});
 
 		$('.duplicate_order').live('click', function(e) {
 			e.preventDefault();
@@ -434,6 +437,29 @@
 	function getSummary()
 	{
 		useCart(id_cart);
+	}
+
+	function updateStoreCreditUsage(use_store_credit)
+	{
+		$.ajax({
+			type:"POST",
+			url: "{$link->getAdminLink('AdminCarts')|addslashes}",
+			async: true,
+			dataType: "json",
+			data : {
+				ajax: "1",
+				token: "{getAdminToken tab='AdminCarts'}",
+				tab: "AdminCarts",
+				action: "updateStoreCreditUsage",
+				use_store_credit: use_store_credit,
+				id_cart: id_cart,
+				id_customer: id_customer
+				},
+			success : function(res)
+			{
+				displaySummary(res);
+			}
+		});
 	}
 
 	function deleteVoucher(id_cart_rule)
@@ -814,6 +840,33 @@
 		$('#payment_list').html(payment_list);
 	}
 
+	function updateStoreCreditUsageToggle(store_credit)
+	{
+		if (!store_credit || parseFloat(store_credit.available) <= 0) {
+			$('#store_credit_usage_group').hide();
+			return;
+		}
+
+		$('#store_credit_available_amount').html(store_credit.available_formatted);
+		$('#store_credit_used_amount').html(store_credit.used_formatted);
+
+		if (parseFloat(store_credit.used) > 0) {
+			$('#store_credit_used_text').show();
+		} else {
+			$('#store_credit_used_text').hide();
+		}
+
+		if (store_credit.enabled) {
+			$('#bo_use_store_credit_on').attr('checked', 'checked');
+			$('#bo_use_store_credit_off').removeAttr('checked');
+		} else {
+			$('#bo_use_store_credit_on').removeAttr('checked');
+			$('#bo_use_store_credit_off').attr('checked', 'checked');
+		}
+
+		$('#store_credit_usage_group').show();
+	}
+
 	function fixPriceFormat(price)
 	{
     console.log('Deprecated with v1.1.0. Use parseFloat() instead.');
@@ -840,6 +893,7 @@
 		updateCartProducts(jsonSummary.summary.products, jsonSummary.summary.gift_products, jsonSummary.cart.id_address_delivery);
 		updateCartVouchers(jsonSummary.summary.discounts);
 		updateAddressesList(jsonSummary.addresses, jsonSummary.cart.id_address_delivery, jsonSummary.cart.id_address_invoice);
+		updateStoreCreditUsageToggle(jsonSummary.store_credit);
 
 		if (!jsonSummary.summary.products.length || !jsonSummary.addresses.length || !jsonSummary.delivery_option_list)
 			$('#carriers_part,#summary_part').hide();
@@ -1588,6 +1642,24 @@
 						</a>
 					</div>
 					{/if}
+				</div>
+				<div class="form-group" id="store_credit_usage_group" style="display:none;">
+					<label class="control-label col-lg-3">{l s='Store credit'}</label>
+					<div class="col-lg-9">
+						<span class="switch prestashop-switch fixed-width-lg">
+							<input type="radio" name="bo_use_store_credit" id="bo_use_store_credit_on" value="1" checked="checked">
+							<label for="bo_use_store_credit_on">{l s='Yes'}</label>
+							<input type="radio" name="bo_use_store_credit" id="bo_use_store_credit_off" value="0">
+							<label for="bo_use_store_credit_off">{l s='No'}</label>
+							<a class="slide-button btn"></a>
+						</span>
+						<p class="help-block">
+							{l s='Available store credit:'} <span id="store_credit_available_amount"></span>
+							<span id="store_credit_used_text" style="display:none;">
+								<br>{l s='Applied to this order:'} <span id="store_credit_used_amount"></span>
+							</span>
+						</p>
+					</div>
 				</div>
 				<div class="form-group">
 					<label class="control-label col-lg-3">{l s='Payment'}</label>
