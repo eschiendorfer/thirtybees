@@ -832,7 +832,16 @@ class OrderInvoiceCore extends ObjectModel
     public function getOutstandingAmountTaxIncl()
     {
         try {
-            return Tools::roundPrice(max(0.0, (float)$this->total_paid_tax_incl - (float)$this->getTotalPaid()));
+            $totalPaid = (float)Db::readOnly()->getValue(
+                (new DbQuery())
+                    ->select('SUM(op.`amount`)')
+                    ->from('order_invoice_payment', 'oip')
+                    ->innerJoin('order_payment', 'op', 'op.`id_order_payment` = oip.`id_order_payment`')
+                    ->where('oip.`id_order_invoice` = '.(int)$this->id)
+                    ->where('op.`amount` > 0')
+            );
+
+            return Tools::roundPrice(max(0.0, (float)$this->total_paid_tax_incl - $totalPaid));
         } catch (Exception $exception) {
             return 0.0;
         }

@@ -2579,7 +2579,7 @@ class OrderCore extends ObjectModel
      * If invoices exist, this sums invoice totals and subtracts all payments
      * linked to these invoices.
      * If invoices do not exist, this uses order-level totals and subtracts already
-     * booked payments (total_paid_real), including store credit.
+     * booked positive payments.
      *
      * @return float
      *
@@ -2602,7 +2602,14 @@ class OrderCore extends ObjectModel
 
         if ($totalInvoiceAmount <= 0.0) {
             $orderTotalTaxIncl = (float)$this->total_paid_tax_incl;
-            $orderPaid = max(0.0, (float)$this->total_paid_real);
+            $orderPaid = (float)Db::readOnly()->getValue(
+                (new DbQuery())
+                    ->select('SUM(op.`amount`)')
+                    ->from('order_payment', 'op')
+                    ->where('op.`order_reference` = \''.pSQL($this->reference).'\'')
+                    ->where('op.`amount` > 0')
+            );
+
             return Tools::roundPrice(max(0.0, $orderTotalTaxIncl - $orderPaid));
         }
 
@@ -2613,6 +2620,7 @@ class OrderCore extends ObjectModel
                 ->from('order_invoice_payment', 'oip')
                 ->innerJoin('order_payment', 'op', 'op.`id_order_payment` = oip.`id_order_payment`')
                 ->where('oip.`id_order` = '.$idOrder)
+                ->where('op.`amount` > 0')
         );
 
         $seenPayments = [];
