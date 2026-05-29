@@ -48,7 +48,8 @@ class RefundPolicyCore
 
     public function isOriginalPaymentRefundAvailable(?Order $order = null): bool
     {
-        return false;
+        return $order instanceof Order
+            && strtolower(trim((string)$order->module)) === 'payrexx';
     }
 
     public function getOpenOrderReturnStates(): array
