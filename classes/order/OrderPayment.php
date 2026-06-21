@@ -65,8 +65,6 @@ class OrderPaymentCore extends ObjectModel
     public $card_expiration;
     /** @var string $card_holder */
     public $card_holder;
-    /** @var float $payment_cost_accounting */
-    public $payment_cost_accounting;
     /** @var string $date_add */
     public $date_add;
 
@@ -91,7 +89,6 @@ class OrderPaymentCore extends ObjectModel
             'card_brand'      => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 254                     ],
             'card_expiration' => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 7, 'dbType' => 'char(7)'],
             'card_holder'     => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 254],
-            'payment_cost_accounting' => ['type' => self::TYPE_FLOAT, 'validate' => 'isFloat', 'size' => 13, 'decimals' => 6, 'dbDefault' => '0.000000'],
             'date_add'        => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
         ],
         'keys' => [
@@ -222,31 +219,6 @@ class OrderPaymentCore extends ObjectModel
         }
 
         return new OrderInvoice((int) $res);
-    }
-
-    /**
-     * Set payment_cost_accounting value
-     *
-     * @param string $payment_module PaymentModuleName
-     * @param float $transaction_amount Transaction Amount
-     * @param int $id_currency ID Currency
-     * @param float $conversionRate Order Conversion Rate
-     *
-     */
-    public function setPaymentCostAccounting($payment_module, $transaction_amount, $id_currency, $conversionRate) {
-
-        $payment_module_config = strtoupper((string)$payment_module);
-
-        if ($id_currency==Configuration::get('PS_CURRENCY_DEFAULT')) {
-            $fee_relative = Configuration::get('CONF_'.$payment_module_config.'_VAR');
-            $fee_absolute = Configuration::get('CONF_'.$payment_module_config.'_FIXED');
-        }
-        else {
-            $fee_relative = Configuration::get('CONF_'.$payment_module_config.'_VAR_FOREIGN');
-            $fee_absolute = Configuration::get('CONF_'.$payment_module_config.'_FIXED_FOREIGN');
-        }
-
-        $this->payment_cost_accounting = Tools::ps_round($fee_absolute*$conversionRate + ($fee_relative/100*$transaction_amount), 6);
     }
 
     public static function addRefundForOrderSlip(

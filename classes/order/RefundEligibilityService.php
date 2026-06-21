@@ -95,7 +95,7 @@ class RefundEligibilityServiceCore
         return $quantities;
     }
 
-    public function getOpenCancellationQuantities(Order $order): array
+    public function getUncreditedCancelledQuantities(Order $order): array
     {
         if ($order->hasBeenShipped()) {
             return [];

@@ -125,20 +125,17 @@ class HTMLTemplateOrderSlipCore extends HTMLTemplate
 
         if ($this->order_slip->amount > 0) {
             foreach ($this->products as &$product) {
-                $product['total_price_tax_excl'] = $product['unit_price_tax_excl'] * $product['product_quantity'];
-                $product['total_price_tax_incl'] = $product['unit_price_tax_incl'] * $product['product_quantity'];
+                $hasSlipAmounts = array_key_exists('amount_tax_excl', $product)
+                    && array_key_exists('amount_tax_incl', $product)
+                    && $product['amount_tax_excl'] !== null
+                    && $product['amount_tax_incl'] !== null;
 
-                if ($this->order_slip->partial == 1) {
-                    $orderSlipDetail = Db::readOnly()->getRow(
-                        (new DbQuery())
-                            ->select('*')
-                            ->from('order_slip_detail')
-                            ->where('`id_order_slip` = '.(int) $this->order_slip->id)
-                            ->where('`id_order_detail` = '.(int) $product['id_order_detail'])
-                    );
-
-                    $product['total_price_tax_excl'] = $orderSlipDetail['amount_tax_excl'];
-                    $product['total_price_tax_incl'] = $orderSlipDetail['amount_tax_incl'];
+                if ($hasSlipAmounts) {
+                    $product['total_price_tax_excl'] = (float)$product['amount_tax_excl'];
+                    $product['total_price_tax_incl'] = (float)$product['amount_tax_incl'];
+                } else {
+                    $product['total_price_tax_excl'] = $product['unit_price_tax_excl'] * $product['product_quantity'];
+                    $product['total_price_tax_incl'] = $product['unit_price_tax_incl'] * $product['product_quantity'];
                 }
 
                 $this->order->total_products += $product['total_price_tax_excl'];

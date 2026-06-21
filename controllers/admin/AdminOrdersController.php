@@ -1782,7 +1782,7 @@ class AdminOrdersControllerCore extends AdminController
             'can_edit'                     => (bool)$this->hasEditPermission(),
             'original_payment_refund_available' => $this->getRefundPolicy()->isOriginalPaymentRefundAvailable($order),
             'original_payment_refund_label' => $this->getOriginalPaymentRefundLabel($order),
-            'cancellation_credit_available' => (bool)$this->getRefundEligibilityService()->getOpenCancellationQuantities($order),
+            'cancellation_credit_available' => (bool)$this->getRefundEligibilityService()->getUncreditedCancelledQuantities($order),
             'credit_order_return_options'  => $this->getCreditOrderReturnOptions($order, $products),
             'credit_suggestions_json'      => $this->getCreditSuggestionsJson($order, $products),
             'current_id_lang'              => $this->context->language->id,

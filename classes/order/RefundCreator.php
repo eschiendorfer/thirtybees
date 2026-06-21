@@ -48,7 +48,10 @@ class RefundCreatorCore
             return 0;
         }
 
-        $idEmployee = (int)$this->context->employee->id;
+        $idEmployee = 0;
+        if (isset($this->context->employee) && Validate::isLoadedObject($this->context->employee)) {
+            $idEmployee = (int)$this->context->employee->id;
+        }
 
         if (!StoreCredit::addRefundCreditForOrderSlip(
             (int)$order->id_shop,

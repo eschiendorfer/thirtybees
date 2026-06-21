@@ -745,6 +745,7 @@ class CoreModelsCore
             'fields' => [
                 'id_order_slip'        => ['type' => ObjectModel::TYPE_INT, 'required' => true],
                 'id_order_detail'      => ['type' => ObjectModel::TYPE_INT, 'required' => true],
+                // Credit-slip document quantity only; not stock, return-condition, or COGS truth.
                 'product_quantity'     => ['type' => ObjectModel::TYPE_INT, 'required' => true, 'default' => '0'],
                 'unit_price_tax_excl'  => ['type' => ObjectModel::TYPE_FLOAT],
                 'unit_price_tax_incl'  => ['type' => ObjectModel::TYPE_FLOAT],

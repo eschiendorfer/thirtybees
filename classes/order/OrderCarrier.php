@@ -55,9 +55,6 @@ class OrderCarrierCore extends ObjectModel
     /** @var float */
     public $shipping_cost_tax_incl;
 
-    /** @var float */
-    public $shipping_cost_accounting;
-
     /** @var string */
     public $tracking_number;
 
@@ -78,7 +75,6 @@ class OrderCarrierCore extends ObjectModel
             'weight'                    => ['type' => self::TYPE_FLOAT,  'validate' => 'isFloat'                             ],
             'shipping_cost_tax_excl'    => ['type' => self::TYPE_PRICE,  'validate' => 'isPrice'                             ],
             'shipping_cost_tax_incl'    => ['type' => self::TYPE_PRICE,  'validate' => 'isPrice'                             ],
-            'shipping_cost_accounting'  => ['type' => self::TYPE_PRICE,  'validate' => 'isPrice'                             ],
             'tracking_number'           => ['type' => self::TYPE_STRING, 'validate' => 'isTrackingNumber', 'size' => 64],
             'date_add'                  => ['type' => self::TYPE_DATE,   'validate' => 'isDate', 'dbNullable' => false],
         ],
@@ -199,48 +195,6 @@ class OrderCarrierCore extends ObjectModel
             $errors[] = Tools::displayError('The order carrier cannot be updated.');
         }
         return false;
-    }
-
-    /**
-     * Set shipping_cost_accounting value
-     *
-     * @param object|int $carrier CarrierObject or id_carrier
-     * @param float $shipping_cost Shipping cost paid by customer (default tax_excl)
-     * @param int $id_currency ID Currency
-     * @param float $conversionRate Order conversion rate
-     * @param ?int $id_order
-     *
-     */
-    public function setShippingCostAccounting($carrier, $shipping_cost, $id_country, $conversionRate, $id_order = null) {
-
-        if (!is_object($carrier) && Validate::isUnsignedId($carrier)) {
-            $carrier = new Carrier($carrier);
-        }
-
-        if ($id_country==Configuration::get('PS_COUNTRY_DEFAULT')) {
-            $fee_relative = Configuration::get('CONF_'.$carrier->id_reference.'_SHIP');
-            $fee_absolute = Configuration::get('CONF_'.$carrier->id_reference.'_SHIP_FIXED');
-        }
-        else {
-            $fee_relative = Configuration::get('CONF_'.$carrier->id_reference.'_SHIP_OVERSEAS');
-            $fee_absolute = Configuration::get('CONF_'.$carrier->id_reference.'_SHIP_FIXED_OVERSEAS');
-        }
-
-        // Todo: This is just a genzo hack and wouldn't work in core
-        // Check if letter shipping is available for this order
-        if ($id_order && Module::isEnabled('genzo_shipping')) {
-            /* @var $genzoShipping Genzo_Shipping */
-            $genzoShipping = Module::getInstanceByName('genzo_shipping');
-            $bestPackagingOption = $genzoShipping->getBestPackagingOptionForOrder($id_order, true, (int)$carrier->id);
-            $fee_absolute = $bestPackagingOption->shipping_cost + $bestPackagingOption->packaging_cost;
-
-            if (in_array($carrier->id, [SpielezarHelper::CARRIER_PREORDER, SpielezarHelper::CARRIER_PICKUP])) {
-                $fee_absolute = 0;
-            }
-
-        }
-
-        $this->shipping_cost_accounting = Tools::ps_round($fee_absolute*$conversionRate + ($fee_relative/100*$shipping_cost), 6);
     }
 
 }

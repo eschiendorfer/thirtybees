@@ -131,6 +131,7 @@ class OrderSlipCore extends ObjectModel
                 'fields'   => [
                     'id'               => [],
                     'id_order_detail'  => ['required' => true],
+                    // Credit-slip document quantity only; not stock, return-condition, or COGS truth.
                     'product_quantity' => ['required' => true],
                     'amount_tax_excl'  => ['required' => true],
                     'amount_tax_incl'  => ['required' => true],

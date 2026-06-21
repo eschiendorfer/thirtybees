@@ -1649,7 +1649,6 @@ class OrderCore extends ObjectModel
                 $orderPayment->payment_method = $this->payment;
                 $orderPayment->payment_module = $this->module;
                 $orderPayment->conversion_rate = $this->conversion_rate;
-                $orderPayment->setPaymentCostAccounting($this->module, $orderPayment->amount, $orderPayment->id_currency, $orderPayment->conversion_rate);
                 $orderPayment->add();
 
                 $conn->insert(
@@ -2235,7 +2234,6 @@ class OrderCore extends ObjectModel
         $orderPayment->payment_module = (string)($paymentModule ?: $this->module);
         $orderPayment->id_order_slip = (int)$idOrderSlip;
         $orderPayment->status = (string)($status ?: OrderPayment::STATUS_DONE);
-        $orderPayment->setPaymentCostAccounting($orderPayment->payment_module, $orderPayment->amount, $orderPayment->id_currency, $orderPayment->conversion_rate);
 
         // Add time to the date if needed
         if ($orderPayment->date_add != null && preg_match('/^[0-9]+-[0-9]+-[0-9]+$/', $orderPayment->date_add)) {

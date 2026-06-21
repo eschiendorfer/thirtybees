@@ -981,69 +981,28 @@ class AdminStatsControllerCore extends AdminStatsTabController
             '
 		SELECT
 			LEFT('.$dateColumn.', 10) as date,
-			total_paid_tax_incl / o.conversion_rate as total_paid_tax_incl,
-			total_shipping_tax_excl / o.conversion_rate as total_shipping_tax_excl,
-			op.payment_cost_accounting / o.conversion_rate as payment_cost_accounting,
-			oc.shipping_cost_accounting / o.conversion_rate as shipping_cost_accounting,
-			o.module,
-			a.id_country,
-			o.id_currency,
-			c.id_reference as carrier_reference
+			IFNULL(acc.payment_cost_tax_incl_chf, 0) AS payment_cost_tax_incl_chf,
+			IFNULL(acc.shipping_cost_tax_incl_chf, 0) AS shipping_cost_tax_incl_chf,
+			IFNULL(acc.packaging_cost_tax_incl_chf, 0) AS packaging_cost_tax_incl_chf
 		FROM `'._DB_PREFIX_.'orders` o
-		LEFT JOIN `'._DB_PREFIX_.'address` a ON o.id_address_delivery = a.id_address
-		LEFT JOIN `'._DB_PREFIX_.'carrier` c ON o.id_carrier = c.id_carrier
 		LEFT JOIN `'._DB_PREFIX_.'order_state` os ON o.current_state = os.id_order_state
-		LEFT JOIN (
-		    SELECT order_reference, SUM(payment_cost_accounting) AS payment_cost_accounting
-		    FROM `'._DB_PREFIX_.'order_payment`
-		    GROUP BY order_reference
-		) AS op ON o.reference = op.order_reference
-		LEFT JOIN (
-		    SELECT id_order, SUM(shipping_cost_accounting) AS shipping_cost_accounting
-		    FROM `'._DB_PREFIX_.'order_carrier`
-		    GROUP BY id_order
-		) AS oc ON o.id_order = oc.id_order
+		LEFT JOIN `'._DB_PREFIX_.'genzo_accounting_order_extension` acc ON acc.id_order = o.id_order
 		WHERE '.$dateColumn.' BETWEEN "'.pSQL($dateFrom).' 00:00:00" AND "'.pSQL($dateTo).' 23:59:59" AND os.logable = 1
 		'.Shop::addSqlRestriction(false, 'o')
         );
         foreach ($orders as $order) {
-
-            if (($payment_cost_accounting = $order['payment_cost_accounting']) == 0) {
-
-                // Add flat fees for this order
-                $flatFees = Configuration::get('CONF_ORDER_FIXED') + (
-                    $order['id_currency'] == Configuration::get('PS_CURRENCY_DEFAULT')
-                        ? Configuration::get(Configuration::getValidConfigKey('CONF_' . $order['module'] . '_FIXED'))
-                        : Configuration::get(Configuration::getValidConfigKey('CONF_' . $order['module'] . '_FIXED_FOREIGN'))
-                    );
-
-                // Add variable fees for this order
-                $varFees = $order['total_paid_tax_incl'] * (
-                    $order['id_currency'] == Configuration::get('PS_CURRENCY_DEFAULT')
-                        ? Configuration::get(Configuration::getValidConfigKey('CONF_' . $order['module'] . '_VAR'))
-                        : Configuration::get(Configuration::getValidConfigKey('CONF_' . $order['module'] . '_VAR_FOREIGN'))
-                    ) / 100;
-
-                $payment_cost_accounting = (float)$flatFees + (float)$varFees;
-            }
-
-            // Add shipping fees for this order
-            if (($shipping_cost_accounting = $order['shipping_cost_accounting']) == 0) {
-                $shipping_cost_accounting = $order['total_shipping_tax_excl'] * (
-                    $order['id_country'] == Configuration::get('PS_COUNTRY_DEFAULT')
-                        ? Configuration::get(Configuration::getValidConfigKey('CONF_' . $order['carrier_reference'] . '_SHIP'))
-                        : Configuration::get(Configuration::getValidConfigKey('CONF_' . $order['carrier_reference'] . '_SHIP_OVERSEAS'))
-                    ) / 100;
-            }
+            $orderExpenses = (float)$order['payment_cost_tax_incl_chf']
+                + (float)$order['shipping_cost_tax_incl_chf']
+                + (float)$order['packaging_cost_tax_incl_chf'];
 
             // Tally up these fees
             if ($granularity == 'day') {
                 if (!isset($expenses[strtotime($order['date'])])) {
                     $expenses[strtotime($order['date'])] = 0;
                 }
-                $expenses[strtotime($order['date'])] += $payment_cost_accounting + $shipping_cost_accounting;
+                $expenses[strtotime($order['date'])] += $orderExpenses;
             } else {
-                $expenses += $payment_cost_accounting + $shipping_cost_accounting;
+                $expenses += $orderExpenses;
             }
         }
 

@@ -58,7 +58,7 @@ class RefundCalculatorCore
         $refunds = (array)($input['product_amounts'] ?? []);
         $refundQuantities = (array)($input['product_quantities'] ?? []);
         $cancellationQuantities = $reasonEntityType === RefundPolicy::REASON_CANCELLATION
-            ? $this->eligibility->getOpenCancellationQuantities($order)
+            ? $this->eligibility->getUncreditedCancelledQuantities($order)
             : [];
         if ($reasonEntityType === RefundPolicy::REASON_CANCELLATION && !$cancellationQuantities) {
             $errors[] = 'There are no open cancellation quantities for this order.';
@@ -231,7 +231,7 @@ class RefundCalculatorCore
         array $products,
         bool $displayIncludesTax
     ): array {
-        $quantities = $this->eligibility->getOpenCancellationQuantities($order);
+        $quantities = $this->eligibility->getUncreditedCancelledQuantities($order);
         $allProductLinesCancelled = true;
         $suggestedProducts = [];
         $productsDisplayTotal = 0.0;
