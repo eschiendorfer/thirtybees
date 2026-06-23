@@ -2203,6 +2203,11 @@ class OrderCore extends ObjectModel
      * @param Currency $currency
      * @param string $date
      * @param OrderInvoice $orderInvoice
+     * @param string|null $paymentModule
+     * @param int $idOrderSlip
+     * @param string $status
+     * @param int $idTransactionDetail
+     * @param int $idStoreCreditTransaction
      *
      * @return bool
      *
@@ -2218,7 +2223,9 @@ class OrderCore extends ObjectModel
         $orderInvoice = null,
         $paymentModule = null,
         $idOrderSlip = 0,
-        $status = OrderPayment::STATUS_DONE
+        $status = OrderPayment::STATUS_DONE,
+        $idTransactionDetail = 0,
+        $idStoreCreditTransaction = 0
     )
     {
         $orderPayment = new OrderPayment();
@@ -2234,6 +2241,8 @@ class OrderCore extends ObjectModel
         $orderPayment->payment_module = (string)($paymentModule ?: $this->module);
         $orderPayment->id_order_slip = (int)$idOrderSlip;
         $orderPayment->status = (string)($status ?: OrderPayment::STATUS_DONE);
+        $orderPayment->id_transaction_detail = (int)$idTransactionDetail;
+        $orderPayment->id_store_credit_transaction = (int)$idStoreCreditTransaction;
 
         // Add time to the date if needed
         if ($orderPayment->date_add != null && preg_match('/^[0-9]+-[0-9]+-[0-9]+$/', $orderPayment->date_add)) {

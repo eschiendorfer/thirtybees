@@ -983,11 +983,15 @@ class AdminOrdersControllerCore extends AdminController
                             if (!$order->addOrderPayment(
                                 $consumedAmountTaxIncl,
                                 'Store Credit',
-                                $idStoreCreditTransaction > 0 ? (string)$idStoreCreditTransaction : null,
+                                null,
                                 $currency,
                                 date('Y-m-d H:i:s'),
                                 $orderInvoice,
-                                'store_credit'
+                                'store_credit',
+                                0,
+                                OrderPayment::STATUS_DONE,
+                                0,
+                                $idStoreCreditTransaction > 0 ? (int)$idStoreCreditTransaction : 0
                             )) {
                                 $this->errors[] = Tools::displayError('An error occurred during payment.');
                             } else {
@@ -1709,16 +1713,21 @@ class AdminOrdersControllerCore extends AdminController
         $storeCreditPaymentLinks = [];
         foreach ($order->getOrderPaymentCollection() as $orderPayment) {
             /** @var OrderPayment $orderPayment */
+            $idStoreCreditTransaction = (int)$orderPayment->id_store_credit_transaction;
+            if ($idStoreCreditTransaction <= 0) {
+                $idStoreCreditTransaction = (int)$orderPayment->transaction_id;
+            }
+
             if (
                 (string)$orderPayment->payment_module !== 'store_credit' ||
                 (int)$orderPayment->id <= 0 ||
-                (int)$orderPayment->transaction_id <= 0
+                $idStoreCreditTransaction <= 0
             ) {
                 continue;
             }
 
             $storeCreditPaymentLinks[(int)$orderPayment->id] = [
-                'id_store_credit_transaction' => (int)$orderPayment->transaction_id,
+                'id_store_credit_transaction' => $idStoreCreditTransaction,
                 'url' => $storeCreditTransactionsUrl,
             ];
         }

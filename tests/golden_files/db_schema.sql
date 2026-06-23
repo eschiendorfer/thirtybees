@@ -1539,6 +1539,8 @@ CREATE TABLE `PREFIX_order_payment` (
   `payment_method` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `conversion_rate` decimal(13,6) NOT NULL DEFAULT '1.000000',
   `transaction_id` varchar(254) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `id_transaction_detail` int(12) unsigned NOT NULL DEFAULT '0',
+  `id_store_credit_transaction` int(12) unsigned NOT NULL DEFAULT '0',
   `payment_module` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `id_order_slip` int(10) unsigned NOT NULL DEFAULT '0',
   `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'done',
@@ -1550,6 +1552,8 @@ CREATE TABLE `PREFIX_order_payment` (
   `date_add` datetime NOT NULL,
   PRIMARY KEY (`id_order_payment`),
   KEY `order_reference` (`order_reference`),
+  KEY `id_transaction_detail` (`id_transaction_detail`),
+  KEY `id_store_credit_transaction` (`id_store_credit_transaction`),
   KEY `id_order_slip` (`id_order_slip`),
   KEY `status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

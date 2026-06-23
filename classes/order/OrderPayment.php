@@ -51,6 +51,10 @@ class OrderPaymentCore extends ObjectModel
     public $conversion_rate;
     /** @var string $transaction_id */
     public $transaction_id;
+    /** @var int $id_transaction_detail */
+    public $id_transaction_detail = 0;
+    /** @var int $id_store_credit_transaction */
+    public $id_store_credit_transaction = 0;
     /** @var string $payment_module */
     public $payment_module = '';
     /** @var int $id_order_slip */
@@ -82,6 +86,8 @@ class OrderPaymentCore extends ObjectModel
             'payment_method'  => ['type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'dbNullable' => false],
             'conversion_rate' => ['type' => self::TYPE_FLOAT, 'validate' => 'isFloat', 'size' => 13, 'decimals' => 6, 'dbDefault' => '1.000000'],
             'transaction_id'  => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 254],
+            'id_transaction_detail' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '0'],
+            'id_store_credit_transaction' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '0'],
             'payment_module'  => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 64, 'dbDefault' => '', 'dbNullable' => false],
             'id_order_slip'   => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '0'],
             'status'          => ['type' => self::TYPE_STRING, 'validate' => 'isAnything', 'size' => 16, 'dbDefault' => self::STATUS_DONE],
@@ -94,6 +100,8 @@ class OrderPaymentCore extends ObjectModel
         'keys' => [
             'order_payment' => [
                 'order_reference' => ['type' => ObjectModel::KEY, 'columns' => ['order_reference']],
+                'id_transaction_detail' => ['type' => ObjectModel::KEY, 'columns' => ['id_transaction_detail']],
+                'id_store_credit_transaction' => ['type' => ObjectModel::KEY, 'columns' => ['id_store_credit_transaction']],
                 'id_order_slip' => ['type' => ObjectModel::KEY, 'columns' => ['id_order_slip']],
                 'status' => ['type' => ObjectModel::KEY, 'columns' => ['status']],
             ],
@@ -228,7 +236,9 @@ class OrderPaymentCore extends ObjectModel
         string $paymentMethod,
         string $paymentModule,
         string $status = self::STATUS_PENDING,
-        ?string $transactionId = null
+        ?string $transactionId = null,
+        int $idTransactionDetail = 0,
+        int $idStoreCreditTransaction = 0
     ): bool {
         $currency = new Currency((int)$order->id_currency);
         $orderInvoice = null;
@@ -250,7 +260,9 @@ class OrderPaymentCore extends ObjectModel
             $orderInvoice,
             $paymentModule,
             $idOrderSlip,
-            $status
+            $status,
+            $idTransactionDetail,
+            $idStoreCreditTransaction
         );
     }
 }

@@ -76,7 +76,9 @@ class RefundCreatorCore
             'Store Credit',
             'store_credit',
             OrderPayment::STATUS_DONE,
-            (string)$idStoreCreditTransaction
+            null,
+            0,
+            $idStoreCreditTransaction
         );
     }
 

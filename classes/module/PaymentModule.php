@@ -715,11 +715,15 @@ abstract class PaymentModuleCore extends Module
                         if (!$order->addOrderPayment(
                             $consumed,
                             'Store Credit',
-                            $storeCreditTransactionId > 0 ? (string)$storeCreditTransactionId : null,
                             null,
                             null,
                             null,
-                            'store_credit'
+                            null,
+                            'store_credit',
+                            0,
+                            OrderPayment::STATUS_DONE,
+                            0,
+                            $storeCreditTransactionId > 0 ? (int)$storeCreditTransactionId : 0
                         )) {
                             Logger::addLog(
                                 'PaymentModule::validateOrder - Cannot save Store Credit Order Payment',
