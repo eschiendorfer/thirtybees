@@ -1009,10 +1009,8 @@
                   <select id="reason_entity_type" name="reason_entity_type" class="form-control" disabled="disabled" required="required">
                     <option value="" selected="selected" disabled="disabled">{l s='Please select'}</option>
                     <option value="manual">{l s='Manual credit'}</option>
-                    <option value="order_return">{l s='Return'}</option>
-                    {if !empty($cancellation_credit_available)}
-                      <option value="cancellation">{l s='Cancellation'}</option>
-                    {/if}
+                    <option value="order_return" {if empty($credit_order_return_options)}disabled="disabled"{/if}>{l s='Return'}</option>
+                    <option value="cancellation" {if empty($cancellation_credit_available)}disabled="disabled"{/if}>{l s='Cancellation'}</option>
                     <option value="service_case" disabled="disabled">{l s='Service case'}</option>
                   </select>
                 </div>
