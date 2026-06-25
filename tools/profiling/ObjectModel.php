@@ -78,4 +78,15 @@ abstract class ObjectModel extends ObjectModelCore
             }
         }
     }
+
+    protected array $beforeValues = [];
+
+    // Extension
+    protected function setBeforeValues(): void
+    {
+        // Load before values
+        foreach (static::$definition['fields'] as $key => $field) {
+            $this->beforeValues[$key] = $this->{$key};
+        }
+    }
 }
