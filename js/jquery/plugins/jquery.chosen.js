@@ -457,11 +457,12 @@
       if (/iP(od|hone)/i.test(window.navigator.userAgent)) {
         return false;
       }
+      /* GENZO CHANGE START: allow Chosen on Android scanners/phones.
       if (/Android/i.test(window.navigator.userAgent)) {
         if (/Mobile/i.test(window.navigator.userAgent)) {
           return false;
         }
-      }
+      } GENZO CHANGE END */
       return true;
     };
 
