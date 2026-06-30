@@ -571,7 +571,7 @@ class OrderHistoryCore extends ObjectModel
         $order->current_state = $this->id_order_state;
         $order->update();
 
-        Hook::triggerEvent('actionOrderHistoryAddAfter', ['order_history' => $this], $order->id_shop);
+        Hook::triggerEvent('actionOrderHistoryAddAfter', ['order_history' => $this, 'order' => $order], $order->id_shop);
 
         return true;
     }
