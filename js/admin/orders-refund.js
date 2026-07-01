@@ -10,6 +10,7 @@ var creditAdjustmentState = {
     source: 'amount'
   }
 };
+var originalPaymentRefundConfirmationAmount = '';
 
 $(document).ready(function () {
   $('#desc-order-partial_refund, .order-credit-button').click(function (e) {
@@ -57,6 +58,10 @@ $(document).ready(function () {
     }
     refreshSuggestedCreditAdjustments();
     updateCreditTotals();
+  });
+
+  $('#confirm_original_payment_refund').change(function () {
+    updatePartialRefundSubmitState();
   });
 
   $('input[name="partialRefundShippingCost"]').on('change keyup', function () {
@@ -228,6 +233,44 @@ function isNoCreditRefundMethod() {
   return getCreditRefundMethod() === 'none';
 }
 
+function isOriginalPaymentCreditRefundMethod() {
+  return getCreditRefundMethod() === 'original_payment';
+}
+
+function updateOriginalPaymentRefundConfirmation(creditTotal) {
+  var requiresConfirmation = isOriginalPaymentCreditRefundMethod();
+  var $confirmation = $('#original_payment_refund_confirmation');
+  var $checkbox = $('#confirm_original_payment_refund');
+  var amountDisplay = formatCreditRefundTotalDisplay(creditTotal);
+  var confirmationTemplate = window.originalPaymentRefundConfirmationTemplate
+    || 'Ich bestätige, dass %s über Payrexx an die ursprüngliche Zahlungsmethode zurückerstattet werden.';
+
+  var confirmationParts = confirmationTemplate.split('%s');
+  var $confirmationText = $('#original_payment_refund_confirmation_text');
+  $confirmationText.empty();
+  $confirmationText.append(document.createTextNode(confirmationParts[0] || ''));
+  $confirmationText.append($('<strong>').text(amountDisplay));
+  $confirmationText.append(document.createTextNode(confirmationParts.slice(1).join(amountDisplay)));
+
+  $confirmation.toggle(requiresConfirmation);
+  $checkbox.prop('disabled', !requiresConfirmation);
+
+  if (!requiresConfirmation || originalPaymentRefundConfirmationAmount !== amountDisplay) {
+    $checkbox.prop('checked', false);
+  }
+
+  originalPaymentRefundConfirmationAmount = requiresConfirmation ? amountDisplay : '';
+  updatePartialRefundSubmitState();
+}
+
+function updatePartialRefundSubmitState() {
+  var requiresConfirmation = isOriginalPaymentCreditRefundMethod();
+  $('#partial_refund_submit').prop(
+    'disabled',
+    requiresConfirmation && !$('#confirm_original_payment_refund').is(':checked')
+  );
+}
+
 function updateCreditFeeAdjustmentState() {
   var isNoRefund = isNoCreditRefundMethod();
   if (isNoRefund) {
@@ -245,6 +288,7 @@ function resetCreditForm() {
   $('.credit-product-amount-input').val('');
   $('.credit-product-quantity-input').val('0');
   $('input[name="partialRefundShippingCost"]').val('0');
+  $('#confirm_original_payment_refund').prop('checked', false);
   setCreditAdjustment('cartRule', 0, 0);
   setCreditAdjustment('fee', 0, 0);
   updateCreditFeeAdjustmentState();
@@ -390,6 +434,7 @@ function updateCreditTotals(preserveManualSource) {
   $('#credit_products_total_display').text(formatCreditDisplay(totals.products));
   $('#credit_subtotal_display').text(formatCreditDisplay(subtotalAfterCartRule));
   $('#credit_total_display').text(formatCreditRefundTotalDisplay(creditTotal));
+  updateOriginalPaymentRefundConfirmation(creditTotal);
 }
 
 function checkPartialRefundProductAmount(it) {

@@ -65,6 +65,7 @@
             {/if};
 
     var errorRefund = "{l s='Error. You cannot refund a negative amount.'}";
+    var originalPaymentRefundConfirmationTemplate = "{l s='Ich bestätige, dass %s über Payrexx an die ursprüngliche Zahlungsmethode zurückerstattet werden.' js=1}";
   </script>
   {assign var="hook_invoice" value={hook h="displayInvoice" id_order=$order->id}}
   {if ($hook_invoice)}
@@ -1004,14 +1005,18 @@
             </div>
             <div id="credit_reason_form" class="partial_refund_fields form-horizontal row-margin-top" style="display:none;">
               <div class="form-group">
-                <label class="control-label col-lg-2" for="reason_entity_type">{l s='Reason'}</label>
+                <label class="control-label col-lg-2" for="reason_entity_type">
+                  <span class="label-tooltip" data-toggle="tooltip" title="{l s='Create Cancellation, Return, or Service case first to select them here.'}">
+                    {l s='Reason'}
+                  </span>
+                </label>
                 <div class="col-lg-3">
                   <select id="reason_entity_type" name="reason_entity_type" class="form-control" disabled="disabled" required="required">
                     <option value="" selected="selected" disabled="disabled">{l s='Please select'}</option>
-                    <option value="manual">{l s='Manual credit'}</option>
                     <option value="order_return" {if empty($credit_order_return_options)}disabled="disabled"{/if}>{l s='Return'}</option>
                     <option value="cancellation" {if empty($cancellation_credit_available)}disabled="disabled"{/if}>{l s='Cancellation'}</option>
                     <option value="service_case" disabled="disabled">{l s='Service case'}</option>
+                    <option value="manual">{l s='Other reason'}</option>
                   </select>
                 </div>
               </div>
@@ -1030,12 +1035,16 @@
                 </div>
               </div>
               <div class="form-group">
-                <label class="control-label col-lg-2" for="credit_refund_method">{l s='Refund method'}</label>
+                <label class="control-label col-lg-2" for="credit_refund_method">
+                  <span class="label-tooltip" data-toggle="tooltip" title="{l s='Select whether this credit creates a payout, store credit, or only the slip.'}">
+                    {l s='Refund method'}
+                  </span>
+                </label>
                 <div class="col-lg-3">
                   <select id="credit_refund_method" name="order_product_refund_method" class="form-control" disabled="disabled" required="required">
                     <option value="" selected="selected" disabled="disabled">{l s='Please select'}</option>
+                    <option value="none">{l s='No payout'}</option>
                     <option value="store_credit">{l s='Store Credit'}</option>
-                    <option value="none">{l s='No refund'}</option>
                     <option value="original_payment" {if empty($original_payment_refund_available)}disabled="disabled"{/if}>{if !empty($original_payment_refund_label)}{$original_payment_refund_label|escape:'html':'UTF-8'}{else}{l s='Original payment method'}{/if}</option>
                   </select>
                 </div>
@@ -1344,7 +1353,11 @@
                         <td class="text-right" id="credit_products_total_display">0.00</td>
                       </tr>
                       <tr>
-                        <td>{l s='Cart rule adjustment'}</td>
+                        <td>
+                          <span class="label-tooltip" data-toggle="tooltip" title="{l s='Deduct the proportional discount from a percentage voucher.'}">
+                            {l s='Cart rule adjustment'}
+                          </span>
+                        </td>
                         <td class="text-right">
                           <div style="white-space: nowrap;">
                             <div class="input-group" style="width: 95px; display: inline-table;">
@@ -1372,7 +1385,11 @@
                         <td class="text-right" id="credit_subtotal_display">0.00</td>
                       </tr>
                       <tr>
-                        <td>{l s='Fee adjustment'}</td>
+                        <td>
+                          <span class="label-tooltip" data-toggle="tooltip" title="{l s='Deduct cancellation payment fees or handling fees.'}">
+                            {l s='Fee adjustment'}
+                          </span>
+                        </td>
                         <td class="text-right">
                           <div style="white-space: nowrap;">
                             <div class="input-group" style="width: 95px; display: inline-table;">
@@ -1396,7 +1413,13 @@
               </div>
               <div class="form-group">
                 <div class="col-lg-10">
-                  <button type="submit" name="partialRefund" class="btn btn-default">
+                  <div id="original_payment_refund_confirmation" class="checkbox" style="display:none; margin-bottom: 12px;">
+                    <label for="confirm_original_payment_refund">
+                      <input type="checkbox" id="confirm_original_payment_refund" name="confirm_original_payment_refund" value="1" disabled="disabled" />
+                      <span id="original_payment_refund_confirmation_text"></span>
+                    </label>
+                  </div>
+                  <button type="submit" id="partial_refund_submit" name="partialRefund" class="btn btn-default">
                     <i class="icon-check"></i> {l s='Gutschrift erstellen'}
                   </button>
                 </div>
