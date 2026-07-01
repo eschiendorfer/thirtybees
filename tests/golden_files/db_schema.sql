@@ -765,6 +765,8 @@ CREATE TABLE `PREFIX_customer_thread` (
   `id_customer` int(11) unsigned DEFAULT NULL,
   `id_order` int(11) unsigned DEFAULT NULL,
   `id_product` int(11) unsigned DEFAULT NULL,
+  `entity_type` int(11) unsigned NOT NULL DEFAULT '0',
+  `id_entity` int(11) unsigned NOT NULL DEFAULT '0',
   `status` enum('open','closed','pending1','pending2') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'open',
   `email` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `token` varchar(12) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -776,6 +778,7 @@ CREATE TABLE `PREFIX_customer_thread` (
   KEY `id_lang` (`id_lang`),
   KEY `id_order` (`id_order`),
   KEY `id_product` (`id_product`),
+  KEY `entity` (`entity_type`,`id_entity`),
   KEY `id_shop` (`id_shop`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -1389,6 +1392,32 @@ CREATE TABLE `PREFIX_order_cart_rule` (
   KEY `id_order` (`id_order`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `PREFIX_order_cancellation` (
+  `id_order_cancellation` int(11) unsigned NOT NULL AUTO_INCREMENT,
+  `id_order` int(11) unsigned NOT NULL,
+  `id_employee` int(11) unsigned DEFAULT NULL,
+  `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'requested',
+  `requested_refund_method` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `quoted_refund_total_tax_incl` decimal(20,6) DEFAULT NULL,
+  `quoted_fee_tax_incl` decimal(20,6) DEFAULT NULL,
+  `migrated` tinyint(1) unsigned NOT NULL DEFAULT '0',
+  `date_add` datetime NOT NULL,
+  `date_upd` datetime NOT NULL,
+  PRIMARY KEY (`id_order_cancellation`),
+  KEY `id_order` (`id_order`),
+  KEY `status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `PREFIX_order_cancellation_detail` (
+  `id_order_cancellation_detail` int(11) unsigned NOT NULL AUTO_INCREMENT,
+  `id_order_cancellation` int(11) unsigned NOT NULL,
+  `id_order_detail` int(11) unsigned NOT NULL,
+  `product_quantity` int(11) unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id_order_cancellation_detail`),
+  KEY `id_order_cancellation` (`id_order_cancellation`),
+  KEY `id_order_detail` (`id_order_detail`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `PREFIX_order_detail` (
   `id_order_detail` int(11) unsigned NOT NULL AUTO_INCREMENT,
   `id_order` int(11) unsigned NOT NULL,
@@ -1564,6 +1593,7 @@ CREATE TABLE `PREFIX_order_return` (
   `id_order` int(11) unsigned NOT NULL,
   `state` tinyint(1) unsigned NOT NULL DEFAULT '1',
   `question` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `migrated` tinyint(1) unsigned NOT NULL DEFAULT '0',
   `date_add` datetime NOT NULL,
   `date_upd` datetime NOT NULL,
   PRIMARY KEY (`id_order_return`),
@@ -1593,6 +1623,33 @@ CREATE TABLE `PREFIX_order_return_state_lang` (
   PRIMARY KEY (`id_order_return_state`,`id_lang`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `PREFIX_order_service_case` (
+  `id_order_service_case` int(11) unsigned NOT NULL AUTO_INCREMENT,
+  `id_order` int(11) unsigned NOT NULL,
+  `id_employee` int(11) unsigned DEFAULT NULL,
+  `case_type` int(11) unsigned NOT NULL,
+  `requested_solution` int(11) unsigned DEFAULT NULL,
+  `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'open',
+  `id_replacement_order` int(11) unsigned DEFAULT NULL,
+  `migrated` tinyint(1) unsigned NOT NULL DEFAULT '0',
+  `date_add` datetime NOT NULL,
+  `date_upd` datetime NOT NULL,
+  PRIMARY KEY (`id_order_service_case`),
+  KEY `id_order` (`id_order`),
+  KEY `status` (`status`),
+  KEY `id_replacement_order` (`id_replacement_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `PREFIX_order_service_case_detail` (
+  `id_order_service_case_detail` int(11) unsigned NOT NULL AUTO_INCREMENT,
+  `id_order_service_case` int(11) unsigned NOT NULL,
+  `id_order_detail` int(11) unsigned NOT NULL,
+  `product_quantity` int(11) unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id_order_service_case_detail`),
+  KEY `id_order_service_case` (`id_order_service_case`),
+  KEY `id_order_detail` (`id_order_detail`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `PREFIX_order_slip` (
   `id_order_slip` int(11) unsigned NOT NULL AUTO_INCREMENT,
   `conversion_rate` decimal(13,6) NOT NULL DEFAULT '1.000000',
@@ -1607,7 +1664,7 @@ CREATE TABLE `PREFIX_order_slip` (
   `shipping_cost_amount` decimal(20,6) NOT NULL,
   `partial` tinyint(1) NOT NULL,
   `order_slip_type` tinyint(1) unsigned NOT NULL DEFAULT '0',
-  `reason_entity_type` varchar(64) NOT NULL DEFAULT '',
+  `reason_entity_type` int(11) unsigned NOT NULL DEFAULT '0',
   `reason_id_entity` int(11) unsigned NOT NULL DEFAULT '0',
   `adjustment_cart_rule_tax_excl` decimal(20,6) NOT NULL DEFAULT '0.000000',
   `adjustment_cart_rule_tax_incl` decimal(20,6) NOT NULL DEFAULT '0.000000',
@@ -1617,7 +1674,8 @@ CREATE TABLE `PREFIX_order_slip` (
   `date_upd` datetime NOT NULL,
   PRIMARY KEY (`id_order_slip`),
   KEY `id_order` (`id_order`),
-  KEY `order_slip_customer` (`id_customer`)
+  KEY `order_slip_customer` (`id_customer`),
+  KEY `reason_entity` (`reason_entity_type`,`reason_id_entity`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `PREFIX_order_slip_detail` (

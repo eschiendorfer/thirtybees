@@ -1743,6 +1743,7 @@ class AdminOrdersControllerCore extends AdminController
 
         $storeCreditMaxApplicableTaxIncl = Tools::roundPrice(min($storeCreditAvailableTaxIncl, Tools::roundPrice((float)$order->getOutstandingAmountTaxIncl())));
         $outstandingInvoiceAmountTaxIncl = Tools::roundPrice(max(0.0, (float)$order->total_paid_tax_incl - (float)$storeCreditUsedTaxIncl));
+        $creditCancellationOptions = $this->getCreditCancellationOptions($order);
 
         // Smarty assign
         $this->tpl_view_vars = [
@@ -1791,7 +1792,8 @@ class AdminOrdersControllerCore extends AdminController
             'can_edit'                     => (bool)$this->hasEditPermission(),
             'original_payment_refund_available' => $this->getRefundPolicy()->isOriginalPaymentRefundAvailable($order),
             'original_payment_refund_label' => $this->getOriginalPaymentRefundLabel($order),
-            'cancellation_credit_available' => (bool)$this->getRefundEligibilityService()->getUncreditedCancelledQuantities($order),
+            'cancellation_credit_available' => (bool)$creditCancellationOptions,
+            'credit_cancellation_options' => $creditCancellationOptions,
             'credit_order_return_options'  => $this->getCreditOrderReturnOptions($order, $products),
             'credit_suggestions_json'      => $this->getCreditSuggestionsJson($order, $products),
             'current_id_lang'              => $this->context->language->id,
@@ -3065,7 +3067,7 @@ class AdminOrdersControllerCore extends AdminController
                 return false;
             }
         } elseif ($action === RefundPolicy::ACTION_CANCEL) {
-            if (!$this->markOrderDetailsRefunded($selectedQuantities)) {
+            if (!$this->createBackOfficeOrderCancellation($order, $selectedQuantities)) {
                 return false;
             }
         }
@@ -3126,30 +3128,37 @@ class AdminOrdersControllerCore extends AdminController
 
     protected function markOrderDetailsRefunded(array $quantitiesByOrderDetail): bool
     {
-        foreach ($quantitiesByOrderDetail as $idOrderDetail => $quantity) {
+        $idOrder = 0;
+        foreach (array_keys($quantitiesByOrderDetail) as $idOrderDetail) {
             $orderDetail = new OrderDetail((int)$idOrderDetail);
             if (!Validate::isLoadedObject($orderDetail)) {
                 $this->errors[] = Tools::displayError('The selected product line is invalid.');
                 return false;
             }
 
-            $remaining = max(
-                0,
-                (int)$orderDetail->product_quantity
-                - (int)$orderDetail->product_quantity_refunded
-                - (int)$orderDetail->product_quantity_return
-            );
-            $quantityToMark = min((int)$quantity, $remaining);
+            $idOrder = (int)$orderDetail->id_order;
+            break;
+        }
 
-            if ($quantityToMark <= 0) {
-                continue;
-            }
+        $order = new Order($idOrder);
+        if (!Validate::isLoadedObject($order)) {
+            $this->errors[] = Tools::displayError('The selected order is invalid.');
+            return false;
+        }
 
-            $orderDetail->product_quantity_refunded += $quantityToMark;
-            if (!$orderDetail->update()) {
-                $this->errors[] = Tools::displayError('Refunded quantities could not be booked.');
-                return false;
-            }
+        return $this->createBackOfficeOrderCancellation($order, $quantitiesByOrderDetail);
+    }
+
+    protected function createBackOfficeOrderCancellation(Order $order, array $quantitiesByOrderDetail): bool
+    {
+        $idEmployee = $this->context->employee instanceof Employee
+            ? (int)$this->context->employee->id
+            : 0;
+
+        $orderCancellation = OrderCancellation::createAppliedForOrder($order, $quantitiesByOrderDetail, $idEmployee);
+        if (!$orderCancellation) {
+            $this->errors[] = Tools::displayError('Cancelled quantities could not be booked.');
+            return false;
         }
 
         return true;
@@ -3191,6 +3200,24 @@ class AdminOrdersControllerCore extends AdminController
                     '#%d - %s - %s',
                     (int)$row['id_order_return'],
                     (string)($row['state_name'] ?: $row['state']),
+                    Tools::displayDate($row['date_add'])
+                ),
+            ];
+        }
+
+        return $options;
+    }
+
+    protected function getCreditCancellationOptions(Order $order): array
+    {
+        $options = [];
+        foreach ($this->getRefundEligibilityService()->getOpenCancellationRows($order) as $row) {
+            $options[] = [
+                'id_order_cancellation' => (int)$row['id_order_cancellation'],
+                'label' => sprintf(
+                    '#%d - %s - %s',
+                    (int)$row['id_order_cancellation'],
+                    $this->l('Cancellation'),
                     Tools::displayDate($row['date_add'])
                 ),
             ];

@@ -56,7 +56,7 @@ class OrderSlipCore extends ObjectModel
             'shipping_cost_amount'    => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbNullable' => false],
             'partial'                 => ['type' => self::TYPE_INT, 'dbType' => 'tinyint(1)', 'dbNullable' => false],
             'order_slip_type'         => ['type' => self::TYPE_INT, 'validate' => 'isInt', 'size' => 1, 'dbDefault' => '0'],
-            'reason_entity_type'      => ['type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'size' => 64, 'dbDefault' => ''],
+            'reason_entity_type'      => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '0'],
             'reason_id_entity'        => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '0'],
             'adjustment_cart_rule_tax_excl' => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbDefault' => '0.000000'],
             'adjustment_cart_rule_tax_incl' => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbDefault' => '0.000000'],
@@ -102,8 +102,8 @@ class OrderSlipCore extends ObjectModel
     public $date_upd;
     /** @var int */
     public $order_slip_type = 0;
-    /** @var string */
-    public $reason_entity_type = '';
+    /** @var int */
+    public $reason_entity_type = 0;
     /** @var int */
     public $reason_id_entity = 0;
     /** @var float */
@@ -366,9 +366,7 @@ class OrderSlipCore extends ObjectModel
         $orderSlip->total_products_tax_incl = 0;
 
         if ($quantityEffects === null) {
-            $quantityEffects = [
-                self::QUANTITY_EFFECT_REFUNDED => !Tools::isSubmit('cancelProduct'),
-            ];
+            $quantityEffects = [];
         }
 
         $productListToAdd = [];
@@ -401,10 +399,12 @@ class OrderSlipCore extends ObjectModel
             }
 
             if ($markRefunded && $lineAmount > 0.0) {
-                $orderDetail->product_quantity_refunded += $quantity;
+                OrderCancellationDetail::syncCancelledQuantity((int)$orderDetail->id);
             }
 
-            $orderDetail->save();
+            if ($markReturned) {
+                $orderDetail->save();
+            }
 
             // Use taxes from the given order detail.
             $tax = new Tax();
@@ -469,7 +469,8 @@ class OrderSlipCore extends ObjectModel
 
     public function setCreditMetadata(array $metadata): void
     {
-        $this->reason_entity_type = substr((string)($metadata['reason_entity_type'] ?? ''), 0, 64);
+        $policy = new RefundPolicy();
+        $this->reason_entity_type = $policy->normalizeReasonEntityType($metadata['reason_entity_type'] ?? 0);
         $this->reason_id_entity = max(0, (int)($metadata['reason_id_entity'] ?? 0));
         $this->adjustment_cart_rule_tax_excl = Tools::roundPrice(max(0.0, (float)($metadata['adjustment_cart_rule_tax_excl'] ?? 0.0)));
         $this->adjustment_cart_rule_tax_incl = Tools::roundPrice(max(0.0, (float)($metadata['adjustment_cart_rule_tax_incl'] ?? 0.0)));
@@ -606,11 +607,6 @@ class OrderSlipCore extends ObjectModel
                     $rate = 1 + ($rate / 100);
                     $tab['amount_tax_excl'] = Tools::roundPrice($tab['amount_tax_excl'] / $rate);
                 }
-            }
-
-            if ($tab['quantity'] > 0 && $tab['quantity'] > $orderDetail->product_quantity_refunded) {
-                $orderDetail->product_quantity_refunded = $tab['quantity'];
-                $orderDetail->save();
             }
 
             $insertOrderSlip = [

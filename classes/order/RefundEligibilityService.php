@@ -95,20 +95,61 @@ class RefundEligibilityServiceCore
         return $quantities;
     }
 
-    public function getUncreditedCancelledQuantities(Order $order): array
+    public function getOpenCancellationRows(Order $order): array
     {
-        if ($order->hasBeenShipped()) {
+        $rows = Db::readOnly()->getArray(
+            (new DbQuery())
+                ->select('oc.`id_order_cancellation`, oc.`status`, oc.`date_add`')
+                ->select('SUM(ocd.`product_quantity`) AS `quantity`')
+                ->from('order_cancellation', 'oc')
+                ->innerJoin('order_cancellation_detail', 'ocd', 'ocd.`id_order_cancellation` = oc.`id_order_cancellation`')
+                ->where('oc.`id_order` = '.(int)$order->id)
+                ->where('oc.`status` = \''.pSQL(OrderCancellation::STATUS_APPLIED).'\'')
+                ->groupBy('oc.`id_order_cancellation`')
+                ->orderBy('oc.`id_order_cancellation` DESC')
+        );
+
+        if (!$rows) {
             return [];
         }
 
+        $creditedRows = Db::readOnly()->getArray(
+            (new DbQuery())
+                ->select('os.`reason_id_entity` AS `id_order_cancellation`, SUM(osd.`product_quantity`) AS `quantity`')
+                ->from('order_slip', 'os')
+                ->innerJoin('order_slip_detail', 'osd', 'osd.`id_order_slip` = os.`id_order_slip`')
+                ->where('os.`id_order` = '.(int)$order->id)
+                ->where('os.`reason_entity_type` = '.(int)RefundPolicy::REASON_CANCELLATION)
+                ->groupBy('os.`reason_id_entity`')
+        );
+
+        $creditedQuantities = [];
+        foreach ($creditedRows as $creditedRow) {
+            $creditedQuantities[(int)$creditedRow['id_order_cancellation']] = (int)$creditedRow['quantity'];
+        }
+
+        $openRows = [];
+        foreach ($rows as $row) {
+            $idOrderCancellation = (int)$row['id_order_cancellation'];
+            $row['credited_quantity'] = (int)($creditedQuantities[$idOrderCancellation] ?? 0);
+            if ((int)$row['quantity'] > (int)$row['credited_quantity']) {
+                $openRows[] = $row;
+            }
+        }
+
+        return $openRows;
+    }
+
+    public function getUncreditedCancelledQuantities(Order $order, ?int $idOrderCancellation = null): array
+    {
         $creditedRows = Db::readOnly()->getArray(
             (new DbQuery())
                 ->select('osd.`id_order_detail`, SUM(osd.`product_quantity`) AS `quantity`')
                 ->from('order_slip_detail', 'osd')
                 ->innerJoin('order_slip', 'os', 'os.`id_order_slip` = osd.`id_order_slip`')
                 ->where('os.`id_order` = '.(int)$order->id)
-                ->where('os.`reason_entity_type` = \''.pSQL(RefundPolicy::REASON_CANCELLATION).'\'')
-                ->where('os.`reason_id_entity` = '.(int)$order->id)
+                ->where('os.`reason_entity_type` = '.(int)RefundPolicy::REASON_CANCELLATION)
+                ->where($idOrderCancellation ? 'os.`reason_id_entity` = '.(int)$idOrderCancellation : '1')
                 ->groupBy('osd.`id_order_detail`')
         );
 
@@ -119,16 +160,19 @@ class RefundEligibilityServiceCore
 
         $rows = Db::readOnly()->getArray(
             (new DbQuery())
-                ->select('`id_order_detail`, `product_quantity_refunded`')
-                ->from('order_detail')
-                ->where('`id_order` = '.(int)$order->id)
-                ->where('`product_quantity_refunded` > 0')
+                ->select('ocd.`id_order_detail`, SUM(ocd.`product_quantity`) AS `product_quantity_cancelled`')
+                ->from('order_cancellation_detail', 'ocd')
+                ->innerJoin('order_cancellation', 'oc', 'oc.`id_order_cancellation` = ocd.`id_order_cancellation`')
+                ->where('oc.`id_order` = '.(int)$order->id)
+                ->where('oc.`status` = \''.pSQL(OrderCancellation::STATUS_APPLIED).'\'')
+                ->where($idOrderCancellation ? 'oc.`id_order_cancellation` = '.(int)$idOrderCancellation : '1')
+                ->groupBy('ocd.`id_order_detail`')
         );
 
         $quantities = [];
         foreach ($rows as $row) {
             $idOrderDetail = (int)$row['id_order_detail'];
-            $openQuantity = (int)$row['product_quantity_refunded'] - (int)($creditedQuantities[$idOrderDetail] ?? 0);
+            $openQuantity = (int)$row['product_quantity_cancelled'] - (int)($creditedQuantities[$idOrderDetail] ?? 0);
             if ($openQuantity > 0) {
                 $quantities[$idOrderDetail] = $openQuantity;
             }
@@ -153,9 +197,20 @@ class RefundEligibilityServiceCore
         );
     }
 
-    public function isValidCancellationReference(Order $order, int $idOrder): bool
+    public function isValidCancellationReference(Order $order, int $idOrderCancellation): bool
     {
-        return (int)$order->id > 0 && (int)$order->id === $idOrder;
+        if ($idOrderCancellation <= 0) {
+            return false;
+        }
+
+        return (bool)Db::readOnly()->getValue(
+            (new DbQuery())
+                ->select('1')
+                ->from('order_cancellation')
+                ->where('`id_order_cancellation` = '.(int)$idOrderCancellation)
+                ->where('`id_order` = '.(int)$order->id)
+                ->where('`status` = \''.pSQL(OrderCancellation::STATUS_APPLIED).'\'')
+        ) && (bool)$this->getUncreditedCancelledQuantities($order, $idOrderCancellation);
     }
 
     public function getOrderDetailRemainingCreditAmounts(OrderDetail $orderDetail): array

@@ -85,8 +85,9 @@
 		</td>
 		<td class="productQuantity text-center">{$product['customizationQuantityTotal']}</td>
 		{if $display_warehouse}<td>&nbsp;</td>{/if}
-		{if ($order->hasBeenPaid())}<td class="productQuantity text-center">{$product['customizationQuantityRefunded']}</td>{/if}
+		<td class="productQuantity text-center">{$product['customizationQuantityRefunded']}</td>
 		{if ($order->hasBeenDelivered() || $order->hasProductReturned())}<td class="productQuantity text-center">{$product['customizationQuantityReturned']}</td>{/if}
+		<td class="text-center">{if !empty($product['amount_refund'])}{$product['amount_refund']}{else}-{/if}</td>
 		{if $stock_management}<td class="text-center">{$product['current_stock']}</td>{/if}
 		<td class="total_product">
 		{if ($order->getTaxCalculationMethod() == $smarty.const.PS_TAX_EXC)}
@@ -211,17 +212,14 @@
 					{/if}
 				</td>
 				{if $display_warehouse}<td>&nbsp;</td>{/if}
-				{if ($order->hasBeenPaid())}
 				<td class="text-center">
-					{if !empty($product['amount_refund'])}
-					{l s='%s (%s refund)' sprintf=[$customization['quantity_refunded'], $product['amount_refund']]}
-					{/if}
+					{$customization['quantity_refunded']}
 					<input type="hidden" value="{$product['quantity_refundable']}" class="partialRefundProductQuantity" />
 					<input type="hidden" value="{($product_price * ($product['product_quantity'] - $product['customizationQuantityTotal']))}" class="partialRefundProductAmount" />
 				</td>
-				{/if}
-				{if ($order->hasBeenDelivered())}<td class="text-center">{$customization['quantity_returned']}</td>{/if}
-				<td class="text-center">-</td>
+				{if ($order->hasBeenDelivered() || $order->hasProductReturned())}<td class="text-center">{$customization['quantity_returned']}</td>{/if}
+				<td class="text-center">{if !empty($product['amount_refund'])}{$product['amount_refund']}{else}-{/if}</td>
+				{if $stock_management}<td class="text-center">-</td>{/if}
 				<td class="total_product">
 					{if ($order->getTaxCalculationMethod() == $smarty.const.PS_TAX_EXC)}
 						{displayPrice price=$product['product_price']*$customization['quantity'] currency=$currency->id|intval}
@@ -240,7 +238,7 @@
 	{if isset($product['pack_items']) && $product['pack_items']}
 		<tr>
 		{foreach $product['pack_items'] as $pack_item}
-			<td><strong>{l s='Pack items:'}</strong> </td><td colspan="8">{$pack_item}</td>
+			<td><strong>{l s='Pack items:'}</strong> </td><td colspan="9">{$pack_item}</td>
 		{/foreach}
 		</tr>
 	{/if}

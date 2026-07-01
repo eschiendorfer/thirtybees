@@ -6,10 +6,15 @@ class RefundPolicyCore
     public const ACTION_RETURN = 'return';
     public const ACTION_SERVICE = 'service';
 
-    public const REASON_MANUAL = 'manual';
-    public const REASON_ORDER_RETURN = 'order_return';
-    public const REASON_CANCELLATION = 'cancellation';
-    public const REASON_SERVICE_CASE = 'service_case';
+    public const REASON_KEY_MANUAL = 'manual';
+    public const REASON_KEY_ORDER_RETURN = 'order_return';
+    public const REASON_KEY_CANCELLATION = 'cancellation';
+    public const REASON_KEY_SERVICE_CASE = 'service_case';
+
+    public const REASON_MANUAL = 0;
+    public const REASON_ORDER_RETURN = 72;
+    public const REASON_CANCELLATION = 71;
+    public const REASON_SERVICE_CASE = 73;
 
     public const REFUND_METHOD_NONE = 'none';
     public const REFUND_METHOD_STORE_CREDIT = 'store_credit';
@@ -35,6 +40,57 @@ class RefundPolicyCore
             static::REASON_CANCELLATION,
             static::REASON_SERVICE_CASE,
         ];
+    }
+
+    public function normalizeReasonEntityType($reasonEntityType): int
+    {
+        if (is_numeric($reasonEntityType)) {
+            $reasonEntityType = (int)$reasonEntityType;
+            return in_array($reasonEntityType, $this->getValidReasonEntityTypes(), true)
+                ? $reasonEntityType
+                : static::REASON_MANUAL;
+        }
+
+        switch (trim((string)$reasonEntityType)) {
+            case static::REASON_KEY_ORDER_RETURN:
+                return static::REASON_ORDER_RETURN;
+            case static::REASON_KEY_CANCELLATION:
+                return static::REASON_CANCELLATION;
+            case static::REASON_KEY_SERVICE_CASE:
+                return static::REASON_SERVICE_CASE;
+            case static::REASON_KEY_MANUAL:
+            default:
+                return static::REASON_MANUAL;
+        }
+    }
+
+    public function isValidReasonEntityTypeInput($reasonEntityType): bool
+    {
+        if (is_numeric($reasonEntityType)) {
+            return in_array((int)$reasonEntityType, $this->getValidReasonEntityTypes(), true);
+        }
+
+        return in_array(trim((string)$reasonEntityType), [
+            static::REASON_KEY_MANUAL,
+            static::REASON_KEY_ORDER_RETURN,
+            static::REASON_KEY_CANCELLATION,
+            static::REASON_KEY_SERVICE_CASE,
+        ], true);
+    }
+
+    public function getReasonKey(int $reasonEntityType): string
+    {
+        switch ($reasonEntityType) {
+            case static::REASON_ORDER_RETURN:
+                return static::REASON_KEY_ORDER_RETURN;
+            case static::REASON_CANCELLATION:
+                return static::REASON_KEY_CANCELLATION;
+            case static::REASON_SERVICE_CASE:
+                return static::REASON_KEY_SERVICE_CASE;
+            case static::REASON_MANUAL:
+            default:
+                return static::REASON_KEY_MANUAL;
+        }
     }
 
     public function getValidRefundMethods(): array
@@ -96,8 +152,9 @@ class RefundPolicyCore
         ];
     }
 
-    public function getSuggestedFeeRate(string $reasonEntityType, string $refundMethod, ?string $action = null): float
+    public function getSuggestedFeeRate($reasonEntityType, string $refundMethod, ?string $action = null): float
     {
+        $reasonEntityType = $this->normalizeReasonEntityType($reasonEntityType);
         if (
             $action === static::ACTION_CANCEL
             && $refundMethod === static::REFUND_METHOD_ORIGINAL_PAYMENT

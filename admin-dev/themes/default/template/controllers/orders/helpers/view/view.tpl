@@ -1014,7 +1014,7 @@
                   <select id="reason_entity_type" name="reason_entity_type" class="form-control" disabled="disabled" required="required">
                     <option value="" selected="selected" disabled="disabled">{l s='Please select'}</option>
                     <option value="order_return" {if empty($credit_order_return_options)}disabled="disabled"{/if}>{l s='Return'}</option>
-                    <option value="cancellation" {if empty($cancellation_credit_available)}disabled="disabled"{/if}>{l s='Cancellation'}</option>
+                    <option value="cancellation" {if empty($credit_cancellation_options)}disabled="disabled"{/if}>{l s='Cancellation'}</option>
                     <option value="service_case" disabled="disabled">{l s='Service case'}</option>
                     <option value="manual">{l s='Other reason'}</option>
                   </select>
@@ -1025,9 +1025,9 @@
                 <div class="col-lg-3">
                   <select id="reason_id_entity" name="reason_id_entity" class="form-control" disabled="disabled">
                     <option value="" disabled="disabled">{l s='Please select'}</option>
-                    {if !empty($cancellation_credit_available)}
-                      <option value="{$order->id|intval}" data-reason-type="cancellation">{$order->reference|escape:'html':'UTF-8'} - {l s='Cancellation'}</option>
-                    {/if}
+                    {foreach from=$credit_cancellation_options item=credit_cancellation}
+                      <option value="{$credit_cancellation.id_order_cancellation|intval}" data-reason-type="cancellation">{$credit_cancellation.label|escape:'html':'UTF-8'}</option>
+                    {/foreach}
                     {foreach from=$credit_order_return_options item=credit_order_return}
                       <option value="{$credit_order_return.id_order_return|intval}" data-reason-type="order_return">{$credit_order_return.label|escape:'html':'UTF-8'}</option>
                     {/foreach}
@@ -1152,10 +1152,11 @@
                 {if $display_warehouse}
                   <th><span class="title_box ">{l s='Warehouse'}</span></th>
                 {/if}
-                <th class="text-center"><span class="title_box ">{l s='Refunded'}</span></th>
+                <th class="text-center"><span class="title_box ">{l s='Cancelled'}</span></th>
                 {if ($order->hasBeenDelivered() || $order->hasProductReturned())}
                   <th class="text-center"><span class="title_box ">{l s='Returned'}</span></th>
                 {/if}
+                <th class="text-center"><span class="title_box ">{l s='Credited'}</span></th>
                 {if $stock_management}
                   <th class="text-center"><span class="title_box ">{l s='Available quantity'}</span></th>
                 {/if}

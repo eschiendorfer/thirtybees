@@ -38,10 +38,32 @@ class CustomerThreadCore extends ObjectModel
     public $id_contact;
     /** @var int $id_customer */
     public $id_customer;
-    /** @var int $id_order */
+    /**
+     * Legacy order context for order-related threads.
+     *
+     * TODO: Prefer entity_type/id_entity for new workflows. Long-term target is to
+     * model returns, cancellations, service cases, and other thread subjects with
+     * explicit entity references so automation can reliably understand the topic.
+     * Remove this column if the order context can be derived safely from the target
+     * entity.
+     *
+     * @var int $id_order
+     */
     public $id_order;
-    /** @var int $id_product */
+    /**
+     * Legacy product context inside an order.
+     *
+     * TODO: Do not use this for new domain workflows. Use a concrete
+     * entity_type/id_entity target such as an order return or service case.
+     * Long-term target is to remove this column.
+     *
+     * @var int $id_product
+     */
     public $id_product;
+    /** @var int $entity_type */
+    public $entity_type;
+    /** @var int $id_entity */
+    public $id_entity;
     /** @var string $status */
     public $status;
     /** @var string $email */
@@ -66,6 +88,8 @@ class CustomerThreadCore extends ObjectModel
             'id_customer' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId'],
             'id_order'    => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId'],
             'id_product'  => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId'],
+            'entity_type' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '0'],
+            'id_entity'   => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '0'],
             'status'      => ['type' => self::TYPE_STRING, 'values' => ['open', 'closed', 'pending1', 'pending2'], 'dbDefault' => 'open'],
             'email'       => ['type' => self::TYPE_STRING, 'validate' => 'isEmail', 'size' => 128, 'dbNullable' => false],
             'token'       => ['type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'required' => true, 'size' => 12, 'dbNullable' => true],
@@ -79,6 +103,7 @@ class CustomerThreadCore extends ObjectModel
                 'id_lang'     => ['type' => ObjectModel::KEY, 'columns' => ['id_lang']],
                 'id_order'    => ['type' => ObjectModel::KEY, 'columns' => ['id_order']],
                 'id_product'  => ['type' => ObjectModel::KEY, 'columns' => ['id_product']],
+                'entity'      => ['type' => ObjectModel::KEY, 'columns' => ['entity_type', 'id_entity']],
                 'id_shop'     => ['type' => ObjectModel::KEY, 'columns' => ['id_shop']],
             ],
         ],
@@ -104,6 +129,8 @@ class CustomerThreadCore extends ObjectModel
             'id_product'  => [
                 'xlink_resource' => 'products',
             ],
+            'entity_type' => [],
+            'id_entity'   => [],
         ],
         'associations' => [
             'customer_messages' => [

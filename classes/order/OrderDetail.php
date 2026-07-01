@@ -50,6 +50,7 @@ class OrderDetailCore extends ObjectModel
             'product_name'                  => ['type' => self::TYPE_STRING, 'validate' => 'isCatalogName', 'required' => true],
             'product_quantity'              => ['type' => self::TYPE_INT, 'validate' => 'isInt', 'required' => true, 'dbDefault' => '0'],
             'product_quantity_in_stock'     => ['type' => self::TYPE_INT, 'validate' => 'isInt', 'size' => 10, 'signed' => true, 'dbDefault' => '0'],
+            // TODO: legacy cancellation cache. Rename to product_quantity_cancelled/product_quantity_cancellation or remove it.
             'product_quantity_refunded'     => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedInt', 'dbDefault' => '0'],
             'product_quantity_return'       => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedInt', 'dbDefault' => '0'],
             'product_quantity_reinjected'   => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedInt', 'dbDefault' => '0'],

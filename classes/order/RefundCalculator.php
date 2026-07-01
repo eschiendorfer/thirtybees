@@ -33,10 +33,11 @@ class RefundCalculatorCore
             $errors[] = 'Refund to the original payment method is not available yet.';
         }
 
-        $reasonEntityType = (string)($input['reason_entity_type'] ?? '');
-        if ($reasonEntityType === '') {
+        $rawReasonEntityType = $input['reason_entity_type'] ?? '';
+        $reasonEntityType = $this->policy->normalizeReasonEntityType($rawReasonEntityType);
+        if ($rawReasonEntityType === '') {
             $errors[] = 'Please select a credit reason.';
-        } elseif (!in_array($reasonEntityType, $this->policy->getValidReasonEntityTypes(), true)) {
+        } elseif (!$this->policy->isValidReasonEntityTypeInput($rawReasonEntityType)) {
             $errors[] = 'The selected credit reason is invalid.';
         }
 
@@ -48,7 +49,7 @@ class RefundCalculatorCore
                 $errors[] = 'The selected order return is invalid.';
             }
         } elseif ($reasonEntityType === RefundPolicy::REASON_CANCELLATION) {
-            if ($order->hasBeenShipped() || !$this->eligibility->isValidCancellationReference($order, $reasonIdEntity)) {
+            if (!$this->eligibility->isValidCancellationReference($order, $reasonIdEntity)) {
                 $errors[] = 'The selected cancellation reference is invalid.';
             }
         } elseif ($reasonEntityType === RefundPolicy::REASON_SERVICE_CASE) {
@@ -58,7 +59,7 @@ class RefundCalculatorCore
         $refunds = (array)($input['product_amounts'] ?? []);
         $refundQuantities = (array)($input['product_quantities'] ?? []);
         $cancellationQuantities = $reasonEntityType === RefundPolicy::REASON_CANCELLATION
-            ? $this->eligibility->getUncreditedCancelledQuantities($order)
+            ? $this->eligibility->getUncreditedCancelledQuantities($order, $reasonIdEntity)
             : [];
         if ($reasonEntityType === RefundPolicy::REASON_CANCELLATION && !$cancellationQuantities) {
             $errors[] = 'There are no open cancellation quantities for this order.';
@@ -198,6 +199,17 @@ class RefundCalculatorCore
             );
         }
 
+        $cancellationSuggestions = [];
+        foreach ($this->eligibility->getOpenCancellationRows($order) as $row) {
+            $idOrderCancellation = (int)$row['id_order_cancellation'];
+            $cancellationSuggestions[$idOrderCancellation] = $this->buildCancellationCreditSuggestion(
+                $order,
+                $products,
+                $displayIncludesTax,
+                $idOrderCancellation
+            );
+        }
+
         return [
             'default_cart_rule_rate' => $this->getOrderPercentCartRuleRate($order),
             'default_fee_rate' => $this->policy->getSuggestedFeeRate(
@@ -219,19 +231,18 @@ class RefundCalculatorCore
                 ),
             ],
             'round_unit' => RefundPolicy::ROUNDING_UNIT,
-            'order_return' => $orderReturnSuggestions,
-            RefundPolicy::REASON_CANCELLATION => [
-                (int)$order->id => $this->buildCancellationCreditSuggestion($order, $products, $displayIncludesTax),
-            ],
+            RefundPolicy::REASON_KEY_ORDER_RETURN => $orderReturnSuggestions,
+            RefundPolicy::REASON_KEY_CANCELLATION => $cancellationSuggestions,
         ];
     }
 
     public function buildCancellationCreditSuggestion(
         Order $order,
         array $products,
-        bool $displayIncludesTax
+        bool $displayIncludesTax,
+        ?int $idOrderCancellation = null
     ): array {
-        $quantities = $this->eligibility->getUncreditedCancelledQuantities($order);
+        $quantities = $this->eligibility->getUncreditedCancelledQuantities($order, $idOrderCancellation);
         $allProductLinesCancelled = true;
         $suggestedProducts = [];
         $productsDisplayTotal = 0.0;
@@ -244,11 +255,11 @@ class RefundCalculatorCore
                 continue;
             }
 
-            if ((int)$product['product_quantity_refunded'] < $orderedQuantity) {
+            $cancelQuantity = min($orderedQuantity, (int)($quantities[$idOrderDetail] ?? 0));
+            if ($cancelQuantity < $orderedQuantity) {
                 $allProductLinesCancelled = false;
             }
 
-            $cancelQuantity = min($orderedQuantity, (int)($quantities[$idOrderDetail] ?? 0));
             if ($cancelQuantity <= 0) {
                 continue;
             }
@@ -454,7 +465,7 @@ class RefundCalculatorCore
     }
 
     protected function resolveFeeAdjustment(
-        string $reasonEntityType,
+        $reasonEntityType,
         string $refundMethod,
         $providedAmount,
         float $baseTaxExcl,

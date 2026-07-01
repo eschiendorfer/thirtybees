@@ -122,22 +122,9 @@
 		</td>
 	{/if}
 	<td class="productQuantity text-center">
-		{if !empty($product['amount_refund'])}
-			{l s='%s (%s refund)' sprintf=[$product['product_quantity_refunded'], $product['amount_refund']]}
-		{/if}
+		{$product['product_quantity_refunded']}
 		<input type="hidden" value="{$product['quantity_refundable']}" class="partialRefundProductQuantity" />
 		<input type="hidden" value="{($product_price * ($product['product_quantity'] - $product['customizationQuantityTotal']))}" class="partialRefundProductAmount" />
-		{if count($product['refund_history'])}
-			<span class="tooltip">
-				<span class="tooltip_label tooltip_button">+</span>
-				<span class="tooltip_content">
-				<span class="title">{l s='Refund history'}</span>
-				{foreach $product['refund_history'] as $refund}
-					{l s='%1s - %2s' sprintf=[{dateFormat date=$refund.date_add}, {displayPrice price=$refund.amount_tax_incl}]}<br />
-				{/foreach}
-				</span>
-			</span>
-		{/if}
 	</td>
 	{if $order->hasBeenDelivered() || $order->hasProductReturned()}
 		<td class="productQuantity text-center">
@@ -155,6 +142,24 @@
 			{/if}
 		</td>
 	{/if}
+	<td class="text-center">
+		{if !empty($product['amount_refund'])}
+			{$product['amount_refund']}
+		{else}
+			-
+		{/if}
+		{if count($product['refund_history'])}
+			<span class="tooltip">
+				<span class="tooltip_label tooltip_button">+</span>
+				<span class="tooltip_content">
+				<span class="title">{l s='Credit history'}</span>
+				{foreach $product['refund_history'] as $refund}
+					{l s='%1s - %2s' sprintf=[{dateFormat date=$refund.date_add}, {displayPrice price=$refund.amount_tax_incl}]}<br />
+				{/foreach}
+				</span>
+			</span>
+		{/if}
+	</td>
 	{if $stock_management}<td class="productQuantity product_stock text-center">{$product['current_stock']}</td>{/if}
 	<td class="total_product">
 		{displayPrice price=$product_total currency=$currency->id}
@@ -275,7 +280,7 @@
 {if isset($product['pack_items']) && $product['pack_items']}
 	<tr>
 	{foreach $product['pack_items'] as $pack_item}
-		<td><strong>{l s='Pack items:'}</strong> </td><td colspan="8">{$pack_item}</td>
+		<td><strong>{l s='Pack items:'}</strong> </td><td colspan="9">{$pack_item}</td>
 	{/foreach}
 	</tr>
 {/if}

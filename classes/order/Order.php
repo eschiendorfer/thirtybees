@@ -379,9 +379,7 @@ class OrderCore extends ObjectModel
 
             return $orderDetail->update();
         } elseif ($this->hasBeenPaid()) {
-            $orderDetail->product_quantity_refunded += (int) $quantity;
-
-            return $orderDetail->update();
+            return OrderCancellation::createAppliedForOrder($order, [(int)$orderDetail->id => (int)$quantity]) instanceof OrderCancellation;
         }
 
         return $this->_deleteProduct($orderDetail, (int) $quantity);

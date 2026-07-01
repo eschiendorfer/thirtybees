@@ -51,6 +51,7 @@ class OrderReturnCore extends ObjectModel
             'id_order'    => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true],
             'state'       => ['type' => self::TYPE_INT, 'dbType' => 'tinyint(1) unsigned', 'dbDefault' => '1'],
             'question'    => ['type' => self::TYPE_HTML, 'validate' => 'isCleanHtml', 'size' => ObjectModel::SIZE_TEXT, 'dbNullable' => false],
+            'migrated'    => ['type' => self::TYPE_BOOL, 'validate' => 'isBool', 'dbType' => 'tinyint(1) unsigned', 'dbDefault' => '0'],
             'date_add'    => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
             'date_upd'    => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
         ],
@@ -71,6 +72,8 @@ class OrderReturnCore extends ObjectModel
     public $state;
     /** @var string message content */
     public $question;
+    /** @var bool */
+    public $migrated = false;
     /** @var string Object creation date */
     public $date_add;
     /** @var string Object last modification date */
@@ -105,6 +108,29 @@ class OrderReturnCore extends ObjectModel
         return $returns;
     }
 
+    public function update($nullValues = false)
+    {
+        $idOrderDetails = $this->getOrderDetailIds();
+        $result = parent::update($nullValues);
+        if ($result) {
+            $this->syncOrderDetailIds($idOrderDetails);
+        }
+
+        return $result;
+    }
+
+    public function delete()
+    {
+        $idOrderDetails = $this->getOrderDetailIds();
+        $result = parent::delete();
+        if ($result) {
+            Db::getInstance()->delete('order_return_detail', '`id_order_return` = '.(int)$this->id);
+            $this->syncOrderDetailIds($idOrderDetails);
+        }
+
+        return $result;
+    }
+
     /**
      * @param int $idOrderReturn
      * @param int $idOrderDetail
@@ -116,7 +142,12 @@ class OrderReturnCore extends ObjectModel
      */
     public static function deleteOrderReturnDetail($idOrderReturn, $idOrderDetail, $idCustomization = 0)
     {
-        return Db::getInstance()->execute('DELETE FROM `'._DB_PREFIX_.'order_return_detail` WHERE `id_order_detail` = '.(int) $idOrderDetail.' AND `id_order_return` = '.(int) $idOrderReturn.' AND `id_customization` = '.(int) $idCustomization);
+        $result = Db::getInstance()->execute('DELETE FROM `'._DB_PREFIX_.'order_return_detail` WHERE `id_order_detail` = '.(int) $idOrderDetail.' AND `id_order_return` = '.(int) $idOrderReturn.' AND `id_customization` = '.(int) $idCustomization);
+        if ($result) {
+            self::syncReturnedQuantity((int)$idOrderDetail);
+        }
+
+        return $result;
     }
 
     public static function isWaitingState(int $state): bool
@@ -193,21 +224,31 @@ class OrderReturnCore extends ObjectModel
 
         if ($exists) {
             if ($quantity <= 0) {
-                return (bool)Db::getInstance()->delete('order_return_detail', $where);
+                $result = (bool)Db::getInstance()->delete('order_return_detail', $where);
+                if ($result) {
+                    self::syncReturnedQuantity($idOrderDetail);
+                }
+
+                return $result;
             }
 
-            return (bool)Db::getInstance()->update(
+            $result = (bool)Db::getInstance()->update(
                 'order_return_detail',
                 ['product_quantity' => (int)$quantity],
                 $where
             );
+            if ($result) {
+                self::syncReturnedQuantity($idOrderDetail);
+            }
+
+            return $result;
         }
 
         if ($quantity <= 0) {
             return true;
         }
 
-        return (bool)Db::getInstance()->insert(
+        $result = (bool)Db::getInstance()->insert(
             'order_return_detail',
             [
                 'id_order_return' => (int)$idOrderReturn,
@@ -215,6 +256,36 @@ class OrderReturnCore extends ObjectModel
                 'id_customization' => (int)$idCustomization,
                 'product_quantity' => (int)$quantity,
             ]
+        );
+        if ($result) {
+            self::syncReturnedQuantity($idOrderDetail);
+        }
+
+        return $result;
+    }
+
+    public static function syncReturnedQuantity(int $idOrderDetail): bool
+    {
+        if ($idOrderDetail <= 0) {
+            return false;
+        }
+
+        $quantity = (int)Db::getInstance()->getValue(
+            (new DbQuery())
+                ->select('COALESCE(SUM(ord.`product_quantity`), 0)')
+                ->from('order_return_detail', 'ord')
+                ->innerJoin('order_return', 'orx', 'orx.`id_order_return` = ord.`id_order_return`')
+                ->where('ord.`id_order_detail` = '.(int)$idOrderDetail)
+                ->where('orx.`state` IN ('.implode(',', [
+                    self::STATE_PACKAGE_RECEIVED,
+                    self::STATE_RETURN_COMPLETED,
+                ]).')')
+        );
+
+        return (bool)Db::getInstance()->update(
+            'order_detail',
+            ['product_quantity_return' => max(0, $quantity)],
+            '`id_order_detail` = '.(int)$idOrderDetail
         );
     }
 
@@ -241,6 +312,29 @@ class OrderReturnCore extends ObjectModel
                 ->from('order_return_detail')
                 ->where('`id_order_return` = ' . (int)$this->id)
         );
+    }
+
+    private function getOrderDetailIds(): array
+    {
+        if ((int)$this->id <= 0) {
+            return [];
+        }
+
+        $rows = Db::getInstance()->getArray(
+            (new DbQuery())
+                ->select('DISTINCT `id_order_detail`')
+                ->from('order_return_detail')
+                ->where('`id_order_return` = '.(int)$this->id)
+        );
+
+        return array_map('intval', array_column($rows, 'id_order_detail'));
+    }
+
+    private function syncOrderDetailIds(array $idOrderDetails): void
+    {
+        foreach (array_unique(array_map('intval', $idOrderDetails)) as $idOrderDetail) {
+            self::syncReturnedQuantity($idOrderDetail);
+        }
     }
 
     /**
