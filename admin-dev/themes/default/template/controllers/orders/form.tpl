@@ -95,6 +95,7 @@
 					minChars: 3,
 					max: 15,
 					width: 250,
+					cacheLength: 0,
 					selectFirst: false,
 					scroll: false,
 					dataType: "json",

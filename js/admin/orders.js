@@ -99,6 +99,63 @@ function updateShipping(shippingHtml) {
 
 function updateDiscountForm(discountFormHtml) {
   $('#voucher_form').html(discountFormHtml);
+  bindExistingCartRuleAutocomplete();
+}
+
+function bindExistingCartRuleAutocomplete() {
+  var $input = $('#existing_cart_rule_code');
+  if (!$input.length || typeof $input.autocomplete !== 'function' || !window.admin_cart_rule_tab_link) {
+    return;
+  }
+  if ($input.data('existing-cart-rule-autocomplete')) {
+    return;
+  }
+  $input.data('existing-cart-rule-autocomplete', true);
+
+  $input.autocomplete(window.admin_cart_rule_tab_link, {
+    minChars: 0,
+    max: 15,
+    width: 300,
+    cacheLength: 0,
+    selectFirst: false,
+    scroll: false,
+    dataType: 'json',
+    formatItem: function (data, i, max, value) {
+      return value;
+    },
+    parse: function (data) {
+      var vouchers = [];
+      if (!data || !data.vouchers) {
+        return vouchers;
+      }
+      for (var i = 0; i < data.vouchers.length; i++) {
+        if (data.vouchers[i].code && data.vouchers[i].code.length > 0) {
+          vouchers[vouchers.length] = {
+            data: data.vouchers[i],
+            value: data.vouchers[i].name + ' - ' + data.vouchers[i].code
+          };
+        }
+      }
+      return vouchers;
+    },
+    extraParams: {
+      ajax: '1',
+      token: function () { return window.admin_cart_rule_token; },
+      tab: 'AdminCartRules',
+      action: 'searchCartRuleVouchers',
+      id_customer: function () { return window.id_customer; }
+    }
+  }).result(function (event, data) {
+    if (data && data.code) {
+      $input.val(data.code);
+    }
+  }).on('click.existingCartRuleAutocomplete', function () {
+    if (!$input.val()) {
+      setTimeout(function () {
+        $input.trigger($.Event('keydown', { keyCode: 40 }));
+      }, 0);
+    }
+  });
 }
 
 function populateWarehouseList(warehouseList) {
@@ -335,6 +392,8 @@ function closeAddProduct() {
  * This method allow to initialize all events
  */
 function init() {
+  bindExistingCartRuleAutocomplete();
+
   $('#txt_msg').on('keyup', function () {
     var length = $('#txt_msg').val().length;
     if (length > 600) {

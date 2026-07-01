@@ -28,6 +28,8 @@
 {block name="override_tpl"}
   <script type="text/javascript">
     var admin_order_tab_link = "{$link->getAdminLink('AdminOrders')|addslashes}";
+    var admin_cart_rule_tab_link = "{$link->getAdminLink('AdminCartRules')|addslashes}";
+    var admin_cart_rule_token = "{getAdminToken tab='AdminCartRules'}";
     var id_order = {$order->id};
     var id_lang = {$current_id_lang};
     var id_currency = {$order->id_currency};

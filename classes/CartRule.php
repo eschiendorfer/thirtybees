@@ -1354,12 +1354,21 @@ class CartRuleCore extends ObjectModel
 						FROM '._DB_PREFIX_.'cart_rule cr
 						LEFT JOIN '._DB_PREFIX_.'cart_rule_lang crl ON (cr.id_cart_rule = crl.id_cart_rule AND crl.id_lang = '.(int) $idLang.')';
         $now = date('Y-m-d H:i:s');
-        $filters = ' cr.`active` = 1
+        $name = trim((string)$name);
+        $idCustomer = (int)$idCustomer;
+        $customerFilter = $name === ''
+            ? ($idCustomer > 0 ? 'cr.`id_customer` = '.$idCustomer : '0 = 1')
+            : '(cr.`id_customer` IS NULL OR cr.`id_customer` = 0 OR cr.`id_customer` = '.$idCustomer.')';
+        $filters = ' cr.`code` != \'\'
+            AND cr.`active` = 1
             AND cr.`quantity` > 0
             AND cr.`date_from` <= \''.pSQL($now).'\'
             AND cr.`date_to` >= \''.pSQL($now).'\'
-            AND (cr.`id_customer` IS NULL OR cr.`id_customer` = 0 OR cr.`id_customer` = '.(int) $idCustomer.')';
+            AND '.$customerFilter;
         $conn = Db::readOnly();
+        if ($name === '') {
+            return $conn->getArray($sqlBase.' WHERE'.$filters);
+        }
         if ($extended) {
             return $conn->getArray('('.$sqlBase.' WHERE'.$filters.' AND code LIKE \'%'.pSQL($name).'%\') UNION ('.$sqlBase.' WHERE'.$filters.' AND name LIKE \'%'.pSQL($name).'%\')');
         } else {

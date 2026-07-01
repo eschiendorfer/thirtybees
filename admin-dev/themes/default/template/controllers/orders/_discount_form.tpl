@@ -25,6 +25,25 @@
 
 <div class="form-horizontal well">
 	<div class="form-group">
+		<label class="control-label col-lg-3" for="existing_cart_rule_code">
+			{l s='Voucher code'}
+		</label>
+		<div class="col-lg-9">
+			<div class="input-group">
+				<input class="form-control" type="text" name="existing_cart_rule_code" id="existing_cart_rule_code" value="" autocomplete="off" />
+				<span class="input-group-btn">
+					<button class="btn btn-default" type="submit" name="submitExistingCartRule">
+						<i class="icon-ticket"></i>
+						{l s='Redeem'}
+					</button>
+				</span>
+			</div>
+		</div>
+	</div>
+
+	<hr/>
+
+	<div class="form-group">
 		<label class="control-label col-lg-3">
 			{l s='Name'}
 		</label>
