@@ -1348,16 +1348,22 @@ class CartRuleCore extends ObjectModel
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public static function getCartsRuleByCode($name, $idLang, $extended = false)
+    public static function getCartsRuleByCode($name, $idLang, $extended = false, $idCustomer = 0)
     {
         $sqlBase = 'SELECT cr.*, crl.*
 						FROM '._DB_PREFIX_.'cart_rule cr
 						LEFT JOIN '._DB_PREFIX_.'cart_rule_lang crl ON (cr.id_cart_rule = crl.id_cart_rule AND crl.id_lang = '.(int) $idLang.')';
+        $now = date('Y-m-d H:i:s');
+        $filters = ' cr.`active` = 1
+            AND cr.`quantity` > 0
+            AND cr.`date_from` <= \''.pSQL($now).'\'
+            AND cr.`date_to` >= \''.pSQL($now).'\'
+            AND (cr.`id_customer` IS NULL OR cr.`id_customer` = 0 OR cr.`id_customer` = '.(int) $idCustomer.')';
         $conn = Db::readOnly();
         if ($extended) {
-            return $conn->getArray('('.$sqlBase.' WHERE code LIKE \'%'.pSQL($name).'%\') UNION ('.$sqlBase.' WHERE name LIKE \'%'.pSQL($name).'%\')');
+            return $conn->getArray('('.$sqlBase.' WHERE'.$filters.' AND code LIKE \'%'.pSQL($name).'%\') UNION ('.$sqlBase.' WHERE'.$filters.' AND name LIKE \'%'.pSQL($name).'%\')');
         } else {
-            return $conn->getArray($sqlBase.' WHERE code LIKE \'%'.pSQL($name).'%\'');
+            return $conn->getArray($sqlBase.' WHERE'.$filters.' AND code LIKE \'%'.pSQL($name).'%\'');
         }
     }
 
