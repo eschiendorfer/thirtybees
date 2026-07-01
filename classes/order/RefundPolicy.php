@@ -49,7 +49,42 @@ class RefundPolicyCore
     public function isOriginalPaymentRefundAvailable(?Order $order = null): bool
     {
         return $order instanceof Order
-            && strtolower(trim((string)$order->module)) === 'payrexx';
+            && strtolower(trim((string)$order->module)) === 'payrexx'
+            && !$this->isStoreCreditUsedForOrder($order);
+    }
+
+    private function isStoreCreditUsedForOrder(?Order $order): bool
+    {
+        if (!$order instanceof Order || (int)$order->id <= 0) {
+            return false;
+        }
+
+        if (class_exists('StoreCreditTransaction')) {
+            try {
+                if ((float)StoreCreditTransaction::getOrderConsumptionAmount((int)$order->id) > 0.0) {
+                    return true;
+                }
+            } catch (Exception $exception) {
+            }
+        }
+
+        try {
+            $payments = $order->getOrderPaymentCollection();
+        } catch (Exception $exception) {
+            return false;
+        }
+
+        foreach ($payments as $payment) {
+            if (
+                $payment instanceof OrderPayment
+                && (float)$payment->amount > 0.0
+                && ((string)$payment->payment_module === 'store_credit' || (string)$payment->payment_method === 'Store Credit')
+            ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function getOpenOrderReturnStates(): array
