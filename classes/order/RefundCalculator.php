@@ -58,9 +58,15 @@ class RefundCalculatorCore
 
         $refunds = (array)($input['product_amounts'] ?? []);
         $refundQuantities = (array)($input['product_quantities'] ?? []);
+        $orderReturnQuantities = $reasonEntityType === RefundPolicy::REASON_ORDER_RETURN
+            ? $this->eligibility->getUncreditedOrderReturnQuantities($order, $reasonIdEntity)
+            : [];
         $cancellationQuantities = $reasonEntityType === RefundPolicy::REASON_CANCELLATION
             ? $this->eligibility->getUncreditedCancelledQuantities($order, $reasonIdEntity)
             : [];
+        if ($reasonEntityType === RefundPolicy::REASON_ORDER_RETURN && !$orderReturnQuantities) {
+            $errors[] = 'There are no open return quantities for this order.';
+        }
         if ($reasonEntityType === RefundPolicy::REASON_CANCELLATION && !$cancellationQuantities) {
             $errors[] = 'There are no open cancellation quantities for this order.';
         }
@@ -90,7 +96,13 @@ class RefundCalculatorCore
             }
 
             $quantity = max(0, (int)($refundQuantities[$idOrderDetail] ?? 0));
-            if ($reasonEntityType === RefundPolicy::REASON_CANCELLATION) {
+            if ($reasonEntityType === RefundPolicy::REASON_ORDER_RETURN) {
+                $openReturnQuantity = (int)($orderReturnQuantities[$idOrderDetail] ?? 0);
+                if ($quantity <= 0 || $quantity > $openReturnQuantity) {
+                    $errors[] = 'The selected return quantity is invalid.';
+                    continue;
+                }
+            } elseif ($reasonEntityType === RefundPolicy::REASON_CANCELLATION) {
                 $openCancellationQuantity = (int)($cancellationQuantities[$idOrderDetail] ?? 0);
                 if ($quantity <= 0 || $quantity > $openCancellationQuantity) {
                     $errors[] = 'The selected cancellation quantity is invalid.';
@@ -320,7 +332,7 @@ class RefundCalculatorCore
         int $idOrderReturn,
         bool $displayIncludesTax
     ): array {
-        $quantities = $this->eligibility->getOrderReturnQuantities($idOrderReturn);
+        $quantities = $this->eligibility->getUncreditedOrderReturnQuantities($order, $idOrderReturn);
         $allProductLinesReturned = true;
         $suggestedProducts = [];
         $productsDisplayTotal = 0.0;
