@@ -53,11 +53,16 @@ class RefundCalculatorCore
                 $errors[] = 'The selected cancellation reference is invalid.';
             }
         } elseif ($reasonEntityType === RefundPolicy::REASON_SERVICE_CASE) {
-            $errors[] = 'Service case credits are not available yet.';
+            if (!$this->eligibility->isValidServiceCaseReference($order, $reasonIdEntity)) {
+                $errors[] = 'The selected service case is invalid.';
+            }
         }
 
         $refunds = (array)($input['product_amounts'] ?? []);
         $refundQuantities = (array)($input['product_quantities'] ?? []);
+        $serviceCaseOrderDetailIds = $reasonEntityType === RefundPolicy::REASON_SERVICE_CASE
+            ? $this->eligibility->getServiceCaseOrderDetailIds($reasonIdEntity)
+            : [];
         $orderReturnQuantities = $reasonEntityType === RefundPolicy::REASON_ORDER_RETURN
             ? $this->eligibility->getUncreditedOrderReturnQuantities($order, $reasonIdEntity)
             : [];
@@ -88,6 +93,14 @@ class RefundCalculatorCore
                 continue;
             }
 
+            if (
+                $reasonEntityType === RefundPolicy::REASON_SERVICE_CASE
+                && !in_array($idOrderDetail, $serviceCaseOrderDetailIds, true)
+            ) {
+                $errors[] = 'The selected product line does not belong to the selected service case.';
+                continue;
+            }
+
             $remainingAmounts = $this->eligibility->getOrderDetailRemainingCreditAmounts($orderDetail);
             $amountRefundable = $displayIncludesTax ? $remainingAmounts['tax_incl'] : $remainingAmounts['tax_excl'];
             if ($refundAmount > $amountRefundable + 0.000001) {
@@ -108,6 +121,9 @@ class RefundCalculatorCore
                     $errors[] = 'The selected cancellation quantity is invalid.';
                     continue;
                 }
+            }
+            if ($reasonEntityType === RefundPolicy::REASON_SERVICE_CASE) {
+                $quantity = 0;
             }
 
             $taxAmounts = $this->getTaxAmountsForDisplayAmount(
@@ -130,6 +146,9 @@ class RefundCalculatorCore
         $shippingCostAmount = $this->policy->roundPriceAmount(Tools::parseNumber((string)($input['shipping_amount'] ?? 0)));
         $shippingTaxExcl = 0.0;
         $shippingTaxIncl = 0.0;
+        if ($reasonEntityType === RefundPolicy::REASON_SERVICE_CASE && $shippingCostAmount > 0.0) {
+            $errors[] = 'Service case credits only support product amounts.';
+        }
         if ($shippingCostAmount > 0.0) {
             $remainingShipping = $this->eligibility->getRemainingShippingCreditAmounts($order);
             $shippingRefundable = $displayIncludesTax ? $remainingShipping['tax_incl'] : $remainingShipping['tax_excl'];
@@ -153,6 +172,19 @@ class RefundCalculatorCore
         if ($productTotalTaxIncl <= 0.0 && $shippingTaxIncl <= 0.0) {
             return [
                 'errors' => ['Please enter an amount to proceed with your refund.'],
+                'request' => null,
+            ];
+        }
+
+        if (
+            $reasonEntityType === RefundPolicy::REASON_SERVICE_CASE
+            && (
+                $this->policy->roundPriceAmount(Tools::parseNumber((string)($input['cart_rule_adjustment'] ?? 0))) > 0.0
+                || $this->policy->roundPriceAmount(Tools::parseNumber((string)($input['fee_adjustment'] ?? 0))) > 0.0
+            )
+        ) {
+            return [
+                'errors' => ['Service case credits only support product amounts.'],
                 'request' => null,
             ];
         }
@@ -222,6 +254,18 @@ class RefundCalculatorCore
             );
         }
 
+        $serviceCaseScopes = [];
+        foreach ($this->eligibility->getCreditableServiceCaseRows($order) as $row) {
+            $idOrderServiceCase = (int)$row['id_order_service_case'];
+            $serviceCaseScopes[$idOrderServiceCase] = [
+                'status' => (string)$row['status'],
+                'products' => array_fill_keys(
+                    $this->eligibility->getServiceCaseOrderDetailIds($idOrderServiceCase),
+                    ['quantity' => 0]
+                ),
+            ];
+        }
+
         return [
             'default_cart_rule_rate' => $this->getOrderPercentCartRuleRate($order),
             'default_fee_rate' => $this->policy->getSuggestedFeeRate(
@@ -245,6 +289,7 @@ class RefundCalculatorCore
             'round_unit' => RefundPolicy::ROUNDING_UNIT,
             RefundPolicy::REASON_KEY_ORDER_RETURN => $orderReturnSuggestions,
             RefundPolicy::REASON_KEY_CANCELLATION => $cancellationSuggestions,
+            RefundPolicy::REASON_KEY_SERVICE_CASE => $serviceCaseScopes,
         ];
     }
 

@@ -73,6 +73,7 @@ class AdminOrderCancellationsControllerCore extends AdminController
         parent::__construct();
 
         $this->_where = Shop::addSqlRestriction(false, 'o');
+        $this->addRowAction('edit');
         $this->addRowAction('view');
     }
 
@@ -86,6 +87,84 @@ class AdminOrderCancellationsControllerCore extends AdminController
         parent::initToolbar();
 
         unset($this->toolbar_btn['new']);
+    }
+
+    /**
+     * @return string
+     *
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     * @throws SmartyException
+     */
+    public function renderForm()
+    {
+        if (!Validate::isLoadedObject($this->object)) {
+            return '';
+        }
+
+        $this->fields_form = [
+            'legend' => [
+                'title' => $this->l('Order cancellation'),
+                'icon' => 'icon-ban',
+            ],
+            'input' => [
+                [
+                    'type' => 'hidden',
+                    'name' => 'id_order_cancellation',
+                ],
+                [
+                    'type' => 'select',
+                    'label' => $this->l('Status'),
+                    'name' => 'status',
+                    'required' => true,
+                    'options' => [
+                        'query' => $this->getStatusOptions(),
+                        'id' => 'id',
+                        'name' => 'name',
+                    ],
+                ],
+                [
+                    'type' => 'select',
+                    'label' => $this->l('Requested refund method'),
+                    'name' => 'requested_refund_method',
+                    'required' => false,
+                    'options' => [
+                        'query' => $this->getRefundMethodOptions(),
+                        'id' => 'id',
+                        'name' => 'name',
+                    ],
+                ],
+            ],
+            'submit' => [
+                'title' => $this->l('Save'),
+            ],
+            'buttons' => [
+                'save-and-stay' => [
+                    'title' => $this->l('Save and stay'),
+                    'name' => 'submitAdd'.$this->table.'AndStay',
+                    'type' => 'submit',
+                    'class' => 'btn btn-default pull-right',
+                    'icon' => 'process-icon-save',
+                ],
+            ],
+        ];
+
+        return parent::renderForm();
+    }
+
+    /**
+     * @return void
+     *
+     * @throws PrestaShopException
+     */
+    public function postProcess()
+    {
+        if (Tools::isSubmit('submitAdd'.$this->table) || Tools::isSubmit('submitAdd'.$this->table.'AndStay')) {
+            $this->processCancellationUpdate();
+            return;
+        }
+
+        parent::postProcess();
     }
 
     /**
@@ -173,6 +252,22 @@ class AdminOrderCancellationsControllerCore extends AdminController
     }
 
     /**
+     * @return array
+     */
+    private function getStatusOptions(): array
+    {
+        $options = [];
+        foreach ($this->getStatusList() as $id => $name) {
+            $options[] = [
+                'id' => $id,
+                'name' => $name,
+            ];
+        }
+
+        return $options;
+    }
+
+    /**
      * @param string $refundMethod
      *
      * @return string
@@ -189,6 +284,77 @@ class AdminOrderCancellationsControllerCore extends AdminController
         ];
 
         return $labels[$refundMethod] ?? str_replace('_', ' ', $refundMethod);
+    }
+
+    /**
+     * @return array
+     */
+    private function getRefundMethodOptions(): array
+    {
+        return [
+            [
+                'id' => '',
+                'name' => '-',
+            ],
+            [
+                'id' => OrderCancellation::REFUND_METHOD_STORE_CREDIT,
+                'name' => $this->l('Store credit'),
+            ],
+            [
+                'id' => OrderCancellation::REFUND_METHOD_ORIGINAL_PAYMENT,
+                'name' => $this->l('Original payment'),
+            ],
+        ];
+    }
+
+    /**
+     * @return void
+     *
+     * @throws PrestaShopException
+     */
+    private function processCancellationUpdate(): void
+    {
+        if (!$this->hasEditPermission()) {
+            $this->errors[] = Tools::displayError('You do not have permission to edit this.');
+            return;
+        }
+
+        $idOrderCancellation = Tools::getIntValue('id_order_cancellation');
+        $orderCancellation = new OrderCancellation($idOrderCancellation);
+        if (!Validate::isLoadedObject($orderCancellation)) {
+            $this->errors[] = Tools::displayError('The order cancellation is invalid.');
+            return;
+        }
+
+        $status = (string)Tools::getValue('status');
+        if (!array_key_exists($status, $this->getStatusList())) {
+            $this->errors[] = Tools::displayError('The selected status is invalid.');
+            return;
+        }
+
+        $requestedRefundMethod = (string)Tools::getValue('requested_refund_method', '');
+        if (!in_array($requestedRefundMethod, [
+            '',
+            OrderCancellation::REFUND_METHOD_STORE_CREDIT,
+            OrderCancellation::REFUND_METHOD_ORIGINAL_PAYMENT,
+        ], true)) {
+            $this->errors[] = Tools::displayError('The selected refund method is invalid.');
+            return;
+        }
+
+        $orderCancellation->status = $status;
+        $orderCancellation->requested_refund_method = $requestedRefundMethod !== '' ? $requestedRefundMethod : null;
+
+        if (!$orderCancellation->update(true)) {
+            $this->errors[] = Tools::displayError('The order cancellation could not be updated.');
+            return;
+        }
+
+        if (Tools::isSubmit('submitAdd'.$this->table.'AndStay')) {
+            Tools::redirectAdmin(static::$currentIndex.'&conf=4&token='.$this->token.'&update'.$this->table.'&'.$this->identifier.'='.(int)$orderCancellation->id);
+        }
+
+        Tools::redirectAdmin(static::$currentIndex.'&conf=4&token='.$this->token);
     }
 
     /**

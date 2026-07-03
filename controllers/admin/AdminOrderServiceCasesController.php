@@ -77,6 +77,7 @@ class AdminOrderServiceCasesControllerCore extends AdminController
         parent::__construct();
 
         $this->_where = Shop::addSqlRestriction(false, 'o');
+        $this->addRowAction('edit');
         $this->addRowAction('view');
     }
 
@@ -90,6 +91,102 @@ class AdminOrderServiceCasesControllerCore extends AdminController
         parent::initToolbar();
 
         unset($this->toolbar_btn['new']);
+    }
+
+    /**
+     * @return string
+     *
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     * @throws SmartyException
+     */
+    public function renderForm()
+    {
+        if (!Validate::isLoadedObject($this->object)) {
+            return '';
+        }
+
+        $this->fields_form = [
+            'legend' => [
+                'title' => $this->l('Order service case'),
+                'icon' => 'icon-wrench',
+            ],
+            'input' => [
+                [
+                    'type' => 'hidden',
+                    'name' => 'id_order_service_case',
+                ],
+                [
+                    'type' => 'select',
+                    'label' => $this->l('Status'),
+                    'name' => 'status',
+                    'required' => true,
+                    'options' => [
+                        'query' => $this->getStatusOptions(),
+                        'id' => 'id',
+                        'name' => 'name',
+                    ],
+                ],
+                [
+                    'type' => 'select',
+                    'label' => $this->l('Case type'),
+                    'name' => 'case_type',
+                    'required' => true,
+                    'options' => [
+                        'query' => $this->getCaseTypeOptions(),
+                        'id' => 'id',
+                        'name' => 'name',
+                    ],
+                ],
+                [
+                    'type' => 'select',
+                    'label' => $this->l('Requested solution'),
+                    'name' => 'requested_solution',
+                    'required' => false,
+                    'options' => [
+                        'query' => $this->getRequestedSolutionOptions(),
+                        'id' => 'id',
+                        'name' => 'name',
+                    ],
+                ],
+                [
+                    'type' => 'text',
+                    'label' => $this->l('Replacement order ID'),
+                    'name' => 'id_replacement_order',
+                    'required' => false,
+                    'class' => 'fixed-width-sm',
+                ],
+            ],
+            'submit' => [
+                'title' => $this->l('Save'),
+            ],
+            'buttons' => [
+                'save-and-stay' => [
+                    'title' => $this->l('Save and stay'),
+                    'name' => 'submitAdd'.$this->table.'AndStay',
+                    'type' => 'submit',
+                    'class' => 'btn btn-default pull-right',
+                    'icon' => 'process-icon-save',
+                ],
+            ],
+        ];
+
+        return parent::renderForm();
+    }
+
+    /**
+     * @return void
+     *
+     * @throws PrestaShopException
+     */
+    public function postProcess()
+    {
+        if (Tools::isSubmit('submitAdd'.$this->table) || Tools::isSubmit('submitAdd'.$this->table.'AndStay')) {
+            $this->processServiceCaseUpdate();
+            return;
+        }
+
+        parent::postProcess();
     }
 
     /**
@@ -188,6 +285,22 @@ class AdminOrderServiceCasesControllerCore extends AdminController
     /**
      * @return array
      */
+    private function getStatusOptions(): array
+    {
+        $options = [];
+        foreach ($this->getStatusList() as $id => $name) {
+            $options[] = [
+                'id' => $id,
+                'name' => $name,
+            ];
+        }
+
+        return $options;
+    }
+
+    /**
+     * @return array
+     */
     private function getCaseTypeList(): array
     {
         return [
@@ -206,6 +319,22 @@ class AdminOrderServiceCasesControllerCore extends AdminController
     private function getCaseTypeLabel(int $caseType): string
     {
         return $this->getCaseTypeList()[$caseType] ?? $this->l('Unknown');
+    }
+
+    /**
+     * @return array
+     */
+    private function getCaseTypeOptions(): array
+    {
+        $options = [];
+        foreach ($this->getCaseTypeList() as $id => $name) {
+            $options[] = [
+                'id' => $id,
+                'name' => $name,
+            ];
+        }
+
+        return $options;
     }
 
     /**
@@ -232,6 +361,92 @@ class AdminOrderServiceCasesControllerCore extends AdminController
         }
 
         return $this->getRequestedSolutionList()[$requestedSolution] ?? $this->l('Unknown');
+    }
+
+    /**
+     * @return array
+     */
+    private function getRequestedSolutionOptions(): array
+    {
+        $options = [
+            [
+                'id' => '',
+                'name' => '-',
+            ],
+        ];
+
+        foreach ($this->getRequestedSolutionList() as $id => $name) {
+            $options[] = [
+                'id' => $id,
+                'name' => $name,
+            ];
+        }
+
+        return $options;
+    }
+
+    /**
+     * @return void
+     *
+     * @throws PrestaShopException
+     */
+    private function processServiceCaseUpdate(): void
+    {
+        if (!$this->hasEditPermission()) {
+            $this->errors[] = Tools::displayError('You do not have permission to edit this.');
+            return;
+        }
+
+        $idOrderServiceCase = Tools::getIntValue('id_order_service_case');
+        $serviceCase = new OrderServiceCase($idOrderServiceCase);
+        if (!Validate::isLoadedObject($serviceCase)) {
+            $this->errors[] = Tools::displayError('The order service case is invalid.');
+            return;
+        }
+
+        $status = (string)Tools::getValue('status');
+        if (!array_key_exists($status, $this->getStatusList())) {
+            $this->errors[] = Tools::displayError('The selected status is invalid.');
+            return;
+        }
+
+        $caseType = Tools::getIntValue('case_type');
+        if (!array_key_exists($caseType, $this->getCaseTypeList())) {
+            $this->errors[] = Tools::displayError('The selected case type is invalid.');
+            return;
+        }
+
+        $requestedSolution = (string)Tools::getValue('requested_solution', '');
+        $requestedSolutionId = $requestedSolution !== '' ? (int)$requestedSolution : null;
+        if ($requestedSolutionId !== null && !array_key_exists($requestedSolutionId, $this->getRequestedSolutionList())) {
+            $this->errors[] = Tools::displayError('The selected requested solution is invalid.');
+            return;
+        }
+
+        $idReplacementOrder = Tools::getIntValue('id_replacement_order');
+        if ($idReplacementOrder > 0) {
+            $replacementOrder = new Order($idReplacementOrder);
+            if (!Validate::isLoadedObject($replacementOrder)) {
+                $this->errors[] = Tools::displayError('The replacement order is invalid.');
+                return;
+            }
+        }
+
+        $serviceCase->status = $status;
+        $serviceCase->case_type = $caseType;
+        $serviceCase->requested_solution = $requestedSolutionId;
+        $serviceCase->id_replacement_order = $idReplacementOrder > 0 ? $idReplacementOrder : null;
+
+        if (!$serviceCase->update(true)) {
+            $this->errors[] = Tools::displayError('The order service case could not be updated.');
+            return;
+        }
+
+        if (Tools::isSubmit('submitAdd'.$this->table.'AndStay')) {
+            Tools::redirectAdmin(static::$currentIndex.'&conf=4&token='.$this->token.'&update'.$this->table.'&'.$this->identifier.'='.(int)$serviceCase->id);
+        }
+
+        Tools::redirectAdmin(static::$currentIndex.'&conf=4&token='.$this->token);
     }
 
     /**

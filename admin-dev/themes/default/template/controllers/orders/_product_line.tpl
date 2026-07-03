@@ -202,7 +202,7 @@
 		</div>
 		{/if}
 	</td>
-	<td class="order_product_action_fields current-edit" colspan="2" style="display:none; width: 250px;">
+	<td class="order_product_action_fields current-edit" colspan="2" style="display:none; width: 390px;">
 		{if isset($product.order_action_capabilities)}
 			{assign var=order_action_cap value=$product.order_action_capabilities}
 		{else}
@@ -229,6 +229,22 @@
 						<span class="order-product-action-limit order-product-action-limit-service" style="display:none;">/ {if isset($order_action_cap.serviceable_quantity)}{$order_action_cap.serviceable_quantity|intval}{else}0{/if}</span>
 					</div>
 				</div>
+			</div>
+			<div class="col-lg-8 order-product-action-case-type" style="display:none;">
+				<label class="control-label">
+					{l s='Case type:'}
+				</label>
+				<select
+					class="form-control"
+					name="order_product_action_case_type[{$product['id_order_detail']}]"
+					disabled="disabled"
+				>
+					{if isset($service_case_type_options)}
+						{foreach from=$service_case_type_options item=service_case_type}
+							<option value="{$service_case_type.id|intval}">{$service_case_type.label|escape:'html':'UTF-8'}</option>
+						{/foreach}
+					{/if}
+				</select>
 			</div>
 		</div>
 	</td>

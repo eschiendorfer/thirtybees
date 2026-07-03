@@ -255,6 +255,58 @@ class RefundEligibilityServiceCore
         return $quantities;
     }
 
+    public function getCreditableServiceCaseRows(Order $order): array
+    {
+        return Db::readOnly()->getArray(
+            (new DbQuery())
+                ->select('osc.`id_order_service_case`, osc.`case_type`, osc.`status`, osc.`date_add`')
+                ->select('SUM(oscd.`product_quantity`) AS `quantity`')
+                ->from('order_service_case', 'osc')
+                ->innerJoin('order_service_case_detail', 'oscd', 'oscd.`id_order_service_case` = osc.`id_order_service_case`')
+                ->where('osc.`id_order` = '.(int)$order->id)
+                ->where('osc.`status` IN (\''.implode('\',\'', array_map('pSQL', $this->getCreditableServiceCaseStatuses())).'\')')
+                ->groupBy('osc.`id_order_service_case`')
+                ->orderBy('osc.`id_order_service_case` DESC')
+        );
+    }
+
+    public function getServiceCaseOrderDetailIds(int $idOrderServiceCase): array
+    {
+        $rows = Db::readOnly()->getArray(
+            (new DbQuery())
+                ->select('`id_order_detail`')
+                ->from('order_service_case_detail')
+                ->where('`id_order_service_case` = '.(int)$idOrderServiceCase)
+        );
+
+        return array_map('intval', array_column($rows, 'id_order_detail'));
+    }
+
+    public function isValidServiceCaseReference(Order $order, int $idOrderServiceCase): bool
+    {
+        if ($idOrderServiceCase <= 0) {
+            return false;
+        }
+
+        return (bool)Db::readOnly()->getValue(
+            (new DbQuery())
+                ->select('1')
+                ->from('order_service_case', 'osc')
+                ->innerJoin('order_service_case_detail', 'oscd', 'oscd.`id_order_service_case` = osc.`id_order_service_case`')
+                ->where('osc.`id_order_service_case` = '.(int)$idOrderServiceCase)
+                ->where('osc.`id_order` = '.(int)$order->id)
+                ->where('osc.`status` IN (\''.implode('\',\'', array_map('pSQL', $this->getCreditableServiceCaseStatuses())).'\')')
+        );
+    }
+
+    public function getCreditableServiceCaseStatuses(): array
+    {
+        return [
+            OrderServiceCase::STATUS_OPEN,
+            OrderServiceCase::STATUS_WAITING,
+        ];
+    }
+
     public function isValidOrderReturn(Order $order, int $idOrderReturn): bool
     {
         if ($idOrderReturn <= 0) {

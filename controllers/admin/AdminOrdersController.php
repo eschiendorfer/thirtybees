@@ -878,6 +878,8 @@ class AdminOrdersControllerCore extends AdminController
                 if ($idOrderSlip <= 0) {
                     $this->errors[] = Tools::displayError('You cannot generate a partial credit slip.');
                 } else {
+                    $this->updateServiceCaseStatusFromCreditRequest($order, $creditSlipRequest);
+
                     $customer = new Customer((int) ($order->id_customer));
                     $params['{lastname}'] = $customer->lastname;
                     $params['{firstname}'] = $customer->firstname;
@@ -1795,7 +1797,10 @@ class AdminOrdersControllerCore extends AdminController
             'cancellation_credit_available' => (bool)$creditCancellationOptions,
             'credit_cancellation_options' => $creditCancellationOptions,
             'credit_order_return_options'  => $this->getCreditOrderReturnOptions($order, $products),
+            'credit_service_case_options'  => $this->getCreditServiceCaseOptions($order),
             'credit_suggestions_json'      => $this->getCreditSuggestionsJson($order, $products),
+            'service_case_type_options'    => $this->getServiceCaseTypeOptions(),
+            'service_case_status_options'  => $this->getServiceCaseStatusOptions(),
             'current_id_lang'              => $this->context->language->id,
             'invoices'                     => $this->getOrderInvoices($order),
             'payment_methods'              => $paymentMethods,
@@ -2329,6 +2334,7 @@ class AdminOrdersControllerCore extends AdminController
                 'link'                => $this->context->link,
                 'current_index'       => static::$currentIndex,
                 'display_warehouse'   => (int) Configuration::get('PS_ADVANCED_STOCK_MANAGEMENT'),
+                'service_case_type_options' => $this->getServiceCaseTypeOptions(),
             ]
         );
 
@@ -2652,6 +2658,7 @@ class AdminOrdersControllerCore extends AdminController
                 'link'                => $this->context->link,
                 'current_index'       => static::$currentIndex,
                 'display_warehouse'   => (int) Configuration::get('PS_ADVANCED_STOCK_MANAGEMENT'),
+                'service_case_type_options' => $this->getServiceCaseTypeOptions(),
             ]
         );
 
@@ -3008,6 +3015,7 @@ class AdminOrdersControllerCore extends AdminController
         $refundPolicy = $this->getRefundPolicy();
         $action = (string)Tools::getValue('order_product_action_type');
         $quantities = Tools::getArrayValue('order_product_action_quantity', []);
+        $caseTypes = Tools::getArrayValue('order_product_action_case_type', []);
 
         if (!in_array($action, $refundPolicy->getValidActions(), true)) {
             $this->errors[] = Tools::displayError('The selected action is invalid.');
@@ -3022,12 +3030,8 @@ class AdminOrdersControllerCore extends AdminController
             return false;
         }
 
-        if ($action === RefundPolicy::ACTION_SERVICE) {
-            $this->errors[] = Tools::displayError('Service cases are not available yet.');
-            return false;
-        }
-
         $selectedQuantities = [];
+        $selectedCaseTypes = [];
         $capabilityKey = $action === RefundPolicy::ACTION_RETURN ? 'returnable_quantity' : $action.'able_quantity';
 
         foreach ((array)$quantities as $idOrderDetail => $rawQuantity) {
@@ -3051,6 +3055,15 @@ class AdminOrdersControllerCore extends AdminController
             }
 
             $selectedQuantities[$idOrderDetail] = $quantity;
+            if ($action === RefundPolicy::ACTION_SERVICE) {
+                $caseType = (int)($caseTypes[$idOrderDetail] ?? 0);
+                if (!in_array($caseType, OrderServiceCase::getValidCaseTypes(), true)) {
+                    $this->errors[] = Tools::displayError('The selected service case type is invalid.');
+                    continue;
+                }
+
+                $selectedCaseTypes[$idOrderDetail] = $caseType;
+            }
         }
 
         if (count($this->errors)) {
@@ -3068,6 +3081,10 @@ class AdminOrdersControllerCore extends AdminController
             }
         } elseif ($action === RefundPolicy::ACTION_CANCEL) {
             if (!$this->createBackOfficeOrderCancellation($order, $selectedQuantities)) {
+                return false;
+            }
+        } elseif ($action === RefundPolicy::ACTION_SERVICE) {
+            if (!$this->createBackOfficeOrderServiceCases($order, $selectedQuantities, $selectedCaseTypes)) {
                 return false;
             }
         }
@@ -3164,6 +3181,65 @@ class AdminOrdersControllerCore extends AdminController
         return true;
     }
 
+    protected function createBackOfficeOrderServiceCases(Order $order, array $quantitiesByOrderDetail, array $caseTypesByOrderDetail): bool
+    {
+        $idEmployee = $this->context->employee instanceof Employee
+            ? (int)$this->context->employee->id
+            : 0;
+        $groupedDetails = [];
+
+        foreach ($quantitiesByOrderDetail as $idOrderDetail => $quantity) {
+            $caseType = (int)($caseTypesByOrderDetail[$idOrderDetail] ?? 0);
+            if (!in_array($caseType, OrderServiceCase::getValidCaseTypes(), true)) {
+                $this->errors[] = Tools::displayError('The selected service case type is invalid.');
+                return false;
+            }
+
+            $groupedDetails[$caseType][(int)$idOrderDetail] = (int)$quantity;
+        }
+
+        if (!$groupedDetails) {
+            $this->errors[] = Tools::displayError('You must select a product quantity.');
+            return false;
+        }
+
+        $db = Db::getInstance();
+        $db->execute('START TRANSACTION');
+
+        try {
+            foreach ($groupedDetails as $caseType => $details) {
+                $serviceCase = new OrderServiceCase();
+                $serviceCase->id_order = (int)$order->id;
+                $serviceCase->id_employee = $idEmployee ?: null;
+                $serviceCase->case_type = (int)$caseType;
+                $serviceCase->requested_solution = null;
+                $serviceCase->status = OrderServiceCase::STATUS_OPEN;
+
+                if (!$serviceCase->add(true, true)) {
+                    throw new PrestaShopException('Order service case could not be saved.');
+                }
+
+                foreach ($details as $idOrderDetail => $quantity) {
+                    $detail = new OrderServiceCaseDetail();
+                    $detail->id_order_service_case = (int)$serviceCase->id;
+                    $detail->id_order_detail = (int)$idOrderDetail;
+                    $detail->product_quantity = (int)$quantity;
+
+                    if (!$detail->add()) {
+                        throw new PrestaShopException('Order service case detail could not be saved.');
+                    }
+                }
+            }
+
+            $db->execute('COMMIT');
+            return true;
+        } catch (Exception $exception) {
+            $db->execute('ROLLBACK');
+            $this->errors[] = Tools::displayError('Service cases could not be saved.');
+            return false;
+        }
+    }
+
     protected function getOrderProductActionCapabilities(Order $order, array $product, $orderDetailExtension = null): array
     {
         return $this->getRefundEligibilityService()->getOrderProductActionCapabilities($order, $product, $orderDetailExtension);
@@ -3171,6 +3247,7 @@ class AdminOrdersControllerCore extends AdminController
 
     protected function buildCreditSlipRequest(Order $order): ?array
     {
+        $serviceCaseStatus = (string)Tools::getValue('service_case_status', '');
         $result = $this->getRefundCalculator()->buildCreditSlipRequest($order, [
             'display_includes_tax' => (int)Tools::getValue('TaxMethod') === 1,
             'refund_method' => (string)Tools::getValue('order_product_refund_method', ''),
@@ -3185,6 +3262,18 @@ class AdminOrdersControllerCore extends AdminController
 
         foreach ($result['errors'] as $error) {
             $this->errors[] = Tools::displayError($error);
+        }
+
+        if (!$result['errors'] && $result['request']) {
+            $reasonEntityType = (int)$result['request']['metadata']['reason_entity_type'];
+            if ($reasonEntityType === RefundPolicy::REASON_SERVICE_CASE) {
+                if (!in_array($serviceCaseStatus, $this->getCreditServiceCaseStatusValues(), true)) {
+                    $this->errors[] = Tools::displayError('The selected service case status is invalid.');
+                    return null;
+                }
+
+                $result['request']['service_case_status'] = $serviceCaseStatus;
+            }
         }
 
         return $result['request'];
@@ -3224,6 +3313,120 @@ class AdminOrdersControllerCore extends AdminController
         }
 
         return $options;
+    }
+
+    protected function getCreditServiceCaseOptions(Order $order): array
+    {
+        $options = [];
+        foreach ($this->getRefundEligibilityService()->getCreditableServiceCaseRows($order) as $row) {
+            $options[] = [
+                'id_order_service_case' => (int)$row['id_order_service_case'],
+                'label' => sprintf(
+                    '#%d - %s - %s - %s',
+                    (int)$row['id_order_service_case'],
+                    $this->getServiceCaseTypeLabel((int)$row['case_type']),
+                    $this->getServiceCaseStatusLabel((string)$row['status']),
+                    Tools::displayDate($row['date_add'])
+                ),
+            ];
+        }
+
+        return $options;
+    }
+
+    protected function updateServiceCaseStatusFromCreditRequest(Order $order, array $creditSlipRequest): bool
+    {
+        $metadata = (array)($creditSlipRequest['metadata'] ?? []);
+        if ((int)($metadata['reason_entity_type'] ?? 0) !== RefundPolicy::REASON_SERVICE_CASE) {
+            return true;
+        }
+
+        $status = (string)($creditSlipRequest['service_case_status'] ?? '');
+        if (!in_array($status, $this->getCreditServiceCaseStatusValues(), true)) {
+            $this->errors[] = Tools::displayError('The selected service case status is invalid.');
+            return false;
+        }
+
+        $serviceCase = new OrderServiceCase((int)($metadata['reason_id_entity'] ?? 0));
+        if (!Validate::isLoadedObject($serviceCase) || (int)$serviceCase->id_order !== (int)$order->id) {
+            $this->errors[] = Tools::displayError('The selected service case is invalid.');
+            return false;
+        }
+
+        $serviceCase->status = $status;
+        if (!$serviceCase->update()) {
+            $this->errors[] = Tools::displayError('The service case status could not be updated.');
+            return false;
+        }
+
+        return true;
+    }
+
+    protected function getServiceCaseTypeOptions(): array
+    {
+        return [
+            [
+                'id' => OrderServiceCase::TYPE_DELIVERY_DAMAGE,
+                'label' => $this->l('Delivery / Box damage'),
+            ],
+            [
+                'id' => OrderServiceCase::TYPE_ITEMS_MISSING,
+                'label' => $this->l('Missing items'),
+            ],
+            [
+                'id' => OrderServiceCase::TYPE_ITEMS_BROKEN,
+                'label' => $this->l('Broken items'),
+            ],
+            [
+                'id' => OrderServiceCase::TYPE_OTHER,
+                'label' => $this->l('Other'),
+            ],
+        ];
+    }
+
+    protected function getServiceCaseStatusOptions(): array
+    {
+        return [
+            [
+                'id' => OrderServiceCase::STATUS_OPEN,
+                'label' => $this->l('Open'),
+            ],
+            [
+                'id' => OrderServiceCase::STATUS_WAITING,
+                'label' => $this->l('Waiting'),
+            ],
+            [
+                'id' => OrderServiceCase::STATUS_RESOLVED,
+                'label' => $this->l('Resolved'),
+            ],
+        ];
+    }
+
+    protected function getCreditServiceCaseStatusValues(): array
+    {
+        return array_column($this->getServiceCaseStatusOptions(), 'id');
+    }
+
+    protected function getServiceCaseTypeLabel(int $caseType): string
+    {
+        foreach ($this->getServiceCaseTypeOptions() as $option) {
+            if ((int)$option['id'] === $caseType) {
+                return (string)$option['label'];
+            }
+        }
+
+        return $this->l('Unknown');
+    }
+
+    protected function getServiceCaseStatusLabel(string $status): string
+    {
+        foreach ($this->getServiceCaseStatusOptions() as $option) {
+            if ((string)$option['id'] === $status) {
+                return (string)$option['label'];
+            }
+        }
+
+        return $status;
     }
 
     protected function getCreditSuggestionsJson(Order $order, array $products): string

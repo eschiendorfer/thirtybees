@@ -1017,7 +1017,7 @@
                     <option value="" selected="selected" disabled="disabled">{l s='Please select'}</option>
                     <option value="order_return" {if empty($credit_order_return_options)}disabled="disabled"{/if}>{l s='Return'}</option>
                     <option value="cancellation" {if empty($credit_cancellation_options)}disabled="disabled"{/if}>{l s='Cancellation'}</option>
-                    <option value="service_case" disabled="disabled">{l s='Service case'}</option>
+                    <option value="service_case" {if empty($credit_service_case_options)}disabled="disabled"{/if}>{l s='Service case'}</option>
                     <option value="manual">{l s='Other reason'}</option>
                   </select>
                 </div>
@@ -1032,6 +1032,9 @@
                     {/foreach}
                     {foreach from=$credit_order_return_options item=credit_order_return}
                       <option value="{$credit_order_return.id_order_return|intval}" data-reason-type="order_return">{$credit_order_return.label|escape:'html':'UTF-8'}</option>
+                    {/foreach}
+                    {foreach from=$credit_service_case_options item=credit_service_case}
+                      <option value="{$credit_service_case.id_order_service_case|intval}" data-reason-type="service_case">{$credit_service_case.label|escape:'html':'UTF-8'}</option>
                     {/foreach}
                   </select>
                 </div>
@@ -1087,11 +1090,15 @@
               $('#order_product_action_type').val(action);
               $('#order_product_action_submit_label').text(submitLabels[action]);
 
-              $('.order-product-action-quantity').removeClass('col-lg-4').addClass('col-lg-12');
+              var isServiceAction = action === 'service';
+              $('.order-product-action-quantity').toggleClass('col-lg-4', isServiceAction).toggleClass('col-lg-12', !isServiceAction);
+              $('.order-product-action-case-type').toggle(isServiceAction);
+              $('.order-product-action-case-type select').prop('disabled', !isServiceAction);
 
               $orderActionCells.find('input.order-product-action-quantity-input').each(function () {
                 var $quantityInput = $(this);
                 var $actionCell = $quantityInput.closest('td.order_product_action_fields');
+                var $caseType = $actionCell.find('.order-product-action-case-type select');
                 var availableQuantity = parseInt($quantityInput.attr('data-' + action + 'able-quantity'), 10);
 
                 if (isNaN(availableQuantity)) {
@@ -1105,6 +1112,7 @@
                 var isAvailable = !hasLimit || availableQuantity > 0;
 
                 $quantityInput.prop('disabled', !isAvailable);
+                $caseType.prop('disabled', !isServiceAction || !isAvailable);
                 if (!isAvailable) {
                   $quantityInput.val('0');
                 }
@@ -1421,6 +1429,14 @@
                       <input type="checkbox" id="confirm_original_payment_refund" name="confirm_original_payment_refund" value="1" disabled="disabled" />
                       <span id="original_payment_refund_confirmation_text"></span>
                     </label>
+                  </div>
+                  <div class="service-case-credit-status-group" style="display:none; margin-bottom: 12px;">
+                    <label class="control-label" for="service_case_status">{l s='Service case status'}</label>
+                    <select id="service_case_status" name="service_case_status" class="form-control fixed-width-xl" disabled="disabled">
+                      {foreach from=$service_case_status_options item=service_case_status}
+                        <option value="{$service_case_status.id|escape:'html':'UTF-8'}">{$service_case_status.label|escape:'html':'UTF-8'}</option>
+                      {/foreach}
+                    </select>
                   </div>
                   <button type="submit" id="partial_refund_submit" name="partialRefund" class="btn btn-default">
                     <i class="icon-check"></i> {l s='Gutschrift erstellen'}

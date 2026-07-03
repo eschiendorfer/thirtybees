@@ -237,6 +237,10 @@ function isOriginalPaymentCreditRefundMethod() {
   return getCreditRefundMethod() === 'original_payment';
 }
 
+function isServiceCaseCreditReason() {
+  return $('#reason_entity_type').val() === 'service_case';
+}
+
 function updateOriginalPaymentRefundConfirmation(creditTotal) {
   var requiresConfirmation = isOriginalPaymentCreditRefundMethod();
   var $confirmation = $('#original_payment_refund_confirmation');
@@ -272,12 +276,21 @@ function updatePartialRefundSubmitState() {
 }
 
 function updateCreditFeeAdjustmentState() {
-  var isNoRefund = isNoCreditRefundMethod();
-  if (isNoRefund) {
+  var disableFee = isNoCreditRefundMethod() || isServiceCaseCreditReason();
+  if (disableFee) {
     creditAdjustmentState.fee.manual = false;
     setCreditAdjustment('fee', 0, 0);
   }
-  $('#credit_fee_adjustment, #credit_fee_adjustment_rate').prop('disabled', isNoRefund);
+  $('#credit_fee_adjustment, #credit_fee_adjustment_rate').prop('disabled', disableFee);
+}
+
+function updateCreditCartRuleAdjustmentState() {
+  var disableCartRule = isServiceCaseCreditReason();
+  if (disableCartRule) {
+    creditAdjustmentState.cartRule.manual = false;
+    setCreditAdjustment('cartRule', 0, 0);
+  }
+  $('#credit_cart_rule_adjustment, #credit_cart_rule_adjustment_rate').prop('disabled', disableCartRule);
 }
 
 function resetCreditForm() {
@@ -285,12 +298,14 @@ function resetCreditForm() {
   creditAdjustmentState.cartRule.source = 'amount';
   creditAdjustmentState.fee.manual = false;
   creditAdjustmentState.fee.source = 'amount';
-  $('.credit-product-amount-input').val('');
+  $('.credit-product-amount-input').val('').prop('disabled', false).closest('td').removeClass('text-muted');
   $('.credit-product-quantity-input').val('0');
-  $('input[name="partialRefundShippingCost"]').val('0');
+  $('input[name="partialRefundShippingCost"]').val('0').prop('disabled', false);
+  $('.service-case-credit-status-group').hide().find(':input').prop('disabled', true);
   $('#confirm_original_payment_refund').prop('checked', false);
   setCreditAdjustment('cartRule', 0, 0);
   setCreditAdjustment('fee', 0, 0);
+  updateCreditCartRuleAdjustmentState();
   updateCreditFeeAdjustmentState();
   updateCreditTotals();
 }
@@ -323,6 +338,17 @@ function applyCreditReasonSuggestion() {
 
   var reason = $('#reason_entity_type').val();
   var idEntity = $('#reason_id_entity').val();
+  if (reason === 'service_case') {
+    var serviceCaseSuggestion = window.orderCreditSuggestions &&
+      window.orderCreditSuggestions[reason] &&
+      window.orderCreditSuggestions[reason][idEntity]
+      ? window.orderCreditSuggestions[reason][idEntity]
+      : null;
+
+    applyServiceCaseCreditScope(serviceCaseSuggestion);
+    return;
+  }
+
   if (
     !window.orderCreditSuggestions ||
     !window.orderCreditSuggestions[reason] ||
@@ -363,11 +389,45 @@ function applyCreditReasonSuggestion() {
   updateCreditTotals();
 }
 
+function applyServiceCaseCreditScope(suggestion) {
+  var products = suggestion && suggestion.products ? suggestion.products : {};
+  var hasSuggestion = !!suggestion;
+
+  $('.service-case-credit-status-group').toggle(hasSuggestion);
+  $('#service_case_status').prop('disabled', !hasSuggestion);
+  if (hasSuggestion && suggestion.status) {
+    $('#service_case_status').val(suggestion.status);
+  }
+
+  $('.credit-product-amount-input').each(function () {
+    var $input = $(this);
+    var idOrderDetail = String($input.data('id-order-detail'));
+    var isAllowed = hasSuggestion && !!products[idOrderDetail];
+    $input.prop('disabled', !isAllowed);
+    if (!isAllowed) {
+      $input.val('');
+    }
+    $input.closest('td').toggleClass('text-muted', !isAllowed);
+  });
+
+  $('.credit-product-quantity-input').val('0');
+  $('input[name="partialRefundShippingCost"]').val('0').prop('disabled', true);
+  setCreditAdjustment('cartRule', 0, 0);
+  setCreditAdjustment('fee', 0, 0);
+  updateCreditCartRuleAdjustmentState();
+  updateCreditFeeAdjustmentState();
+  updateCreditTotals();
+}
+
 function getCreditEnteredTotals() {
   var productsTotal = 0;
 
   $('.credit-product-amount-input').each(function () {
     var $input = $(this);
+    if ($input.prop('disabled')) {
+      return;
+    }
+
     var amount = roundCreditAmount(parseCreditNumber($input.val()));
     var max = parseCreditNumber($input.data('credit-max'));
 
@@ -381,12 +441,22 @@ function getCreditEnteredTotals() {
 
   return {
     products: roundCreditAmount(productsTotal),
-    shipping: roundCreditAmount(parseCreditNumber($('input[name="partialRefundShippingCost"]').val()))
+    shipping: $('input[name="partialRefundShippingCost"]').prop('disabled')
+      ? 0
+      : roundCreditAmount(parseCreditNumber($('input[name="partialRefundShippingCost"]').val()))
   };
 }
 
 function refreshSuggestedCreditAdjustments(preserveManualSource) {
   var totals = getCreditEnteredTotals();
+  updateCreditCartRuleAdjustmentState();
+
+  if (isServiceCaseCreditReason()) {
+    setCreditAdjustment('cartRule', 0, 0);
+    setCreditAdjustment('fee', 0, 0);
+    updateCreditFeeAdjustmentState();
+    return;
+  }
 
   if (!creditAdjustmentState.cartRule.manual) {
     setCreditAdjustment('cartRule', totals.products * normalizeCreditRate(getDefaultCreditCartRuleRate()) / 100, totals.products);
@@ -414,6 +484,12 @@ function refreshSuggestedCreditAdjustments(preserveManualSource) {
 
 function updateCreditTotals(preserveManualSource) {
   var totals = getCreditEnteredTotals();
+  updateCreditCartRuleAdjustmentState();
+  if (isServiceCaseCreditReason()) {
+    setCreditAdjustment('cartRule', 0, 0);
+    setCreditAdjustment('fee', 0, 0);
+  }
+
   var cartRuleAdjustment = Math.min(
     totals.products,
     roundCreditAmount(getCreditAdjustmentAmount('cartRule'))
