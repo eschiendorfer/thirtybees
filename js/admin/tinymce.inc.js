@@ -46,6 +46,57 @@ function tinySetup(config) {
     config.selector = '.' + config['editor_selector'];
   }
 
+  function setupStickyToolbar(editor) {
+    function applyStickyMenubar() {
+      const container = editor.getContainer();
+      if (!container) {
+        return;
+      }
+
+      const menubar = container.querySelector('.mce-menubar');
+      const toolbarGrp = container.querySelector('.mce-toolbar-grp');
+      if (!menubar && !toolbarGrp) {
+        return;
+      }
+
+      const overflow = 'visible';
+      container.style.overflow = overflow;
+      if (container.parentElement) {
+        container.parentElement.style.overflow = overflow;
+      }
+
+      if (menubar) {
+        Object.assign(menubar.style, {
+          position: 'sticky',
+          top: '136px',
+          zIndex: '100',
+          backgroundColor: 'white',
+          display: 'block',
+          width: '100%'
+        });
+      }
+
+      if (toolbarGrp) {
+        Object.assign(toolbarGrp.style, {
+          position: 'sticky',
+          top: '164px',
+          zIndex: '99',
+          backgroundColor: 'white',
+          display: 'block',
+          width: '100%',
+          paddingBottom: '5px'
+        });
+      }
+    }
+
+    editor.on('init', function () {
+      applyStickyMenubar();
+    });
+    editor.on('ResizeEditor', function () {
+      applyStickyMenubar();
+    });
+  }
+
   let defaultConfig = {
     selector: ".rte",
     plugins: "colorpicker link image paste pagebreak table contextmenu filemanager table code media autoresize textcolor anchor directionality codemirror",
@@ -83,6 +134,7 @@ function tinySetup(config) {
     force_br_newlines: false,  // Prevents <br> from being inserted when pressing Enter
     force_p_newlines: true,  // Ensures that new lines are wrapped in <p> tags
     convert_newlines_to_brs: false,  // Prevents new lines from being converted into <br>
+    toolbar_sticky: true,
     
     menu: {
       edit: { title: 'Edit', items: 'undo redo | cut copy paste | selectall' },
@@ -124,6 +176,17 @@ function tinySetup(config) {
   config = {
     ...defaultConfig,
     ...config
+  };
+
+  const configuredSetup = config.setup;
+  config.setup = function (editor) {
+    if (config.toolbar_sticky) {
+      setupStickyToolbar(editor);
+    }
+
+    if (typeof configuredSetup === 'function') {
+      configuredSetup(editor);
+    }
   };
 
   tinyMCE.init(config);
