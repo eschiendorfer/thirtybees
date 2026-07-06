@@ -97,6 +97,55 @@ function tinySetup(config) {
     });
   }
 
+  function setupBlogPostView(editor) {
+    function toggleBlogPostMode(enable) {
+      const body = editor.getBody();
+      const doc = editor.getDoc();
+      if (!body || !doc) {
+        return;
+      }
+
+      if (enable) {
+        editor.dom.addClass(body, 'article');
+        editor.dom.addClass(body, 'max-w-prose');
+        editor.dom.setStyles(body, { 'padding': '25px' });
+        editor.dom.loadCSS('/themes/genzo_theme/css/autoload/tailwind.css');
+      } else {
+        editor.dom.removeClass(body, 'article');
+        editor.dom.removeClass(body, 'max-w-prose');
+        editor.dom.setStyles(body, { 'padding': '' });
+      }
+
+      const links = doc.getElementsByTagName('link');
+      for (let i = 0; i < links.length; i++) {
+        if (links[i].href.indexOf('content.min.css') !== -1) {
+          links[i].disabled = enable;
+        }
+      }
+
+      editor.execCommand('mceAutoResize');
+      editor.fire('ResizeEditor');
+    }
+
+    editor.addMenuItem('blog_post', {
+      text: 'Blogbeitrag',
+      context: 'view',
+      selectable: true,
+      onclick: function () {
+        const isBlogPost = editor.dom.hasClass(editor.getBody(), 'article');
+        toggleBlogPostMode(!isBlogPost);
+        this.active(!isBlogPost);
+      },
+      onPostRender: function () {
+        const isBlogPost = editor.dom.hasClass(editor.getBody(), 'article');
+        if (isBlogPost) {
+          toggleBlogPostMode(true);
+        }
+        this.active(isBlogPost);
+      }
+    });
+  }
+
   let defaultConfig = {
     selector: ".rte",
     plugins: "colorpicker link image paste pagebreak table contextmenu filemanager table code media autoresize textcolor anchor directionality codemirror",
@@ -139,7 +188,7 @@ function tinySetup(config) {
     menu: {
       edit: { title: 'Edit', items: 'undo redo | cut copy paste | selectall' },
       insert: { title: 'Insert', items: 'media image link | pagebreak' },
-      view: { title: 'View', items: 'visualaid' },
+      view: { title: 'View', items: 'visualaid | blog_post' },
       format: {
         title: 'Format',
         items: 'bold italic underline strikethrough superscript subscript | formats | removeformat'
@@ -183,6 +232,8 @@ function tinySetup(config) {
     if (config.toolbar_sticky) {
       setupStickyToolbar(editor);
     }
+
+    setupBlogPostView(editor);
 
     if (typeof configuredSetup === 'function') {
       configuredSetup(editor);
