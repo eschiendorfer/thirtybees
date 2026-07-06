@@ -50,7 +50,7 @@ function tinySetup(config) {
     selector: ".rte",
     plugins: "colorpicker link image paste pagebreak table contextmenu filemanager table code media autoresize textcolor anchor directionality codemirror",
     browser_spellcheck: true,
-    toolbar1: "code,|,bold,italic,underline,strikethrough,|,alignleft,aligncenter,alignright,alignfull,formatselect,|,blockquote,colorpicker,pasteword,|,bullist,numlist,|,outdent,indent,|,link,unlink,|,anchor,|,media,image",
+    toolbar1: "code,|,bold,italic,underline,strikethrough,|,alignleft,aligncenter,alignright,alignfull,formatselect,styleselect,|,blockquote,colorpicker,pasteword,|,bullist,numlist,|,outdent,indent,|,link,unlink,|,anchor,|,media,image",
     toolbar2: "",
     external_filemanager_path: ad + "/filemanager/",
     filemanager_title: "File manager",
@@ -64,6 +64,15 @@ function tinySetup(config) {
     extended_valid_elements: "em[class|name|id]",
     valid_children: "+*[*]",
     valid_elements: "*[*]",
+    style_formats: [
+      {
+        title: 'Listen Icons',
+        items: [
+          { title: 'Vorteil (Check Circle)', selector: 'li', classes: 'list-icon-positive' },
+          { title: 'Nachteil (Facedown Smile)', selector: 'li', classes: 'list-icon-negative' }
+        ]
+      }
+    ],
     video_template_callback: (data) =>
       `<div class="embed-responsive embed-responsive-16by9"><video class="embed-responsive-item" width="${data.width}" height="${data.height}"${data.poster ? ` poster="${data.poster}"` : ''} preload="none" controls="controls">\n`
       + `<source src="${data.source1}"${data.source1mime ? ` type="${data.source1mime}"` : ''}>\n`
