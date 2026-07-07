@@ -38,6 +38,7 @@ composer.dev.lock
 # Config
 
 /config/settings.inc.php
+/config/settings.inc.fake.for.phpstorm.php
 /config/settings.old.php
 /config/xml/*
 !/config/xml/themes/
