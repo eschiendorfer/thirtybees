@@ -680,7 +680,14 @@ class InstallXmlLoader
                     }
                     @chmod($targetFile, 0644);
                 } // Resize the image if no cache was prepared in fixtures
-                elseif (!ImageManager::resize($fromPath.$identifier.'.'.$imageExtension, $targetFile, $type['width'], $type['height'])) {
+                elseif (!ImageManager::resizeByMode(
+                    $fromPath.$identifier.'.'.$imageExtension,
+                    $targetFile,
+                    $type['width'],
+                    $type['height'],
+                    $imageExtension,
+                    $type['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN
+                )) {
                     $this->setError($this->language->l('Cannot create image "%1$s" for entity "%2$s"', $identifier.'-'.$type['name'], $entity));
                 }
             }
@@ -948,7 +955,14 @@ class InstallXmlLoader
                 }
                 @chmod($targetFile, 0644);
             } // Resize the image if no cache was prepared in fixtures
-            elseif (!ImageManager::resize(ImageManager::getSourceImage($path, $identifier), $targetFile, $type['width'], $type['height'])) {
+            elseif (!ImageManager::resizeByMode(
+                ImageManager::getSourceImage($path, $identifier),
+                $targetFile,
+                $type['width'],
+                $type['height'],
+                $image->image_format,
+                $type['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN
+            )) {
                 $this->setError($this->language->l('Cannot create image "%1$s" for entity "%2$s"', $identifier.'-'.$type['name'], 'product'));
             }
         }

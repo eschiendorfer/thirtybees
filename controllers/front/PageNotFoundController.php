@@ -103,12 +103,13 @@ class PageNotFoundControllerCore extends FrontController
                         $width = (int)$imageType->width * $scale;
                         $height = (int)$imageType->height * $scale;
 
-                        ImageManager::resize(
+                        ImageManager::resizeByMode(
                             $sourcePath,
                             $sendPath,
                             $width,
                             $height,
-                            $imageExtension
+                            $imageExtension,
+                            $imageType->resize_mode ?? ImageType::RESIZE_MODE_CONTAIN
                         );
                     } else {
                         // request to source image in different format

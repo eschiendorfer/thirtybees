@@ -389,6 +389,203 @@ class ImageManagerCore
     }
 
     /**
+     * Resize an image using one of the configured ImageType resize modes.
+     *
+     * @param string $srcFile
+     * @param string $dstFile
+     * @param int|null $dstWidth
+     * @param int|null $dstHeight
+     * @param string|null $imageExtension
+     * @param string $resizeMode
+     * @param int $error
+     * @param int|null $tgtWidth
+     * @param int|null $tgtHeight
+     *
+     * @return bool
+     *
+     * @throws PrestaShopException
+     */
+    public static function resizeByMode(
+        $srcFile,
+        $dstFile,
+        $dstWidth = null,
+        $dstHeight = null,
+        $imageExtension = null,
+        $resizeMode = ImageType::RESIZE_MODE_CONTAIN,
+        &$error = 0,
+        &$tgtWidth = null,
+        &$tgtHeight = null
+    ) {
+        $resizeMode = ImageType::normalizeResizeMode($resizeMode);
+
+        if ($resizeMode === ImageType::RESIZE_MODE_CONTAIN) {
+            return static::resize($srcFile, $dstFile, $dstWidth, $dstHeight, $imageExtension, false, $error, $tgtWidth, $tgtHeight);
+        }
+
+        if (!file_exists($srcFile) || !filesize($srcFile)) {
+            return !($error = static::ERROR_FILE_NOT_EXIST);
+        }
+
+        if (is_null($imageExtension)) {
+            $imageExtension = static::getImageExtensionFromFilename($dstFile) ?: static::getDefaultImageExtension();
+        }
+
+        $sourceInfo = getimagesize($srcFile);
+        if (!is_array($sourceInfo) || empty($sourceInfo[0]) || empty($sourceInfo[1])) {
+            return !($error = static::ERROR_FILE_WIDTH);
+        }
+
+        $srcWidth = (int)$sourceInfo[0];
+        $srcHeight = (int)$sourceInfo[1];
+        $type = (int)$sourceInfo[2];
+
+        if (!ImageManager::checkImageMemoryLimit($srcFile)) {
+            return !($error = static::ERROR_MEMORY_LIMIT);
+        }
+
+        $dstWidth = (int)$dstWidth;
+        $dstHeight = (int)$dstHeight;
+
+        if ($resizeMode === ImageType::RESIZE_MODE_FIT) {
+            if ($dstWidth <= 0 && $dstHeight <= 0) {
+                return !($error = static::ERROR_FILE_WIDTH);
+            }
+
+            [$dstWidth, $dstHeight] = static::getFitDimensions($srcWidth, $srcHeight, $dstWidth, $dstHeight);
+            return static::resampleImage($srcFile, $dstFile, $type, 0, 0, $srcWidth, $srcHeight, $dstWidth, $dstHeight, $imageExtension, $error, $tgtWidth, $tgtHeight);
+        }
+
+        $dstWidth = $dstWidth > 0 ? $dstWidth : $srcWidth;
+        $dstHeight = $dstHeight > 0 ? $dstHeight : $srcHeight;
+
+        if ($resizeMode === ImageType::RESIZE_MODE_COVER) {
+            [$srcX, $srcY, $cropWidth, $cropHeight] = static::getCoverSourceBox($srcWidth, $srcHeight, $dstWidth, $dstHeight);
+            return static::resampleImage($srcFile, $dstFile, $type, $srcX, $srcY, $cropWidth, $cropHeight, $dstWidth, $dstHeight, $imageExtension, $error, $tgtWidth, $tgtHeight);
+        }
+
+        return static::resampleImage($srcFile, $dstFile, $type, 0, 0, $srcWidth, $srcHeight, $dstWidth, $dstHeight, $imageExtension, $error, $tgtWidth, $tgtHeight);
+    }
+
+    /**
+     * @return array{0:int,1:int}
+     */
+    protected static function getFitDimensions($srcWidth, $srcHeight, $maxWidth, $maxHeight)
+    {
+        $scale = 1;
+
+        if ((int)$maxWidth > 0) {
+            $scale = min($scale, (int)$maxWidth / $srcWidth);
+        }
+
+        if ((int)$maxHeight > 0) {
+            $scale = min($scale, (int)$maxHeight / $srcHeight);
+        }
+
+        return [
+            max(1, (int)round($srcWidth * $scale)),
+            max(1, (int)round($srcHeight * $scale)),
+        ];
+    }
+
+    public static function shouldGenerateHighDpiImage($sourceWidth, $sourceHeight, $imageTypeWidth, $imageTypeHeight)
+    {
+        $sourceWidth = (int)$sourceWidth;
+        $sourceHeight = (int)$sourceHeight;
+        $imageTypeWidth = (int)$imageTypeWidth;
+        $imageTypeHeight = (int)$imageTypeHeight;
+
+        return ($imageTypeWidth > 0 && $sourceWidth >= $imageTypeWidth * 2)
+            || ($imageTypeHeight > 0 && $sourceHeight >= $imageTypeHeight * 2);
+    }
+
+    /**
+     * @return array{0:int,1:int,2:int,3:int}
+     */
+    protected static function getCoverSourceBox($srcWidth, $srcHeight, $dstWidth, $dstHeight)
+    {
+        $sourceRatio = $srcWidth / $srcHeight;
+        $targetRatio = $dstWidth / $dstHeight;
+
+        if ($sourceRatio > $targetRatio) {
+            $cropHeight = $srcHeight;
+            $cropWidth = max(1, (int)round($srcHeight * $targetRatio));
+            $srcX = max(0, (int)floor(($srcWidth - $cropWidth) / 2));
+            $srcY = 0;
+        } else {
+            $cropWidth = $srcWidth;
+            $cropHeight = max(1, (int)round($srcWidth / $targetRatio));
+            $srcX = 0;
+            $srcY = max(0, (int)floor(($srcHeight - $cropHeight) / 2));
+        }
+
+        return [$srcX, $srcY, $cropWidth, $cropHeight];
+    }
+
+    protected static function resampleImage(
+        $srcFile,
+        $dstFile,
+        $type,
+        $srcX,
+        $srcY,
+        $srcWidth,
+        $srcHeight,
+        $dstWidth,
+        $dstHeight,
+        $imageExtension,
+        &$error = 0,
+        &$tgtWidth = null,
+        &$tgtHeight = null
+    ) {
+        $srcImage = ImageManager::create($type, $srcFile);
+        if (!$srcImage) {
+            return false;
+        }
+
+        $destImage = static::createImageCanvas($dstWidth, $dstHeight, $imageExtension);
+        $tgtWidth = (int)$dstWidth;
+        $tgtHeight = (int)$dstHeight;
+
+        $success = imagecopyresampled(
+            $destImage,
+            $srcImage,
+            0,
+            0,
+            (int)$srcX,
+            (int)$srcY,
+            (int)$dstWidth,
+            (int)$dstHeight,
+            (int)$srcWidth,
+            (int)$srcHeight
+        );
+
+        @imagedestroy($srcImage);
+
+        if (!$success) {
+            @imagedestroy($destImage);
+            return false;
+        }
+
+        return ImageManager::write($imageExtension, $destImage, $dstFile);
+    }
+
+    protected static function createImageCanvas($width, $height, $imageExtension)
+    {
+        $image = imagecreatetruecolor((int)$width, (int)$height);
+
+        if ($imageExtension == 'png' || $imageExtension === 'webp' || $imageExtension === 'avif') {
+            imagealphablending($image, false);
+            imagesavealpha($image, true);
+            $transparent = imagecolorallocatealpha($image, 255, 255, 255, 127);
+            imagefilledrectangle($image, 0, 0, (int)$width, (int)$height, $transparent);
+        } else {
+            $white = imagecolorallocate($image, 255, 255, 255);
+            imagefilledrectangle($image, 0, 0, (int)$width, (int)$height, $white);
+        }
+
+        return $image;
+    }
+
+    /**
      * Create an image with GD extension from a given type
      *
      * @param string $type
@@ -640,12 +837,26 @@ class ImageManagerCore
                     }
 
                     $dstFile = $baseName . '-' . stripslashes($imageType['name']) . '.' . $defaultImageExtension;
-                    $success = static::resize($sourceImage, $dstFile, $imageType['width'], $imageType['height'], $defaultImageExtension) && $success;
+                    $success = static::resizeByMode(
+                        $sourceImage,
+                        $dstFile,
+                        $imageType['width'],
+                        $imageType['height'],
+                        $defaultImageExtension,
+                        $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN
+                    ) && $success;
 
                     // Only generate if size of sourceImage is big enough
-                    if (static::retinaSupport() && (($sourceWidth >= $imageType['width'] * 2) || ($sourceHeight >= $imageType['height'] * 2))) {
+                    if (static::retinaSupport() && static::shouldGenerateHighDpiImage($sourceWidth, $sourceHeight, $imageType['width'], $imageType['height'])) {
                         $dstFileRetina = $baseName . '-' . stripslashes($imageType['name']) . '2x.' . $defaultImageExtension;
-                        $success = static::resize($sourceImage, $dstFileRetina, $imageType['width'] * 2, $imageType['height'] * 2, $defaultImageExtension) && $success;
+                        $success = static::resizeByMode(
+                            $sourceImage,
+                            $dstFileRetina,
+                            $imageType['width'] * 2,
+                            $imageType['height'] * 2,
+                            $defaultImageExtension,
+                            $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN
+                        ) && $success;
                     }
                 }
 

@@ -4,6 +4,7 @@
     <field name="name"/>
     <field name="width"/>
     <field name="height"/>
+    <field name="resize_mode"/>
     <field name="products"/>
     <field name="categories"/>
     <field name="manufacturers"/>
@@ -12,16 +13,16 @@
     <field name="stores"/>
   </fields>
   <entities>
-    <image_type name="Niara_cart" width="80" height="80" products="1" categories="0" manufacturers="0" suppliers="0" scenes="0" stores="0"/>
-    <image_type name="Niara_small" width="98" height="98" products="1" categories="0" manufacturers="1" suppliers="1" scenes="0" stores="0"/>
-    <image_type name="Niara_medium" width="125" height="125" products="1" categories="1" manufacturers="1" suppliers="1" scenes="0" stores="1"/>
-    <image_type name="Niara_home_smallest" width="211" height="211" products="1" categories="0" manufacturers="0" suppliers="0" scenes="0" stores="0"/>
-    <image_type name="Niara_home_smaller" width="218" height="218" products="1" categories="0" manufacturers="0" suppliers="0" scenes="0" stores="0"/>
-    <image_type name="Niara_home" width="250" height="250" products="1" categories="0" manufacturers="0" suppliers="0" scenes="0" stores="0"/>
-    <image_type name="Niara_large" width="458" height="458" products="1" categories="0" manufacturers="1" suppliers="1" scenes="0" stores="0"/>
-    <image_type name="Niara_thickbox" width="800" height="800" products="1" categories="0" manufacturers="0" suppliers="0" scenes="0" stores="0"/>
-    <image_type name="Niara_category" width="870" height="217" products="0" categories="1" manufacturers="0" suppliers="0" scenes="0" stores="0"/>
-    <image_type name="Niara_scene" width="870" height="270" products="0" categories="0" manufacturers="0" suppliers="0" scenes="1" stores="0"/>
-    <image_type name="Niara_m_scene" width="161" height="58" products="0" categories="0" manufacturers="0" suppliers="0" scenes="1" stores="0"/>
+    <image_type name="Niara_cart" width="80" height="80" resize_mode="contain" products="1" categories="0" manufacturers="0" suppliers="0" scenes="0" stores="0"/>
+    <image_type name="Niara_small" width="98" height="98" resize_mode="contain" products="1" categories="0" manufacturers="1" suppliers="1" scenes="0" stores="0"/>
+    <image_type name="Niara_medium" width="125" height="125" resize_mode="contain" products="1" categories="1" manufacturers="1" suppliers="1" scenes="0" stores="1"/>
+    <image_type name="Niara_home_smallest" width="211" height="211" resize_mode="contain" products="1" categories="0" manufacturers="0" suppliers="0" scenes="0" stores="0"/>
+    <image_type name="Niara_home_smaller" width="218" height="218" resize_mode="contain" products="1" categories="0" manufacturers="0" suppliers="0" scenes="0" stores="0"/>
+    <image_type name="Niara_home" width="250" height="250" resize_mode="contain" products="1" categories="0" manufacturers="0" suppliers="0" scenes="0" stores="0"/>
+    <image_type name="Niara_large" width="458" height="458" resize_mode="contain" products="1" categories="0" manufacturers="1" suppliers="1" scenes="0" stores="0"/>
+    <image_type name="Niara_thickbox" width="800" height="800" resize_mode="contain" products="1" categories="0" manufacturers="0" suppliers="0" scenes="0" stores="0"/>
+    <image_type name="Niara_category" width="870" height="217" resize_mode="contain" products="0" categories="1" manufacturers="0" suppliers="0" scenes="0" stores="0"/>
+    <image_type name="Niara_scene" width="870" height="270" resize_mode="contain" products="0" categories="0" manufacturers="0" suppliers="0" scenes="1" stores="0"/>
+    <image_type name="Niara_m_scene" width="161" height="58" resize_mode="contain" products="0" categories="0" manufacturers="0" suppliers="0" scenes="1" stores="0"/>
   </entities>
 </entity_image_type>

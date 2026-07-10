@@ -214,13 +214,18 @@ class ImageEntityCore extends ObjectModel
 
                     $imageTypeNameFormated = ImageType::getFormatedName($imageType['name']);
                     $imageTypeObj = ImageType::getInstanceByName($imageTypeNameFormated);
+                    $resizeMode = ImageType::normalizeResizeMode($imageType['resize_mode'] ?? null);
 
                     // Adding missing image types
                     if (!$imageTypeObj->id) {
                         $imageTypeObj->name = $imageType['name'];
                         $imageTypeObj->width = (int)$imageType['width'];
                         $imageTypeObj->height = (int)$imageType['height'];
+                        $imageTypeObj->resize_mode = $resizeMode;
                         $imageTypeObj->add();
+                    } elseif (ImageType::normalizeResizeMode($imageTypeObj->resize_mode ?? null) !== $resizeMode) {
+                        $imageTypeObj->resize_mode = $resizeMode;
+                        $imageTypeObj->update();
                     }
 
                     // Link imageType to imageEntity
@@ -323,7 +328,7 @@ class ImageEntityCore extends ObjectModel
             $query->select('ie.*');
             $query->select('l.display_name');
             $query->from(static::$definition['table'], 'ie');
-            $query->select('it.id_image_type, it.name AS image_type, it.width, it.height, it.id_image_type_parent');
+            $query->select('it.id_image_type, it.name AS image_type, it.width, it.height, it.resize_mode, it.id_image_type_parent');
             $query->leftJoin('image_entity_type', 'iet', '(iet.id_image_entity = ie.id_image_entity)');
             $query->leftJoin('image_type', 'it', '(iet.id_image_type = it.id_image_type)');
             $query->leftJoin('image_entity_lang', 'l', '(l.id_image_entity = ie.id_image_entity AND l.id_lang = '.$langId.')');
@@ -361,6 +366,7 @@ class ImageEntityCore extends ObjectModel
                         'name' => $res['image_type'],
                         'width' => (int)$res['width'],
                         'height' => (int)$res['height'],
+                        'resize_mode' => ImageType::normalizeResizeMode($res['resize_mode'] ?? null),
                         'id_image_type_parent' => (int)$res['id_image_type_parent'],
                     ];
                 }

@@ -34,6 +34,11 @@
  */
 class ImageTypeCore extends ObjectModel
 {
+    const RESIZE_MODE_CONTAIN = 'contain';
+    const RESIZE_MODE_FIT = 'fit';
+    const RESIZE_MODE_COVER = 'cover';
+    const RESIZE_MODE_STRETCH = 'stretch';
+
     /**
      * @var string Name
      */
@@ -48,6 +53,11 @@ class ImageTypeCore extends ObjectModel
      * @var int Height
      */
     public $height;
+
+    /**
+     * @var string Resize mode
+     */
+    public $resize_mode = self::RESIZE_MODE_CONTAIN;
 
     /**
      * @var int $id_image_type_parent if set, the imageType acts like an alias
@@ -112,6 +122,7 @@ class ImageTypeCore extends ObjectModel
             'name'                  => ['type' => self::TYPE_STRING, 'validate' => 'isImageTypeName', 'required' => true, 'size' => 64],
             'width'                 => ['type' => self::TYPE_INT, 'validate' => 'isImageSize', 'required' => true],
             'height'                => ['type' => self::TYPE_INT, 'validate' => 'isImageSize', 'required' => true],
+            'resize_mode'           => ['type' => self::TYPE_STRING, 'validate' => 'isImageResizeMode', 'dbType' => 'varchar(16)', 'dbDefault' => self::RESIZE_MODE_CONTAIN],
             'id_image_type_parent'  => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedInt'],
             'products'              => ['type' => self::TYPE_BOOL, 'validate' => 'isBool', 'dbType' => 'tinyint(1)', 'dbDefault' => '1'],
             'categories'            => ['type' => self::TYPE_BOOL, 'validate' => 'isBool', 'dbType' => 'tinyint(1)', 'dbDefault' => '1'],
@@ -126,6 +137,65 @@ class ImageTypeCore extends ObjectModel
             ],
         ],
     ];
+
+    public static function getResizeModes()
+    {
+        return [
+            static::RESIZE_MODE_CONTAIN,
+            static::RESIZE_MODE_FIT,
+            static::RESIZE_MODE_COVER,
+            static::RESIZE_MODE_STRETCH,
+        ];
+    }
+
+    public static function normalizeResizeMode($resizeMode)
+    {
+        $resizeMode = strtolower(trim((string)$resizeMode));
+
+        return in_array($resizeMode, static::getResizeModes(), true)
+            ? $resizeMode
+            : static::RESIZE_MODE_CONTAIN;
+    }
+
+    public static function hasValidDimensionsForResizeMode($resizeMode, $width, $height)
+    {
+        $resizeMode = static::normalizeResizeMode($resizeMode);
+        $width = (int)$width;
+        $height = (int)$height;
+
+        if ($resizeMode === static::RESIZE_MODE_FIT) {
+            return $width > 0 || $height > 0;
+        }
+
+        return $width > 0 && $height > 0;
+    }
+
+    /**
+     * @param bool $die
+     * @param bool $errorReturn
+     *
+     * @return bool|string
+     *
+     * @throws PrestaShopException
+     */
+    public function validateFields($die = true, $errorReturn = false)
+    {
+        $result = parent::validateFields($die, $errorReturn);
+        if ($result !== true) {
+            return $result;
+        }
+
+        if (!static::hasValidDimensionsForResizeMode($this->resize_mode, $this->width, $this->height)) {
+            $message = 'Fit mode requires at least width or height. All other resize modes require both dimensions.';
+            if ($die) {
+                throw new PrestaShopException($message);
+            }
+
+            return $errorReturn ? $message : false;
+        }
+
+        return true;
+    }
 
     /**
      * @var array Webservice parameters

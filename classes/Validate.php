@@ -306,6 +306,18 @@ class ValidateCore
     }
 
     /**
+     * Check for image resize mode validity
+     *
+     * @param string $mode Resize mode
+     *
+     * @return bool Validity is ok or not
+     */
+    public static function isImageResizeMode($mode)
+    {
+        return in_array(strtolower(trim((string)$mode)), ImageType::getResizeModes(), true);
+    }
+
+    /**
      * Check for price validity
      *
      * @param string $price Price to validate

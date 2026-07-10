@@ -197,7 +197,7 @@ class QqUploadedFileForm
         } elseif ($method == 'auto') {
             $imagesTypes = ImageType::getImagesTypes(ImageEntity::ENTITY_TYPE_PRODUCTS);
             foreach ($imagesTypes as $imageType) {
-                if (!ImageManager::resize($tmpName, $newPath.'-'.stripslashes($imageType['name']).'.'.$image->image_format, $imageType['width'], $imageType['height'], $image->image_format)) {
+                if (!ImageManager::resizeByMode($tmpName, $newPath.'-'.stripslashes($imageType['name']).'.'.$image->image_format, $imageType['width'], $imageType['height'], $image->image_format, $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN)) {
                     return ['error' => Tools::displayError('An error occurred while copying image:').' '.stripslashes($imageType['name'])];
                 }
             }
@@ -321,12 +321,7 @@ class QqUploadedFileXhr
         } elseif ($method == 'auto') {
             $imagesTypes = ImageType::getImagesTypes(ImageEntity::ENTITY_TYPE_PRODUCTS);
             foreach ($imagesTypes as $imageType) {
-                /*
-                    $theme = (Shop::isFeatureActive() ? '-'.$imageType['id_theme'] : '');
-                    if (!ImageManager::resize($tmpName, $new_path.'-'.stripslashes($imageType['name']).$theme.'.'.$image->image_format, $imageType['width'], $imageType['height'], $image->image_format))
-                        return array('error' => Tools::displayError('An error occurred while copying image:').' '.stripslashes($imageType['name']));
-                */
-                if (!ImageManager::resize($tmpName, $newPath.'-'.stripslashes($imageType['name']).'.'.$image->image_format, $imageType['width'], $imageType['height'], $image->image_format)) {
+                if (!ImageManager::resizeByMode($tmpName, $newPath.'-'.stripslashes($imageType['name']).'.'.$image->image_format, $imageType['width'], $imageType['height'], $image->image_format, $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN)) {
                     return ['error' => Tools::displayError('An error occurred while copying image:').' '.stripslashes($imageType['name'])];
                 }
             }

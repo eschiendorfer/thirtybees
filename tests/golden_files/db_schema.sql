@@ -1130,6 +1130,7 @@ CREATE TABLE `PREFIX_image_type` (
   `name` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `width` int(11) unsigned NOT NULL,
   `height` int(11) unsigned NOT NULL,
+  `resize_mode` varchar(16) NOT NULL DEFAULT 'contain',
   `id_image_type_parent` int(11) unsigned DEFAULT NULL,
   `products` tinyint(1) NOT NULL DEFAULT '1',
   `categories` tinyint(1) NOT NULL DEFAULT '1',

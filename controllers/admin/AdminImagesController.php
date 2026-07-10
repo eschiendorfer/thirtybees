@@ -97,6 +97,7 @@ class AdminImagesControllerCore extends AdminController
             'name'           => ['title' => $this->l('Name')],
             'width'          => ['title' => $this->l('Width'), 'suffix' => ' px'],
             'height'         => ['title' => $this->l('Height'), 'suffix' => ' px'],
+            'resize_mode'    => ['title' => $this->l('Resize mode')],
             'image_aliases'  => ['title' => $this->l('Aliases'), 'havingFilter' => true],
             'image_entities' => ['title' => $this->l('Image Entities'), 'havingFilter' => true],
         ];
@@ -270,6 +271,23 @@ class AdminImagesControllerCore extends AdminController
                     'suffix'    => $this->l('pixels'),
                     'hint'      => $this->l('Maximum image height in pixels.'),
                 ],
+                [
+                    'type'     => 'select',
+                    'label'    => $this->l('Resize mode'),
+                    'name'     => 'resize_mode',
+                    'required' => true,
+                    'options'  => [
+                        'query' => [
+                            ['id' => ImageType::RESIZE_MODE_CONTAIN, 'name' => $this->l('Contain - fit into fixed box with padding')],
+                            ['id' => ImageType::RESIZE_MODE_FIT, 'name' => $this->l('Fit - preserve ratio within maximum size')],
+                            ['id' => ImageType::RESIZE_MODE_COVER, 'name' => $this->l('Cover - fill fixed box and crop')],
+                            ['id' => ImageType::RESIZE_MODE_STRETCH, 'name' => $this->l('Stretch - force fixed size')],
+                        ],
+                        'id' => 'id',
+                        'name' => 'name',
+                    ],
+                    'hint' => $this->l('Fit mode allows width or height to be 0. A 0 value means that side is not limited. Other modes require both dimensions.'),
+                ],
             ],
             'submit' => [
                 'title' => $this->l('Save'),
@@ -278,6 +296,9 @@ class AdminImagesControllerCore extends AdminController
 
         // Adding image type aliases to the form
         $id_image_type = (int)Tools::getValue('id_image_type');
+        if (!$id_image_type) {
+            $this->fields_value['resize_mode'] = ImageType::RESIZE_MODE_CONTAIN;
+        }
 
         $this->fields_form['input'][] = [
             'type' => 'select',
@@ -739,36 +760,47 @@ class AdminImagesControllerCore extends AdminController
                             str_replace(_PS_ROOT_DIR_, '', $dir.$image)
                         );
                     } else {
-                        $success = ImageManager::resize(
+                        $sourceSize = @getimagesize($dir.$image);
+                        $sourceWidth = (int)($sourceSize[0] ?? 0);
+                        $sourceHeight = (int)($sourceSize[1] ?? 0);
+
+                        $success = ImageManager::resizeByMode(
                             $dir.$image,
                             $newFile,
                             (int) $imageType['width'],
-                            (int) $imageType['height']
+                            (int) $imageType['height'],
+                            null,
+                            $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN
                         );
-                        if (ImageManager::retinaSupport()) {
-                            if (!ImageManager::resize(
+                        if (ImageManager::retinaSupport() && ImageManager::shouldGenerateHighDpiImage($sourceWidth, $sourceHeight, $imageType['width'], $imageType['height'])) {
+                            if (!ImageManager::resizeByMode(
                                 $dir.$image,
                                 $newDir.substr($image, 0, -4).'-'.stripslashes($imageType['name']).'2x.jpg',
                                 (int) $imageType['width'] * 2,
-                                (int) $imageType['height'] * 2
+                                (int) $imageType['height'] * 2,
+                                null,
+                                $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN
                             )) {
                                 $this->errors[] = sprintf(Tools::displayError('Failed to resize image file to high resolution (%s)'), $dir.$image);
                             }
                         }
                         if (ImageManager::generateWebpImages()) {
-                            $success = ImageManager::resize(
+                            $success = ImageManager::resizeByMode(
                                 $dir.$image,
                                 $newDir.substr($image, 0, -4).'-'.stripslashes($imageType['name']).'.webp',
                                 (int) $imageType['width'],
                                 (int) $imageType['height'],
-                                'webp'
+                                'webp',
+                                $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN
                             ) && $success;
-                            if (ImageManager::retinaSupport()) {
-                                $success = ImageManager::resize(
+                            if (ImageManager::retinaSupport() && ImageManager::shouldGenerateHighDpiImage($sourceWidth, $sourceHeight, $imageType['width'], $imageType['height'])) {
+                                $success = ImageManager::resizeByMode(
                                     $dir.$image,
                                     $newDir.substr($image, 0, -4).'-'.stripslashes($imageType['name']).'2x.webp',
                                     (int) $imageType['width'] * 2,
-                                    (int) $imageType['height'] * 2
+                                    (int) $imageType['height'] * 2,
+                                    'webp',
+                                    $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN
                                 ) && $success;
                             }
                         }
@@ -787,6 +819,9 @@ class AdminImagesControllerCore extends AdminController
             foreach ($productsImages as $idImage) {
                 $imageObj = new Image($idImage);
                 $existingImage = $process[$entityType].$imageObj->getExistingImgPath().'.jpg';
+                $sourceSize = @getimagesize($existingImage);
+                $sourceWidth = (int)($sourceSize[0] ?? 0);
+                $sourceHeight = (int)($sourceSize[1] ?? 0);
                 if (count($type) > 0) {
                     foreach ($type as $imageType) {
                         $newFile = $process[$entityType].$imageObj->getExistingImgPath().'-'.stripslashes($imageType['name']).'.jpg';
@@ -794,36 +829,40 @@ class AdminImagesControllerCore extends AdminController
                             $this->errors[] = $this->l('Unable to generate new file');
                         }
                         if (!file_exists($newFile)) {
-                            if (!ImageManager::resize($existingImage, $newFile, (int) ($imageType['width']), (int) ($imageType['height']))) {
+                            if (!ImageManager::resizeByMode($existingImage, $newFile, (int)($imageType['width']), (int)($imageType['height']), null, $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN)) {
                                 $this->errors[] = sprintf($this->l('Original image is corrupt (%s) or bad permission on folder'), $existingImage);
                             }
                             if (ImageManager::generateWebpImages()) {
-                                ImageManager::resize(
+                                ImageManager::resizeByMode(
                                     $existingImage,
                                     $process[$entityType].$imageObj->getExistingImgPath().'-'.stripslashes($imageType['name']).'.webp',
                                     (int) $imageType['width'],
                                     (int) $imageType['height'],
-                                    'webp'
+                                    'webp',
+                                    $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN
                                 );
                             }
 
-                            if (ImageManager::retinaSupport()) {
-                                if (!ImageManager::resize(
+                            if (ImageManager::retinaSupport() && ImageManager::shouldGenerateHighDpiImage($sourceWidth, $sourceHeight, $imageType['width'], $imageType['height'])) {
+                                if (!ImageManager::resizeByMode(
                                     $existingImage,
                                     $process[$entityType].$imageObj->getExistingImgPath().'-'.stripslashes($imageType['name']).'2x.jpg',
                                     (int) $imageType['width'] * 2,
-                                    (int) $imageType['height'] * 2
+                                    (int) $imageType['height'] * 2,
+                                    null,
+                                    $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN
                                 )) {
                                     $this->errors[] = sprintf(Tools::displayError('Failed to resize image file to high resolution (%s)'), $existingImage);
                                 }
 
                                 if (!$this->errors && ImageManager::generateWebpImages()) {
-                                    ImageManager::resize(
+                                    ImageManager::resizeByMode(
                                         $existingImage,
                                         $process[$entityType].$imageObj->getExistingImgPath().'-'.stripslashes($imageType['name']).'2x.webp',
                                         (int) $imageType['width'] * 2,
                                         (int) $imageType['height'] * 2,
-                                        'webp'
+                                        'webp',
+                                        $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN
                                     );
                                 }
                             }
@@ -909,12 +948,16 @@ class AdminImagesControllerCore extends AdminController
                         if (!file_exists($newDir.substr($image, 0, -4).'-'.stripslashes($imageType['name']).'.'.$legacyImageExtension)) {
                             if (!file_exists($dir.$image) || !filesize($dir.$image)) {
                                 $this->errors[] = sprintf(Tools::displayError('Source file does not exist or is empty (%s)'), $dir.$image);
-                            } elseif (!ImageManager::resize($dir.$image, $newDir.substr(str_replace('_thumb.', '.', $image), 0, -4).'-'.stripslashes($imageType['name']).'.'.$legacyImageExtension, (int) $imageType['width'], (int) $imageType['height'], $legacyImageExtension)) {
+                            } elseif (!ImageManager::resizeByMode($dir.$image, $newDir.substr(str_replace('_thumb.', '.', $image), 0, -4).'-'.stripslashes($imageType['name']).'.'.$legacyImageExtension, (int)$imageType['width'], (int)$imageType['height'], $legacyImageExtension, $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN)) {
                                 $this->errors[] = sprintf(Tools::displayError('Failed to resize image file (%s)'), $dir.$image);
                             }
 
-                            if (ImageManager::retinaSupport()) {
-                                if (!ImageManager::resize($dir.$image, $newDir.substr($image, 0, -4).'-'.stripslashes($imageType['name']).'2x.'.$legacyImageExtension, (int) $imageType['width'] * 2, (int) $imageType['height'] * 2, $legacyImageExtension)) {
+                            $sourceSize = @getimagesize($dir.$image);
+                            $sourceWidth = (int)($sourceSize[0] ?? 0);
+                            $sourceHeight = (int)($sourceSize[1] ?? 0);
+
+                            if (ImageManager::retinaSupport() && ImageManager::shouldGenerateHighDpiImage($sourceWidth, $sourceHeight, $imageType['width'], $imageType['height'])) {
+                                if (!ImageManager::resizeByMode($dir.$image, $newDir.substr($image, 0, -4).'-'.stripslashes($imageType['name']).'2x.'.$legacyImageExtension, (int)$imageType['width'] * 2, (int)$imageType['height'] * 2, $legacyImageExtension, $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN)) {
                                     $this->errors[] = sprintf(Tools::displayError('Failed to resize image file to high resolution (%s)'), $dir.$image);
                                 }
                             }
@@ -933,14 +976,18 @@ class AdminImagesControllerCore extends AdminController
                 $sourceImageExtension = pathinfo($sourceImage, PATHINFO_EXTENSION);
                 $defaultImageExtension = ImageManager::getDefaultImageExtension();
                 if (file_exists($sourceImage) && filesize($sourceImage)) {
+                    $sourceSize = @getimagesize($sourceImage);
+                    $sourceWidth = (int)($sourceSize[0] ?? 0);
+                    $sourceHeight = (int)($sourceSize[1] ?? 0);
+
                     foreach ($type as $imageType) {
                         $imageByType = str_replace($imageObj->id.'.'.$sourceImageExtension, $imageObj->id.'.'.stripslashes($imageType['name']).'.'.$defaultImageExtension, $sourceImage);
                         if (!file_exists($imageByType)) {
-                            if (!ImageManager::resize($sourceImage, $imageByType, (int) $imageType['width'], (int) $imageType['height'], $defaultImageExtension)) {
+                            if (!ImageManager::resizeByMode($sourceImage, $imageByType, (int)$imageType['width'], (int)$imageType['height'], $defaultImageExtension, $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN)) {
                                 $this->errors[] = sprintf(Tools::displayError('Original image is corrupt (%s) for product ID %2$d or bad permission on folder'), $sourceImage, (int) $imageObj->id_product);
                             }
-                            if (ImageManager::retinaSupport()) {
-                                if (!ImageManager::resize($sourceImage, str_replace('-'.stripslashes($imageType['name']), '-'.stripslashes($imageType['name']).'2x', $imageByType), (int) $imageType['width'] * 2, (int) $imageType['height'] * 2, $defaultImageExtension)) {
+                            if (ImageManager::retinaSupport() && ImageManager::shouldGenerateHighDpiImage($sourceWidth, $sourceHeight, $imageType['width'], $imageType['height'])) {
+                                if (!ImageManager::resizeByMode($sourceImage, str_replace('-'.stripslashes($imageType['name']), '-'.stripslashes($imageType['name']).'2x', $imageByType), (int)$imageType['width'] * 2, (int)$imageType['height'] * 2, $defaultImageExtension, $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN)) {
                                     $this->errors[] = sprintf(Tools::displayError('Original image is corrupt (%s) for product ID %2$d or bad permission on folder'), $sourceImage, (int) $imageObj->id_product);
                                 }
                             }
@@ -1106,6 +1153,13 @@ class AdminImagesControllerCore extends AdminController
             ImageType::typeAlreadyExists($typeName)
         ) {
             $this->errors[] = Tools::displayError('This name already exists.');
+        }
+
+        $resizeMode = Tools::getValue('resize_mode', ImageType::RESIZE_MODE_CONTAIN);
+        if (Validate::isImageResizeMode($resizeMode)
+            && !ImageType::hasValidDimensionsForResizeMode($resizeMode, Tools::getValue('width'), Tools::getValue('height'))
+        ) {
+            $this->errors[] = Tools::displayError('Fit mode requires at least width or height. All other resize modes require both dimensions.');
         }
     }
 

@@ -1774,10 +1774,29 @@ class AdminControllerCore extends Controller
             }
 
             if (empty($this->errors) && !empty($generateImageTypes)) {
+                $sourceImage = $path.$id.'.'.$imageExtension;
+                $sourceSize = @getimagesize($sourceImage);
+                $sourceWidth = (int)($sourceSize[0] ?? 0);
+                $sourceHeight = (int)($sourceSize[1] ?? 0);
+
                 foreach ($generateImageTypes as $imageType) {
-                    ImageManager::resize($path.$id.'.'.$imageExtension, $path.$id.'-'.$imageType['name'].'.'.$imageExtension, $imageType['width'], $imageType['height'], $imageExtension);
-                    if (ImageManager::retinaSupport()) {
-                        ImageManager::resize($path.$id.'.'.$imageExtension, $path.$id.'-'.$imageType['name'].'2x.'.$imageExtension, $imageType['width'] * 2, $imageType['height'] * 2, $imageExtension);
+                    ImageManager::resizeByMode(
+                        $sourceImage,
+                        $path.$id.'-'.$imageType['name'].'.'.$imageExtension,
+                        $imageType['width'],
+                        $imageType['height'],
+                        $imageExtension,
+                        $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN
+                    );
+                    if (ImageManager::retinaSupport() && ImageManager::shouldGenerateHighDpiImage($sourceWidth, $sourceHeight, $imageType['width'], $imageType['height'])) {
+                        ImageManager::resizeByMode(
+                            $sourceImage,
+                            $path.$id.'-'.$imageType['name'].'2x.'.$imageExtension,
+                            $imageType['width'] * 2,
+                            $imageType['height'] * 2,
+                            $imageExtension,
+                            $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN
+                        );
                     }
                 }
             }

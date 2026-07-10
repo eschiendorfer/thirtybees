@@ -943,11 +943,17 @@ class LanguageCore extends ObjectModel
             if (! $imageExtension) {
                 $imageExtension = ImageManager::getDefaultImageExtension();
             }
+            $sourceSize = @getimagesize($sourceImage);
+            $sourceWidth = (int)($sourceSize[0] ?? 0);
+            $sourceHeight = (int)($sourceSize[1] ?? 0);
+
             foreach (ImageType::getImagesTypes() as $imageType) {
                 $dstFile = _PS_LANG_IMG_DIR_.$iso_code.'-default-'.$imageType['name'].'.'.$imageExtension;
-                $success = ImageManager::resize($sourceImage, $dstFile, $imageType['width'], $imageType['height'], $imageExtension) && $success;
-                $dstFile = _PS_LANG_IMG_DIR_.$iso_code.'-default-'.$imageType['name'].'2x.'.$imageExtension;
-                $success = ImageManager::resize($sourceImage, $dstFile, $imageType['width']*2, $imageType['height']*2, $imageExtension) && $success;
+                $success = ImageManager::resizeByMode($sourceImage, $dstFile, $imageType['width'], $imageType['height'], $imageExtension, $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN) && $success;
+                if (ImageManager::shouldGenerateHighDpiImage($sourceWidth, $sourceHeight, $imageType['width'], $imageType['height'])) {
+                    $dstFile = _PS_LANG_IMG_DIR_.$iso_code.'-default-'.$imageType['name'].'2x.'.$imageExtension;
+                    $success = ImageManager::resizeByMode($sourceImage, $dstFile, $imageType['width']*2, $imageType['height']*2, $imageExtension, $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN) && $success;
+                }
             }
         }
         else {

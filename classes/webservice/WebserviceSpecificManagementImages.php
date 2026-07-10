@@ -663,12 +663,13 @@ class WebserviceSpecificManagementImagesCore implements WebserviceSpecificManage
             if (! file_exists($filename) && $origFilename) {
                 $formattedName = ImageType::getFormatedName($imageSize);
                 $imageType = ImageType::getInstanceByName($formattedName);
-                ImageManager::resize(
+                ImageManager::resizeByMode(
                     $origFilename,
                     $filename,
                     $imageType->width,
                     $imageType->height,
-                    $ext
+                    $ext,
+                    $imageType->resize_mode ?? ImageType::RESIZE_MODE_CONTAIN
                 );
             }
             return $this->setImgToDisplay($filename);
@@ -1223,7 +1224,7 @@ class WebserviceSpecificManagementImagesCore implements WebserviceSpecificManage
                         } else {
                             $imagesTypes = ImageType::getImagesTypes(ImageEntity::ENTITY_TYPE_PRODUCTS);
                             foreach ($imagesTypes as $imageType) {
-                                if (!ImageManager::resize($tmpName, _PS_PROD_IMG_DIR_.$image->getExistingImgPath().'-'.stripslashes($imageType['name']).'.'.$image->image_format, $imageType['width'], $imageType['height'], $image->image_format)) {
+                                if (!ImageManager::resizeByMode($tmpName, _PS_PROD_IMG_DIR_.$image->getExistingImgPath().'-'.stripslashes($imageType['name']).'.'.$image->image_format, $imageType['width'], $imageType['height'], $image->image_format, $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN)) {
                                     throw new WebserviceException(Tools::displayError('An error occurred while copying image:').' '.stripslashes($imageType['name']), [76, 400]);
                                 }
                             }
@@ -1243,7 +1244,7 @@ class WebserviceSpecificManagementImagesCore implements WebserviceSpecificManage
                         $imagesTypes = ImageType::getImagesTypes($this->imageType);
                         foreach ($imagesTypes as $imageType) {
                             $imageExtension = ImageManager::getDefaultImageExtension();
-                            if (!ImageManager::resize($tmpName, $parentPath.$this->wsObject->urlSegment[2].'-'.stripslashes($imageType['name']).'.'.$imageExtension, $imageType['width'], $imageType['height'], $imageExtension)) {
+                            if (!ImageManager::resizeByMode($tmpName, $parentPath.$this->wsObject->urlSegment[2].'-'.stripslashes($imageType['name']).'.'.$imageExtension, $imageType['width'], $imageType['height'], $imageExtension, $imageType['resize_mode'] ?? ImageType::RESIZE_MODE_CONTAIN)) {
                                 throw new WebserviceException(Tools::displayError('An error occurred while copying image:').' '.stripslashes($imageType['name']), [76, 400]);
                             }
                         }
