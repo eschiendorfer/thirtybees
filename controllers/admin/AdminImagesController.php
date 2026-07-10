@@ -455,6 +455,9 @@ class AdminImagesControllerCore extends AdminController
         }
 
         $imageEntityId = (int)$imageEntityInfo['id_image_entity'];
+        if (!empty($request->reset)) {
+            $this->resetRegenerationStatus($imageEntityId);
+        }
 
         $idEntity = $this->getNextEntityId($imageEntityId);
         if (!$idEntity) {
@@ -507,6 +510,22 @@ class AdminImagesControllerCore extends AdminController
             'error' => pSQL($error),
             'date_upd' => date('Y-m-d H:i:s'),
         ], "id_image_entity = $imageEntityId AND id_entity = $entityId");
+    }
+
+    /**
+     * @param int $imageEntityId
+     *
+     * @return void
+     * @throws PrestaShopException
+     */
+    protected function resetRegenerationStatus(int $imageEntityId)
+    {
+        $imageEntityId = (int)$imageEntityId;
+        Db::getInstance()->update('image_regeneration', [
+            'status' => 'pending',
+            'error' => null,
+            'date_upd' => date('Y-m-d H:i:s'),
+        ], 'id_image_entity = ' . $imageEntityId);
     }
 
     /**

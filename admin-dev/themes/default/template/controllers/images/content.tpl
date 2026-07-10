@@ -64,16 +64,24 @@
       </script>
 
       <div class="form-group">
-        <label class="control-label col-lg-3">
-          {l s='Regenerate thumbnails'}
-        </label>
-        <table class="col-lg-9">
+        <div class="col-lg-12">
+          <div class="row" style="margin-bottom: 8px; font-weight: 600;">
+            <div class="col-lg-1 text-center">{l s='Reset'}</div>
+            <div class="col-lg-3">{l s='Regenerate thumbnails'}</div>
+            <div class="col-lg-8">{l s='Progress'}</div>
+          </div>
           {foreach $image_indexation as $entityType => $status}
             {$total = intval($status['total'])}
             {$indexed = $total - intval($status['pending'])}
             {$failed = intval($status['failed'])}
-          <tr>
-            <td>
+          <div class="row" style="margin-bottom: 14px;">
+            <div class="col-lg-1 text-center" style="padding-top: 8px;">
+              <input type="checkbox"
+                     class="ajax-regenerate-reset-checkbox"
+                     data-entity-type="{$entityType|escape:'htmlall':'UTF-8'}"
+                     {if $total === 0}disabled="disabled"{/if}>
+            </div>
+            <div class="col-lg-3">
               <button class="btn btn-info ajax-regenerate-button"
                       id="regenerate{$entityType|ucfirst|escape:'htmlall':'UTF-8'}Images"
                       data-entity-type="{$entityType|escape:'htmlall':'UTF-8'}"
@@ -82,8 +90,8 @@
               >
                 <i class="icon icon-play"></i> {l s='Regenerate %s' sprintf=[$status.display_name]}
               </button>
-            </td>
-            <td width="99%" style="padding-left: 20px; padding-top: 15px">
+            </div>
+            <div class="col-lg-8" style="padding-top: 6px;">
               <div class="progress{if $total === 0} disabled{/if}">
                 <div id="progress-bar-{$entityType|escape:'htmlall':'UTF-8'}"
                      class="progress-bar"
@@ -100,10 +108,10 @@
                   </span>
                 </div>
               </div>
-            </td>
-          </tr>
+            </div>
+          </div>
           {/foreach}
-        </table>
+        </div>
       </div>
 
       <div class="panel-footer">
@@ -118,9 +126,11 @@
     (function () {
 
       var regenerating = { };
+      var resetOnNextRequest = { };
 
       {foreach from=$imageEntities item=$imageEntity}
         regenerating.{$imageEntity.name} = false;
+        resetOnNextRequest.{$imageEntity.name} = false;
       {/foreach}
 
       window.regen = regenerating;
@@ -166,6 +176,10 @@
             return;
           }
 
+          var $resetCheckbox = $('.ajax-regenerate-reset-checkbox[data-entity-type="' + entityType + '"]');
+          resetOnNextRequest[entityType] = $resetCheckbox.prop('checked') === true;
+          $resetCheckbox.prop('checked', false).attr('disabled', 'disabled');
+
           $button
             .find('i')
             .removeClass('icon-play')
@@ -177,10 +191,14 @@
         }
 
         function pauseGenerating(entityType) {
-          $('button[data-entity-type="' + entityType + '"]')
+          var $button = $('button[data-entity-type="' + entityType + '"]');
+          $button
             .find('i')
             .addClass('icon-play')
             .removeClass('icon-pause');
+          if (!$button[0].hasAttribute('disabled')) {
+            $('.ajax-regenerate-reset-checkbox[data-entity-type="' + entityType + '"]').removeAttr('disabled');
+          }
           regenerating[entityType] = false;
           checkRegenerationButton();
         }
@@ -334,13 +352,19 @@
         }
 
         function doAjaxRequest(entityType) {
+          var payload = {
+            entity_type: entityType
+          };
+          if (resetOnNextRequest[entityType]) {
+            payload.reset = true;
+            resetOnNextRequest[entityType] = false;
+          }
+
           var req = $.ajax({
             url: currentIndex + '&token=' + token + '&ajax=1&action=RegenerateThumbnails',
             method: 'post',
             dataType: 'json',
-            data: JSON.stringify({
-              entity_type: entityType,
-            }),
+            data: JSON.stringify(payload),
             success: function (response) {
               if (response == null || !regenerating[entityType]) {
                 return;
