@@ -233,6 +233,7 @@ class ImageEntityCore extends ObjectModel
 
         static::rebuildBasedOnOldTypes();
 
+        ImageType::cleanCache();
         Configuration::updateGlobalValue('TB_IMAGE_ENTITY_REBUILD_LAST', date('Y-m-d H:i:s'));
     }
 

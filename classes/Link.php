@@ -489,35 +489,82 @@ class LinkCore
      * @param string $imageType Image type name, like 'home', 'home_small', ...
      * @param bool $highDpi Higher resolution
      * @param bool $webp Deprecated, since Auto-detected
-     * @param string $link_rewrite An image name for pretty/SEO-friendly URLs.
+     * @param string $linkRewrite An image name for pretty/SEO-friendly URLs.
      *                            Currently, only (products and) categories
      *                            support such names.
+     * @param string $publicUrlPattern Optional public URL pattern for custom image entities.
      *
      * @return string Full URL to the image.
      *
      * @throws PrestaShopException
      */
-    public static function getGenericImageLink($imageEntityName, $id, $imageType = null, $highDpi = false, $webp = null, $link_rewrite = '')
+    public static function getGenericImageLink($imageEntityName, $id, $imageType = null, $highDpi = false, $webp = null, $linkRewrite = '', $publicUrlPattern = '')
     {
         // Format imageType
-        $imageType = ImageType::getFormatedName($imageType);
-        $imageType = $imageType ? '-'.$imageType : '';
+        $imageTypeName = ImageType::getFormatedName($imageType);
+        $imageType = $imageTypeName ? '-'.$imageTypeName : '';
 
         // Format link rewrite
-        $link_rewrite = (Configuration::get('PS_REWRITING_SETTINGS') && $link_rewrite) ? $link_rewrite : $id;
+        $rewritingEnabled = (int)Configuration::get('PS_REWRITING_SETTINGS');
+        $linkRewrite = ($rewritingEnabled && $linkRewrite) ? $linkRewrite : $id;
 
         $highDpi = $highDpi ? '2x' : '';
 
         // Get default image extension
         $imageExtension = ImageManager::getDefaultImageExtension();
 
-        if ((int)Configuration::get('PS_REWRITING_SETTINGS') || !isset(_TB_IMAGE_MAP_[$imageEntityName])) {
-            $uriPath = __PS_BASE_URI__.$imageEntityName.'/'.$id.$imageType.'/'.$link_rewrite.$highDpi.'.'.$imageExtension;
+        $publicUrlPattern = trim((string)$publicUrlPattern);
+        if ($publicUrlPattern !== '') {
+            $uriPath = __PS_BASE_URI__.static::buildGenericImagePatternPath($publicUrlPattern, $imageEntityName, $id, $imageTypeName, $linkRewrite, $imageExtension, $highDpi);
+        } elseif ($rewritingEnabled || !isset(_TB_IMAGE_MAP_[$imageEntityName])) {
+            $uriPath = __PS_BASE_URI__.$imageEntityName.'/'.$id.$imageType.'/'.$linkRewrite.$highDpi.'.'.$imageExtension;
         } else {
             $uriPath = _PS_IMG_._TB_IMAGE_MAP_[$imageEntityName].$id.$imageType.$highDpi.'.'.$imageExtension;
         }
 
         return Tools::getShopProtocol().Tools::getMediaServer($uriPath).$uriPath;
+    }
+
+    /**
+     * Build custom public image URLs without loading the related ObjectModel.
+     *
+     * Supported placeholders: {entity}, {id}, {type}, {rewrite}, {ext}, {high_dpi}.
+     *
+     * @param string $pattern
+     * @param string $imageEntityName
+     * @param int|string $id
+     * @param string $imageTypeName
+     * @param string|int $linkRewrite
+     * @param string $imageExtension
+     * @param string $highDpi
+     *
+     * @return string
+     */
+    protected static function buildGenericImagePatternPath($pattern, $imageEntityName, $id, $imageTypeName, $linkRewrite, $imageExtension, $highDpi)
+    {
+        $pattern = trim((string)$pattern, '/');
+        if ($pattern === '' || !str_contains($pattern, '{id}')) {
+            return $imageEntityName.'/'.$id.'/'.($imageTypeName ?: 'original').'.'.$imageExtension;
+        }
+
+        $type = $imageTypeName ?: 'original';
+        $rewrite = trim((string)$linkRewrite);
+        if ($rewrite === '') {
+            $rewrite = (string)$id;
+        }
+
+        $path = strtr($pattern, [
+            '{entity}' => (string)$imageEntityName,
+            '{id}' => (string)$id,
+            '{type}' => $type,
+            '{rewrite}' => $rewrite,
+            '{ext}' => (string)$imageExtension,
+            '{high_dpi}' => (string)$highDpi,
+        ]);
+
+        $path = preg_replace('#/+#', '/', ltrim($path, '/'));
+
+        return is_string($path) ? $path : '';
     }
 
     /**
