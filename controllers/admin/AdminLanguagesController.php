@@ -619,7 +619,7 @@ class AdminLanguagesControllerCore extends AdminController
      *
      * @throws PrestaShopException
      */
-    protected function uploadImage($id, $name, $dir, $imageExtension = false, $width = null, $height = null, $generateImageTypes = [])
+    protected function uploadImage($id, $name, $dir, $imageExtension = false, $width = null, $height = null, $generateImageTypes = [], $imageEntityName = '')
     {
         // Making sure that default image are saved with correct name
         if ($name === 'no_picture') {
@@ -628,7 +628,7 @@ class AdminLanguagesControllerCore extends AdminController
 
         $res = true;
         if (!empty($_FILES[$name]['tmp_name'])) {
-            $res = parent::uploadImage($id, $name, $dir, $imageExtension, $width, $height, $generateImageTypes);
+            $res = parent::uploadImage($id, $name, $dir, $imageExtension, $width, $height, $generateImageTypes, $imageEntityName);
 
             if ($name === 'no_picture' && $res) {
                 $res = Language::regenerateDefaultImages(Tools::getValue('iso_code'));

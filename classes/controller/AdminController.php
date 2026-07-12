@@ -1684,7 +1684,7 @@ class AdminControllerCore extends Controller
                     $imageTypes = $imageEntityName ? ImageType::getImagesTypes($imageEntityName) : [];
                     $width = $fieldImageSetting['width'] ?? null;
                     $height = $fieldImageSetting['height'] ?? null;
-                    $this->uploadImage($id, $fieldImageSetting['inputName'], $fieldImageSetting['path'], $imageExtension, $width, $height, $imageTypes);
+                    $this->uploadImage($id, $fieldImageSetting['inputName'], $fieldImageSetting['path'], $imageExtension, $width, $height, $imageTypes, is_string($imageEntityName) ? $imageEntityName : '');
                 }
             }
         }
@@ -1704,7 +1704,7 @@ class AdminControllerCore extends Controller
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    protected function uploadImage($id, $name, $path, $imageExtension = false, $width = null, $height = null, $generateImageTypes = [])
+    protected function uploadImage($id, $name, $path, $imageExtension = false, $width = null, $height = null, $generateImageTypes = [], $imageEntityName = '')
     {
         if (!empty($_FILES[$name]['tmp_name'])) {
 
@@ -1716,6 +1716,23 @@ class AdminControllerCore extends Controller
                     $object->deleteImage();
                 }
             } else {
+                return false;
+            }
+
+            if ($imageEntityName && !$width && !$height && ImageEntity::getImageEntityInfo((string)$imageEntityName)) {
+                $maxSize = (int)$this->max_image_size;
+                $error = 0;
+                if (!ImageManager::uploadImageByEntity((string)$imageEntityName, $id, $_FILES[$name], null, true, Tools::getMaxUploadSize($maxSize), null, $error)) {
+                    $this->errors[] = is_string($error) && $error
+                        ? $error
+                        : Tools::displayError('An error occurred while uploading the image.');
+                    return false;
+                }
+
+                if ($this->afterImageUpload()) {
+                    return true;
+                }
+
                 return false;
             }
 

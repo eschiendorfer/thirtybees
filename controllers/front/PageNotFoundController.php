@@ -59,7 +59,7 @@ class PageNotFoundControllerCore extends FrontController
         $mainImageExtensions = implode('|', ImageManager::getAllowedImageExtensions(false, true));
 
         if ($urlPath && preg_match('/\.('.$mainImageExtensions.')$/i', $urlPath)) {
-            $requestUri = urldecode($requestUri);
+            $requestUri = urldecode((string)$urlPath);
             $requestUri = preg_replace('#^'.preg_quote(Context::getContext()->shop->getBaseURI(), '#').'#i', '/', $requestUri);
 
             $this->context->cookie->disallowWriting();
@@ -80,13 +80,19 @@ class PageNotFoundControllerCore extends FrontController
                 // As products have a sophisticated image system with folder structure
                 $subfolder = ($imageEntity['name'] == ImageEntity::ENTITY_TYPE_PRODUCTS) ? Image::getImgFolderStatic($idEntity) : '';
 
-                if ($imageType) {
+                if ($imageInfo['imageType'] !== '' && ! $imageType) {
+                    $sendPath = '';
+                    $sourcePath = null;
+                } elseif ($imageType) {
                     $highDpiDim = $highDpi ? '2x' : '';
                     $sendPath = $imageEntity['path'] . $subfolder . $idEntity . '-' . $imageType->name . $highDpiDim . '.' . $imageExtension;
                 } else {
                     $sendPath = $imageEntity['path'] . $subfolder . $idEntity . '.' . $imageExtension;
+                    $sourcePath = ImageManager::getSourceImage($imageEntity['path'] . $subfolder, $idEntity);
                 }
-                $sourcePath = ImageManager::getSourceImage($imageEntity['path'] . $subfolder, $idEntity);
+                if ($imageType) {
+                    $sourcePath = ImageManager::getSourceImage($imageEntity['path'] . $subfolder, $idEntity);
+                }
 
             } else {
                 // Check if source file is actually requested, but in a missing extension
@@ -212,6 +218,11 @@ class PageNotFoundControllerCore extends FrontController
         $extensions = implode('|', ImageManager::getAllowedImageExtensions());
         $imageEntitites = implode('|', array_keys(ImageEntity::getImageEntities()));
 
+        $patternImageInfo = $this->getImageInfoFromPublicUrlPattern($requestUri, $extensions);
+        if ($patternImageInfo) {
+            return $patternImageInfo;
+        }
+
         // try match image route: /entityType/id-imageType/name.ext
         // example: /products/100-home/candle.jpg
         //          /manufactures/5/manufacturer.jpg
@@ -257,6 +268,85 @@ class PageNotFoundControllerCore extends FrontController
     }
 
     /**
+     * Match custom public image URL patterns registered by image entities.
+     *
+     * @param string $requestUri
+     * @param string $extensions
+     *
+     * @return array|false
+     *
+     * @throws PrestaShopException
+     */
+    protected function getImageInfoFromPublicUrlPattern(string $requestUri, string $extensions)
+    {
+        $requestPath = ltrim($requestUri, '/');
+
+        foreach (ImageEntity::getImageEntities() as $imageEntity) {
+            $pattern = trim((string)($imageEntity['public_url_pattern'] ?? ''), '/');
+            if ($pattern === '' || !str_contains($pattern, '{id}')) {
+                continue;
+            }
+
+            $regex = $this->buildPublicUrlPatternRegex($pattern, $extensions);
+            if ($regex === '' || !preg_match($regex, $requestPath, $matches)) {
+                continue;
+            }
+
+            $imageType = (string)($matches['imageType'] ?? '');
+            if ($imageType === 'original') {
+                $imageType = '';
+            }
+
+            return [
+                'imageEntity' => $imageEntity,
+                'id' => (int)$matches['id'],
+                'imageType' => $imageType,
+                'name' => (string)($matches['name'] ?? $matches['rewrite'] ?? ''),
+                'extension' => $this->normalizeImageExtension((string)($matches['extension'] ?? pathinfo($requestPath, PATHINFO_EXTENSION))),
+                'highDpi' => !empty($matches['highDpi']),
+            ];
+        }
+
+        return false;
+    }
+
+    /**
+     * @param string $pattern
+     * @param string $extensions
+     *
+     * @return string
+     */
+    protected function buildPublicUrlPatternRegex(string $pattern, string $extensions): string
+    {
+        $placeholderRegex = [
+            '{entity}' => '(?P<imageEntity>[a-zA-Z0-9_ -]+)',
+            '{id}' => '(?P<id>[0-9]+)',
+            '{type}' => '(?P<imageType>[a-zA-Z0-9_ -]+?)',
+            '{rewrite}' => '(?P<rewrite>[^/]+)',
+            '{ext}' => '(?P<extension>'.$extensions.')',
+            '{high_dpi}' => '(?P<highDpi>2x)?',
+        ];
+
+        $regex = '';
+        $offset = 0;
+        if (!preg_match_all('/\{[a-z_]+\}/', $pattern, $matches, PREG_OFFSET_CAPTURE)) {
+            return '';
+        }
+
+        foreach ($matches[0] as $match) {
+            $placeholder = $match[0];
+            $position = (int)$match[1];
+            $regex .= preg_quote(substr($pattern, $offset, $position - $offset), '#');
+            $regex .= $placeholderRegex[$placeholder] ?? preg_quote($placeholder, '#');
+            $offset = $position + strlen($placeholder);
+        }
+
+        $regex .= preg_quote(substr($pattern, $offset), '#');
+
+        return '#^'.$regex.'$#iu';
+    }
+
+    /**
      * @param string $imageTypeName
      * @param array $imageTypes
      *
@@ -268,7 +358,10 @@ class PageNotFoundControllerCore extends FrontController
         if ($imageTypeName) {
             // find image type
             $formattedName = ImageType::getFormatedName($imageTypeName);
-            if (ImageType::typeAlreadyExists($formattedName)) {
+            $entityImageTypeNames = array_map(static function (array $imageType): string {
+                return (string)($imageType['name'] ?? '');
+            }, $imageTypes);
+            if ($formattedName && in_array($formattedName, $entityImageTypeNames, true) && ImageType::typeAlreadyExists($formattedName)) {
                 return ImageType::getInstanceByName($formattedName);
             }
         }

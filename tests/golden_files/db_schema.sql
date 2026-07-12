@@ -1080,6 +1080,9 @@ CREATE TABLE `PREFIX_image_entity` (
   `id_image_entity` int(11) unsigned NOT NULL AUTO_INCREMENT,
   `name` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `classname` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `source_max_width` int(10) unsigned DEFAULT '0',
+  `source_max_height` int(10) unsigned DEFAULT '0',
+  `public_url_pattern` varchar(255) DEFAULT '',
   PRIMARY KEY (`id_image_entity`),
   KEY `image_entity_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -492,13 +492,11 @@ class LinkCore
      * @param string $linkRewrite An image name for pretty/SEO-friendly URLs.
      *                            Currently, only (products and) categories
      *                            support such names.
-     * @param string $publicUrlPattern Optional public URL pattern for custom image entities.
-     *
      * @return string Full URL to the image.
      *
      * @throws PrestaShopException
      */
-    public static function getGenericImageLink($imageEntityName, $id, $imageType = null, $highDpi = false, $webp = null, $linkRewrite = '', $publicUrlPattern = '')
+    public static function getGenericImageLink($imageEntityName, $id, $imageType = null, $highDpi = false, $webp = null, $linkRewrite = '')
     {
         // Format imageType
         $imageTypeName = ImageType::getFormatedName($imageType);
@@ -513,7 +511,7 @@ class LinkCore
         // Get default image extension
         $imageExtension = ImageManager::getDefaultImageExtension();
 
-        $publicUrlPattern = trim((string)$publicUrlPattern);
+        $publicUrlPattern = static::getGenericImagePublicUrlPattern((string)$imageEntityName);
         if ($publicUrlPattern !== '') {
             $uriPath = __PS_BASE_URI__.static::buildGenericImagePatternPath($publicUrlPattern, $imageEntityName, $id, $imageTypeName, $linkRewrite, $imageExtension, $highDpi);
         } elseif ($rewritingEnabled || !isset(_TB_IMAGE_MAP_[$imageEntityName])) {
@@ -523,6 +521,81 @@ class LinkCore
         }
 
         return Tools::getShopProtocol().Tools::getMediaServer($uriPath).$uriPath;
+    }
+
+    /**
+     * Get image links for one image entity without loading each related ObjectModel.
+     *
+     * @param string $imageEntityName
+     * @param int[] $ids
+     * @param string|null $imageType
+     * @param bool $highDpi
+     * @param string[] $linkRewrites indexed by image id
+     *
+     * @return string[] indexed by image id
+     *
+     * @throws PrestaShopException
+     */
+    public static function getGenericImageLinks($imageEntityName, array $ids, $imageType = null, $highDpi = false, array $linkRewrites = [])
+    {
+        $links = [];
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static function ($id) {
+            return $id > 0;
+        })));
+
+        foreach ($ids as $id) {
+            $links[$id] = static::getGenericImageLink(
+                $imageEntityName,
+                $id,
+                $imageType,
+                $highDpi,
+                null,
+                (string)($linkRewrites[$id] ?? '')
+            );
+        }
+
+        return $links;
+    }
+
+    /**
+     * Get the configured admin preview image link for an image entity.
+     *
+     * @param string $imageEntityName
+     * @param int $id
+     * @param bool $highDpi
+     * @param string $linkRewrite
+     *
+     * @return string
+     *
+     * @throws PrestaShopException
+     */
+    public static function getGenericAdminImageLink($imageEntityName, $id, $highDpi = false, $linkRewrite = '')
+    {
+        $imageEntity = ImageEntity::getImageEntityInfo((string)$imageEntityName);
+        $imageType = is_array($imageEntity)
+            ? (string)($imageEntity['admin_preview_image_type'] ?? $imageEntity['adminPreviewImageType'] ?? '')
+            : '';
+
+        if ($imageType === '' && is_array($imageEntity) && !empty($imageEntity['imageTypes'][0]['name'])) {
+            $imageType = (string)$imageEntity['imageTypes'][0]['name'];
+        }
+
+        return static::getGenericImageLink($imageEntityName, $id, $imageType ?: null, $highDpi, null, $linkRewrite);
+    }
+
+    /**
+     * @param string $imageEntityName
+     *
+     * @return string
+     *
+     * @throws PrestaShopException
+     */
+    protected static function getGenericImagePublicUrlPattern($imageEntityName)
+    {
+        $imageEntity = ImageEntity::getImageEntityInfo((string)$imageEntityName);
+        return is_array($imageEntity)
+            ? trim((string)($imageEntity['public_url_pattern'] ?? ''))
+            : '';
     }
 
     /**

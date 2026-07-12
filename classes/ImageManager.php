@@ -763,6 +763,273 @@ class ImageManagerCore
     }
 
     /**
+     * Store the source image for an image entity and optionally regenerate its image types.
+     *
+     * Source limits are read from ImageEntity::getImageEntityInfo(). They are always applied as fit constraints:
+     * no crop, no stretch, no upscale.
+     *
+     * @param string $entityType
+     * @param int $idEntity
+     * @param string $sourceFile
+     * @param int|null $idImage Product image id. Required for product image entities.
+     * @param bool $generateImageTypes
+     * @param int $error
+     *
+     * @return bool
+     *
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    public static function saveSourceImageByEntity($entityType, $idEntity, $sourceFile, $idImage = null, $generateImageTypes = true, &$error = 0)
+    {
+        $imageEntity = ImageEntity::getImageEntityInfo((string)$entityType);
+        if (! $imageEntity) {
+            $error = static::ERROR_FILE_NOT_EXIST;
+            return false;
+        }
+
+        $idEntity = (int)$idEntity;
+        if ($idEntity <= 0 || !is_file($sourceFile)) {
+            $error = static::ERROR_FILE_NOT_EXIST;
+            return false;
+        }
+
+        $path = (string)$imageEntity['path'];
+        $filename = (string)$idEntity;
+        $idsImage = [];
+
+        if ($entityType === ImageEntity::ENTITY_TYPE_PRODUCTS) {
+            $idImage = (int)$idImage;
+            if ($idImage <= 0) {
+                $error = static::ERROR_FILE_NOT_EXIST;
+                return false;
+            }
+
+            $path .= Image::getImgFolderStatic($idImage);
+            $filename = (string)$idImage;
+            $idsImage = [$idImage];
+        }
+
+        if ($path === '' || !static::ensureImageDirectory($path)) {
+            $error = static::ERROR_FILE_NOT_EXIST;
+            return false;
+        }
+
+        if (!str_ends_with($path, '/')) {
+            $path .= '/';
+        }
+
+        $imageExtension = static::getDefaultImageExtension();
+        $targetFile = $path . $filename . '.' . $imageExtension;
+
+        $success = static::saveSourceImage(
+            $sourceFile,
+            $targetFile,
+            (int)($imageEntity['source_max_width'] ?? 0),
+            (int)($imageEntity['source_max_height'] ?? 0),
+            $imageExtension,
+            $error
+        );
+
+        if (! $success) {
+            return false;
+        }
+
+        static::cleanSourceImage($path, $filename);
+
+        if ($generateImageTypes) {
+            return static::generateImageTypesByEntity((string)$entityType, $idEntity, $idsImage);
+        }
+
+        return true;
+    }
+
+    /**
+     * Validate and store an uploaded image for an image entity.
+     *
+     * @param string $entityType
+     * @param int $idEntity
+     * @param array $file Upload $_FILES entry
+     * @param int|null $idImage Product image id. Required for product image entities.
+     * @param bool $generateImageTypes
+     * @param int $maxFileSize Maximum upload size in bytes
+     * @param string[]|null $allowedExtensions
+     * @param int|string $error
+     *
+     * @return bool
+     *
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    public static function uploadImageByEntity($entityType, $idEntity, array $file, $idImage = null, $generateImageTypes = true, $maxFileSize = 0, $allowedExtensions = null, &$error = 0)
+    {
+        $error = static::validateUpload($file, $maxFileSize, $allowedExtensions);
+        if ($error) {
+            return false;
+        }
+
+        $tmpName = tempnam(_PS_TMP_IMG_DIR_, 'PS');
+        if (! $tmpName) {
+            $error = static::ERROR_FILE_NOT_EXIST;
+            return false;
+        }
+
+        if (!move_uploaded_file($file['tmp_name'], $tmpName)) {
+            @unlink($tmpName);
+            $error = static::ERROR_FILE_NOT_EXIST;
+            return false;
+        }
+
+        try {
+            if (!static::checkImageMemoryLimit($tmpName)) {
+                $error = static::ERROR_MEMORY_LIMIT;
+                return false;
+            }
+
+            return static::saveSourceImageByEntity($entityType, $idEntity, $tmpName, $idImage, $generateImageTypes, $error);
+        } finally {
+            if (is_file($tmpName)) {
+                @unlink($tmpName);
+            }
+        }
+    }
+
+    /**
+     * Get the physical image directory for an image entity.
+     *
+     * For product images, $id refers to the image id because product images are stored in nested image-id folders.
+     * For all other entities, the base entity directory is returned.
+     *
+     * @param string $entityType
+     * @param int|null $id
+     *
+     * @return string
+     *
+     * @throws PrestaShopException
+     */
+    public static function getImageDirectoryByEntity($entityType, $id = null)
+    {
+        $imageEntity = ImageEntity::getImageEntityInfo((string)$entityType);
+        if (! $imageEntity || empty($imageEntity['path'])) {
+            return '';
+        }
+
+        $path = rtrim((string)$imageEntity['path'], '/\\') . DIRECTORY_SEPARATOR;
+        if ((string)$entityType === ImageEntity::ENTITY_TYPE_PRODUCTS && (int)$id > 0) {
+            $path .= Image::getImgFolderStatic((int)$id);
+        }
+
+        return $path;
+    }
+
+    /**
+     * Get the physical image file path for an image entity.
+     *
+     * The $id parameter is the physical image id. For normal ObjectModel image entities this is the object id.
+     * For product images this is the product image id.
+     *
+     * @param string $entityType
+     * @param int $id
+     * @param string|null $imageType
+     * @param bool $highDpi
+     * @param string|null $imageExtension
+     *
+     * @return string
+     *
+     * @throws PrestaShopException
+     */
+    public static function getImagePathByEntity($entityType, $id, $imageType = null, $highDpi = false, $imageExtension = null)
+    {
+        $id = (int)$id;
+        if ($id <= 0) {
+            return '';
+        }
+
+        $directory = static::getImageDirectoryByEntity($entityType, $id);
+        if ($directory === '') {
+            return '';
+        }
+
+        return $directory . static::getImageFileNameByEntity($id, $imageType, $highDpi, $imageExtension);
+    }
+
+    /**
+     * Find an existing image file for an entity.
+     *
+     * @param string $entityType
+     * @param int $id
+     * @param string|null $imageType
+     * @param bool $highDpi
+     * @param string[]|null $imageExtensions
+     *
+     * @return string
+     *
+     * @throws PrestaShopException
+     */
+    public static function findImageByEntity($entityType, $id, $imageType = null, $highDpi = false, ?array $imageExtensions = null)
+    {
+        $id = (int)$id;
+        if ($id <= 0) {
+            return '';
+        }
+
+        $imageExtensions = $imageExtensions ?: array_values(array_unique(array_merge(
+            [static::getDefaultImageExtension()],
+            array_map('strval', static::getAllowedImageExtensions(false, true))
+        )));
+
+        foreach ($imageExtensions as $imageExtension) {
+            $imageExtension = strtolower(trim((string)$imageExtension));
+            if ($imageExtension === '') {
+                continue;
+            }
+
+            $path = static::getImagePathByEntity($entityType, $id, $imageType, $highDpi, $imageExtension);
+            if ($path !== '' && is_file($path)) {
+                return $path;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param string $entityType
+     * @param int $id
+     * @param string|null $imageType
+     * @param bool $highDpi
+     * @param string|null $imageExtension
+     *
+     * @return bool
+     *
+     * @throws PrestaShopException
+     */
+    public static function imageExistsByEntity($entityType, $id, $imageType = null, $highDpi = false, $imageExtension = null)
+    {
+        $path = static::getImagePathByEntity($entityType, $id, $imageType, $highDpi, $imageExtension);
+        return $path !== '' && is_file($path);
+    }
+
+    /**
+     * @param int $id
+     * @param string|null $imageType
+     * @param bool $highDpi
+     * @param string|null $imageExtension
+     *
+     * @return string
+     *
+     * @throws PrestaShopException
+     */
+    protected static function getImageFileNameByEntity($id, $imageType = null, $highDpi = false, $imageExtension = null)
+    {
+        $imageExtension = $imageExtension ?: static::getDefaultImageExtension();
+        $imageTypeName = ImageType::getFormatedName($imageType);
+        $suffix = $imageTypeName ? '-' . $imageTypeName . ($highDpi ? '2x' : '') : ($highDpi ? '2x' : '');
+
+        return (int)$id . $suffix . '.' . $imageExtension;
+    }
+
+    /**
      * Regenerate images for one entity
      *
      * @param string $entityType
@@ -781,7 +1048,7 @@ class ImageManagerCore
 
         $imageTypes = $imageEntity['imageTypes'];
         if (! $imageTypes) {
-            return false;
+            return true;
         }
 
         // Get all source image paths, that are related to this entity
@@ -1560,6 +1827,241 @@ class ImageManagerCore
             }
 
         }
+    }
+
+    /**
+     * Save a source image in the configured target format, applying optional fit constraints.
+     *
+     * @param string $sourceFile
+     * @param string $targetFile
+     * @param int $maxWidth
+     * @param int $maxHeight
+     * @param string $imageExtension
+     * @param int $error
+     *
+     * @return bool
+     *
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    protected static function saveSourceImage($sourceFile, $targetFile, $maxWidth, $maxHeight, $imageExtension, &$error = 0)
+    {
+        $preparedSource = static::createOrientationNormalizedTemporarySource($sourceFile, $imageExtension, $error);
+        if (! $preparedSource) {
+            return false;
+        }
+
+        try {
+            $maxWidth = max(0, (int)$maxWidth);
+            $maxHeight = max(0, (int)$maxHeight);
+
+            if ($maxWidth > 0 || $maxHeight > 0) {
+                return static::resizeByMode(
+                    $preparedSource,
+                    $targetFile,
+                    $maxWidth,
+                    $maxHeight,
+                    $imageExtension,
+                    ImageType::RESIZE_MODE_FIT,
+                    $error
+                );
+            }
+
+            $targetWidth = null;
+            $targetHeight = null;
+            $sourceWidth = null;
+            $sourceHeight = null;
+
+            return static::resize(
+                $preparedSource,
+                $targetFile,
+                null,
+                null,
+                $imageExtension,
+                false,
+                $error,
+                $targetWidth,
+                $targetHeight,
+                null,
+                $sourceWidth,
+                $sourceHeight
+            );
+        } finally {
+            if ($preparedSource !== $sourceFile && is_file($preparedSource)) {
+                @unlink($preparedSource);
+            }
+        }
+    }
+
+    /**
+     * @param string $sourceFile
+     * @param string $imageExtension
+     * @param int $error
+     *
+     * @return string|false
+     *
+     * @throws PrestaShopException
+     */
+    protected static function createOrientationNormalizedTemporarySource($sourceFile, $imageExtension, &$error = 0)
+    {
+        $info = @getimagesize($sourceFile);
+        if (empty($info[0]) || empty($info[1]) || empty($info[2])) {
+            $error = static::ERROR_FILE_NOT_EXIST;
+            return false;
+        }
+
+        $orientation = static::getImageExifOrientation($sourceFile, (int)$info[2]);
+        if ($orientation <= 1) {
+            return $sourceFile;
+        }
+
+        if (!static::checkImageMemoryLimit($sourceFile)) {
+            $error = static::ERROR_MEMORY_LIMIT;
+            return false;
+        }
+
+        $resource = static::create((int)$info[2], $sourceFile);
+        if (! $resource) {
+            $error = static::ERROR_FILE_NOT_EXIST;
+            return false;
+        }
+
+        $resource = static::applyGdOrientation($resource, $orientation);
+        $temporaryPath = static::buildTemporaryImagePath($imageExtension);
+        if (! $temporaryPath) {
+            @imagedestroy($resource);
+            $error = static::ERROR_FILE_NOT_EXIST;
+            return false;
+        }
+
+        if (!static::write($imageExtension, $resource, $temporaryPath)) {
+            @unlink($temporaryPath);
+            $error = static::ERROR_FILE_NOT_EXIST;
+            return false;
+        }
+
+        return $temporaryPath;
+    }
+
+    /**
+     * @param string $sourceFile
+     * @param int $imageType
+     *
+     * @return int
+     */
+    protected static function getImageExifOrientation($sourceFile, $imageType)
+    {
+        if ($imageType !== IMAGETYPE_JPEG || !function_exists('exif_read_data')) {
+            return 1;
+        }
+
+        $exif = @exif_read_data($sourceFile);
+        if (!is_array($exif) || empty($exif['Orientation'])) {
+            return 1;
+        }
+
+        return max(1, min(8, (int)$exif['Orientation']));
+    }
+
+    /**
+     * @param resource $resource
+     * @param int $orientation
+     *
+     * @return resource
+     */
+    protected static function applyGdOrientation($resource, $orientation)
+    {
+        switch ((int)$orientation) {
+            case 2:
+                imageflip($resource, IMG_FLIP_HORIZONTAL);
+                return $resource;
+
+            case 3:
+                return static::rotateGdImage($resource, 180);
+
+            case 4:
+                imageflip($resource, IMG_FLIP_VERTICAL);
+                return $resource;
+
+            case 5:
+                imageflip($resource, IMG_FLIP_VERTICAL);
+                return static::rotateGdImage($resource, -90);
+
+            case 6:
+                return static::rotateGdImage($resource, -90);
+
+            case 7:
+                imageflip($resource, IMG_FLIP_HORIZONTAL);
+                return static::rotateGdImage($resource, -90);
+
+            case 8:
+                return static::rotateGdImage($resource, 90);
+
+            default:
+                return $resource;
+        }
+    }
+
+    /**
+     * @param resource $resource
+     * @param int $angle
+     *
+     * @return resource
+     */
+    protected static function rotateGdImage($resource, $angle)
+    {
+        $rotated = imagerotate($resource, $angle, 0);
+        if ($rotated) {
+            @imagedestroy($resource);
+            return $rotated;
+        }
+
+        return $resource;
+    }
+
+    /**
+     * @param string $imageExtension
+     *
+     * @return string|false
+     */
+    protected static function buildTemporaryImagePath($imageExtension)
+    {
+        $directory = defined('_PS_TMP_IMG_DIR_') && is_dir(_PS_TMP_IMG_DIR_)
+            ? _PS_TMP_IMG_DIR_
+            : sys_get_temp_dir();
+
+        $temporaryPath = tempnam($directory, 'img_src_');
+        if (! $temporaryPath) {
+            return false;
+        }
+
+        $targetPath = $temporaryPath . '.' . $imageExtension;
+        @unlink($temporaryPath);
+
+        return $targetPath;
+    }
+
+    /**
+     * @param string $directory
+     *
+     * @return bool
+     */
+    protected static function ensureImageDirectory($directory)
+    {
+        $directory = rtrim((string)$directory, '/\\') . DIRECTORY_SEPARATOR;
+
+        if (is_dir($directory)) {
+            return true;
+        }
+
+        $success = @mkdir($directory, 0775, true);
+        $chmod = @chmod($directory, 0775);
+
+        if (($success || $chmod) && !file_exists($directory . 'index.php') && file_exists(_PS_IMG_DIR_ . 'index.php')) {
+            @copy(_PS_IMG_DIR_ . 'index.php', $directory . 'index.php');
+        }
+
+        return is_dir($directory);
     }
 
     /**

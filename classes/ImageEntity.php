@@ -64,6 +64,21 @@ class ImageEntityCore extends ObjectModel
     public $display_name;
 
     /**
+     * @var int Maximum source image width. Zero means unlimited.
+     */
+    public $source_max_width;
+
+    /**
+     * @var int Maximum source image height. Zero means unlimited.
+     */
+    public $source_max_height;
+
+    /**
+     * @var string Public URL pattern for this image entity. Empty means core default.
+     */
+    public $public_url_pattern;
+
+    /**
      * @var array Object model definition
      */
     public static $definition = [
@@ -71,11 +86,14 @@ class ImageEntityCore extends ObjectModel
         'primary' => 'id_image_entity',
         'multilang' => true,
         'fields'  => [
-            'name'          => ['type' => self::TYPE_STRING, 'validate' => 'isImageTypeName', 'required' => true, 'size' => 64],
-            'classname'     => ['type' => self::TYPE_STRING, 'required' => true, 'size' => 64],
+            'name'              => ['type' => self::TYPE_STRING, 'validate' => 'isImageTypeName', 'required' => true, 'size' => 64],
+            'classname'         => ['type' => self::TYPE_STRING, 'required' => true, 'size' => 64],
+            'source_max_width'  => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedInt', 'dbType' => 'int(10) unsigned', 'dbDefault' => '0'],
+            'source_max_height' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedInt', 'dbType' => 'int(10) unsigned', 'dbDefault' => '0'],
+            'public_url_pattern' => ['type' => self::TYPE_STRING, 'size' => 255, 'dbType' => 'varchar(255)', 'dbDefault' => ''],
 
             /* Lang fields */
-            'display_name'  => ['type' => self::TYPE_STRING, 'required' => true, 'size' => 128, 'lang' => true],
+            'display_name'      => ['type' => self::TYPE_STRING, 'required' => true, 'size' => 128, 'lang' => true],
         ],
         'keys' => [
             'image_entity' => [
@@ -197,6 +215,9 @@ class ImageEntityCore extends ObjectModel
             $imageEntityObj = new ImageEntity($imageEntityId);
             $imageEntityObj->name = $imageEntityName;
             $imageEntityObj->classname = $imageEntity['classname'] ?? $classname;
+            $imageEntityObj->source_max_width = max(0, (int)($imageEntity['sourceMaxWidth'] ?? 0));
+            $imageEntityObj->source_max_height = max(0, (int)($imageEntity['sourceMaxHeight'] ?? 0));
+            $imageEntityObj->public_url_pattern = trim((string)($imageEntity['publicUrlPattern'] ?? $imageEntity['public_url_pattern'] ?? ''));
             $displayName = [];
             foreach (Language::getLanguages(false, false, true) as $langId) {
                 if (isset($imageEntityObj->display_name[$langId]) && $imageEntityObj->display_name[$langId]) {
@@ -214,18 +235,34 @@ class ImageEntityCore extends ObjectModel
 
                     $imageTypeNameFormated = ImageType::getFormatedName($imageType['name']);
                     $imageTypeObj = ImageType::getInstanceByName($imageTypeNameFormated);
+                    $width = (int)($imageType['width'] ?? 0);
+                    $height = (int)($imageType['height'] ?? 0);
                     $resizeMode = ImageType::normalizeResizeMode($imageType['resize_mode'] ?? null);
 
                     // Adding missing image types
                     if (!$imageTypeObj->id) {
                         $imageTypeObj->name = $imageType['name'];
-                        $imageTypeObj->width = (int)$imageType['width'];
-                        $imageTypeObj->height = (int)$imageType['height'];
+                        $imageTypeObj->width = $width;
+                        $imageTypeObj->height = $height;
                         $imageTypeObj->resize_mode = $resizeMode;
                         $imageTypeObj->add();
-                    } elseif (ImageType::normalizeResizeMode($imageTypeObj->resize_mode ?? null) !== $resizeMode) {
-                        $imageTypeObj->resize_mode = $resizeMode;
-                        $imageTypeObj->update();
+                    } else {
+                        $needsUpdate = false;
+                        if ((int)$imageTypeObj->width !== $width) {
+                            $imageTypeObj->width = $width;
+                            $needsUpdate = true;
+                        }
+                        if ((int)$imageTypeObj->height !== $height) {
+                            $imageTypeObj->height = $height;
+                            $needsUpdate = true;
+                        }
+                        if (ImageType::normalizeResizeMode($imageTypeObj->resize_mode ?? null) !== $resizeMode) {
+                            $imageTypeObj->resize_mode = $resizeMode;
+                            $needsUpdate = true;
+                        }
+                        if ($needsUpdate) {
+                            $imageTypeObj->update();
+                        }
                     }
 
                     // Link imageType to imageEntity
@@ -346,6 +383,23 @@ class ImageEntityCore extends ObjectModel
                     // Get data from object model $definition
                     $className = $res['classname'];
                     $definition = ObjectModel::getDefinition($className);
+                    $sourceMaxWidth = (int)($res['source_max_width'] ?? 0);
+                    $sourceMaxHeight = (int)($res['source_max_height'] ?? 0);
+                    if ($sourceMaxWidth <= 0) {
+                        $sourceMaxWidth = max(0, (int)($definition['images'][$name]['sourceMaxWidth'] ?? 0));
+                    }
+                    if ($sourceMaxHeight <= 0) {
+                        $sourceMaxHeight = max(0, (int)($definition['images'][$name]['sourceMaxHeight'] ?? 0));
+                    }
+                    $publicUrlPattern = trim((string)($res['public_url_pattern'] ?? ''));
+                    if ($publicUrlPattern === '') {
+                        $publicUrlPattern = trim((string)($definition['images'][$name]['publicUrlPattern'] ?? ''));
+                    }
+                    $adminPreviewImageType = trim((string)(
+                        $definition['images'][$name]['adminPreviewImageType']
+                        ?? $definition['images'][$name]['admin_preview_image_type']
+                        ?? ''
+                    ));
 
                     $imageEntities[$name] = [
                         'table' => $definition['table'],
@@ -355,6 +409,14 @@ class ImageEntityCore extends ObjectModel
                         'display_name' => $res['display_name'] ? $res['display_name'] : ucfirst($name),
                         'classname' => $className,
                         'id_image_entity' => (int)$res['id_image_entity'],
+                        'source_max_width' => $sourceMaxWidth,
+                        'source_max_height' => $sourceMaxHeight,
+                        'sourceMaxWidth' => $sourceMaxWidth,
+                        'sourceMaxHeight' => $sourceMaxHeight,
+                        'public_url_pattern' => $publicUrlPattern,
+                        'publicUrlPattern' => $publicUrlPattern,
+                        'admin_preview_image_type' => $adminPreviewImageType,
+                        'adminPreviewImageType' => $adminPreviewImageType,
                         'imageTypes' => [],
                     ];
                 }
