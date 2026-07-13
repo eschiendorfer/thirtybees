@@ -358,11 +358,12 @@ class PageNotFoundControllerCore extends FrontController
         if ($imageTypeName) {
             // find image type
             $formattedName = ImageType::getFormatedName($imageTypeName);
-            $entityImageTypeNames = array_map(static function (array $imageType): string {
-                return (string)($imageType['name'] ?? '');
-            }, $imageTypes);
-            if ($formattedName && in_array($formattedName, $entityImageTypeNames, true) && ImageType::typeAlreadyExists($formattedName)) {
-                return ImageType::getInstanceByName($formattedName);
+            foreach ($imageTypes as $imageType) {
+                $name = ImageType::getFormatedName((string)($imageType['name'] ?? ''));
+                $rewrite = ImageType::getFormatedName((string)($imageType['rewrite'] ?? ''));
+                if ($formattedName && ($formattedName === $name || $formattedName === $rewrite) && ImageType::typeAlreadyExists($name)) {
+                    return ImageType::getInstanceByName($name);
+                }
             }
         }
         return null;

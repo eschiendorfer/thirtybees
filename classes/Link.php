@@ -511,9 +511,13 @@ class LinkCore
         // Get default image extension
         $imageExtension = ImageManager::getDefaultImageExtension();
 
-        $publicUrlPattern = static::getGenericImagePublicUrlPattern((string)$imageEntityName);
+        $imageEntityName = (string)$imageEntityName;
+        $publicUrlPattern = static::getGenericImagePublicUrlPattern($imageEntityName);
         if ($publicUrlPattern !== '') {
-            $uriPath = __PS_BASE_URI__.static::buildGenericImagePatternPath($publicUrlPattern, $imageEntityName, $id, $imageTypeName, $linkRewrite, $imageExtension, $highDpi);
+            $publicImageTypeName = static::getGenericImagePublicTypeName($imageEntityName, $imageTypeName);
+            $uriPath = __PS_BASE_URI__.static::buildGenericImagePatternPath($publicUrlPattern, $imageEntityName, $id, $publicImageTypeName, $linkRewrite, $imageExtension, $highDpi);
+        } elseif (!isset(_TB_IMAGE_MAP_[$imageEntityName]) && ($directImagePath = static::buildGenericImageDirectPath($imageEntityName, $id, $imageTypeName, $imageExtension, $highDpi)) !== '') {
+            $uriPath = __PS_BASE_URI__.$directImagePath;
         } elseif ($rewritingEnabled || !isset(_TB_IMAGE_MAP_[$imageEntityName])) {
             $uriPath = __PS_BASE_URI__.$imageEntityName.'/'.$id.$imageType.'/'.$linkRewrite.$highDpi.'.'.$imageExtension;
         } else {
@@ -596,6 +600,63 @@ class LinkCore
         return is_array($imageEntity)
             ? trim((string)($imageEntity['public_url_pattern'] ?? ''))
             : '';
+    }
+
+    /**
+     * @param string $imageEntityName
+     * @param string $imageTypeName
+     *
+     * @return string
+     *
+     * @throws PrestaShopException
+     */
+    protected static function getGenericImagePublicTypeName($imageEntityName, $imageTypeName)
+    {
+        $imageTypeName = ImageType::getFormatedName($imageTypeName);
+        if ($imageTypeName === '') {
+            return '';
+        }
+
+        $imageEntity = ImageEntity::getImageEntityInfo((string)$imageEntityName);
+        if (!is_array($imageEntity) || empty($imageEntity['imageTypesByName'][$imageTypeName])) {
+            return $imageTypeName;
+        }
+
+        $rewrite = trim((string)($imageEntity['imageTypesByName'][$imageTypeName]['rewrite'] ?? ''));
+        return $rewrite !== '' ? $rewrite : $imageTypeName;
+    }
+
+    /**
+     * Build direct /img/... URLs for custom image entities without a public URL pattern.
+     *
+     * @param string $imageEntityName
+     * @param int|string $id
+     * @param string $imageTypeName
+     * @param string $imageExtension
+     * @param string $highDpi
+     *
+     * @return string
+     *
+     * @throws PrestaShopException
+     */
+    protected static function buildGenericImageDirectPath($imageEntityName, $id, $imageTypeName, $imageExtension, $highDpi)
+    {
+        $imageEntity = ImageEntity::getImageEntityInfo((string)$imageEntityName);
+        if (!is_array($imageEntity) || empty($imageEntity['path'])) {
+            return '';
+        }
+
+        $imageRoot = rtrim(str_replace('\\', '/', _PS_IMG_DIR_), '/') . '/';
+        $entityPath = rtrim(str_replace('\\', '/', (string)$imageEntity['path']), '/') . '/';
+        if (strpos($entityPath, $imageRoot) !== 0) {
+            return '';
+        }
+
+        $relativePath = substr($entityPath, strlen($imageRoot));
+        $imageTypeName = ImageType::getFormatedName($imageTypeName);
+        $suffix = $imageTypeName !== '' ? '-' . $imageTypeName . $highDpi : $highDpi;
+
+        return 'img/' . $relativePath . (int)$id . $suffix . '.' . $imageExtension;
     }
 
     /**

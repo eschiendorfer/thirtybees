@@ -276,6 +276,7 @@ class ImageEntityCore extends ObjectModel
         static::rebuildBasedOnOldTypes();
 
         ImageType::cleanCache();
+        Cache::clean('ImageEntity::getImageEntities');
         Configuration::updateGlobalValue('TB_IMAGE_ENTITY_REBUILD_LAST', date('Y-m-d H:i:s'));
     }
 
@@ -358,8 +359,8 @@ class ImageEntityCore extends ObjectModel
      */
     public static function getImageEntities(): array
     {
-        $langId = (int)Context::getContext()->language->id;
-        $cacheKey = 'ImageEntity::getImageEntities_' . $langId;
+        $langId = (int)Configuration::get('PS_LANG_DEFAULT');
+        $cacheKey = 'ImageEntity::getImageEntities';
         if (! Cache::isStored($cacheKey)) {
             $query = new DbQuery();
             $query->select('ie.*');
@@ -391,20 +392,22 @@ class ImageEntityCore extends ObjectModel
                     if ($sourceMaxHeight <= 0) {
                         $sourceMaxHeight = max(0, (int)($definition['images'][$name]['sourceMaxHeight'] ?? 0));
                     }
-                    $publicUrlPattern = trim((string)($res['public_url_pattern'] ?? ''));
-                    if ($publicUrlPattern === '') {
-                        $publicUrlPattern = trim((string)($definition['images'][$name]['publicUrlPattern'] ?? ''));
-                    }
+                    $imageDefinition = $definition['images'][$name] ?? [];
+                    $publicUrlPattern = trim((string)(
+                        $imageDefinition['publicUrlPattern']
+                        ?? $imageDefinition['public_url_pattern']
+                        ?? ''
+                    ));
                     $adminPreviewImageType = trim((string)(
-                        $definition['images'][$name]['adminPreviewImageType']
-                        ?? $definition['images'][$name]['admin_preview_image_type']
+                        $imageDefinition['adminPreviewImageType']
+                        ?? $imageDefinition['admin_preview_image_type']
                         ?? ''
                     ));
 
                     $imageEntities[$name] = [
                         'table' => $definition['table'],
                         'primary' => $definition['primary'],
-                        'path' => $definition['images'][$name]['path'] ?? '',
+                        'path' => $imageDefinition['path'] ?? '',
                         'name' => $name,
                         'display_name' => $res['display_name'] ? $res['display_name'] : ucfirst($name),
                         'classname' => $className,
@@ -418,19 +421,33 @@ class ImageEntityCore extends ObjectModel
                         'admin_preview_image_type' => $adminPreviewImageType,
                         'adminPreviewImageType' => $adminPreviewImageType,
                         'imageTypes' => [],
+                        'imageTypesByName' => [],
+                        'imageTypesByRewrite' => [],
                     ];
                 }
 
                 $imageTypeId = (int)$res['id_image_type'];
                 if ($imageTypeId) {
-                    $imageEntities[$name]['imageTypes'][] = [
+                    $imageTypeName = (string)$res['image_type'];
+                    $imageTypeDefinition = static::getImageTypeDefinition($definition['images'][$name]['imageTypes'] ?? [], $imageTypeName);
+                    $imageTypeRewrite = trim((string)($imageTypeDefinition['rewrite'] ?? ''));
+                    if ($imageTypeRewrite === '') {
+                        $imageTypeRewrite = $imageTypeName;
+                    }
+
+                    $imageTypeInfo = [
                         'id_image_type' => $imageTypeId,
-                        'name' => $res['image_type'],
+                        'name' => $imageTypeName,
+                        'rewrite' => $imageTypeRewrite,
                         'width' => (int)$res['width'],
                         'height' => (int)$res['height'],
                         'resize_mode' => ImageType::normalizeResizeMode($res['resize_mode'] ?? null),
                         'id_image_type_parent' => (int)$res['id_image_type_parent'],
                     ];
+
+                    $imageEntities[$name]['imageTypes'][] = $imageTypeInfo;
+                    $imageEntities[$name]['imageTypesByName'][$imageTypeName] = $imageTypeInfo;
+                    $imageEntities[$name]['imageTypesByRewrite'][$imageTypeRewrite] = $imageTypeInfo;
                 }
             }
 
@@ -439,6 +456,24 @@ class ImageEntityCore extends ObjectModel
         }
 
         return Cache::retrieve($cacheKey);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $imageTypes
+     * @param string $imageTypeName
+     *
+     * @return array<string, mixed>
+     */
+    protected static function getImageTypeDefinition(array $imageTypes, string $imageTypeName): array
+    {
+        $imageTypeName = ImageType::getFormatedName($imageTypeName);
+        foreach ($imageTypes as $imageType) {
+            if (ImageType::getFormatedName((string)($imageType['name'] ?? '')) === $imageTypeName) {
+                return $imageType;
+            }
+        }
+
+        return [];
     }
 
     /**

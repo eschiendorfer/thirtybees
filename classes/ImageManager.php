@@ -1011,6 +1011,66 @@ class ImageManagerCore
     }
 
     /**
+     * Delete the source image and all generated image types for one image entity.
+     *
+     * @param string $entityType
+     * @param int $id Physical image id. For normal ObjectModel image entities this is the object id.
+     * @param bool $deleteSource
+     *
+     * @return bool
+     *
+     * @throws PrestaShopException
+     */
+    public static function deleteImagesByEntity($entityType, $id, $deleteSource = true)
+    {
+        $id = (int)$id;
+        if ($id <= 0) {
+            return true;
+        }
+
+        $imageEntity = ImageEntity::getImageEntityInfo((string)$entityType);
+        if (!is_array($imageEntity)) {
+            return true;
+        }
+
+        $imageTypes = $deleteSource ? [null] : [];
+        foreach ((array)($imageEntity['imageTypes'] ?? []) as $imageType) {
+            if (!empty($imageType['name'])) {
+                $imageTypes[] = (string)$imageType['name'];
+            }
+        }
+
+        $imageTypes = array_values(array_unique($imageTypes));
+        $extensions = array_values(array_unique(array_merge(
+            [static::getDefaultImageExtension()],
+            array_map('strval', static::getAllowedImageExtensions(true, true))
+        )));
+
+        $success = true;
+        foreach ($extensions as $extension) {
+            $extension = strtolower(trim((string)$extension));
+            if ($extension === '') {
+                continue;
+            }
+
+            foreach ($imageTypes as $imageType) {
+                foreach ([false, true] as $highDpi) {
+                    if ($imageType === null && $highDpi) {
+                        continue;
+                    }
+
+                    $path = static::getImagePathByEntity($entityType, $id, $imageType, $highDpi, $extension);
+                    if ($path !== '' && is_file($path)) {
+                        $success = @unlink($path) && $success;
+                    }
+                }
+            }
+        }
+
+        return $success;
+    }
+
+    /**
      * @param int $id
      * @param string|null $imageType
      * @param bool $highDpi

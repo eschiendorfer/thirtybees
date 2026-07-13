@@ -5129,6 +5129,30 @@ class AdminControllerCore extends Controller
     }
 
     /**
+     * Render a standard HelperForm image preview for an ObjectModel image entity.
+     *
+     * @param string $imageEntityName
+     * @param int $id
+     * @param int $maxHeight
+     * @param bool $highDpi
+     * @param string $linkRewrite
+     *
+     * @return string
+     *
+     * @throws PrestaShopException
+     */
+    public static function renderGenericImagePreview($imageEntityName, $id, $maxHeight = 120, $highDpi = false, $linkRewrite = '')
+    {
+        $id = (int)$id;
+        if ($id <= 0) {
+            return '';
+        }
+
+        $url = Link::getGenericAdminImageLink((string)$imageEntityName, $id, (bool)$highDpi, (string)$linkRewrite);
+        return '<img src="' . Tools::safeOutput($url) . '" alt="" class="imgm img-thumbnail" style="max-height:' . (int)$maxHeight . 'px;" />';
+    }
+
+    /**
      * @param string $name
      *
      * @return array
