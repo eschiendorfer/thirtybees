@@ -280,14 +280,13 @@ class AdminImagesControllerCore extends AdminController
                         'query' => [
                             ['id' => ImageType::RESIZE_MODE_CONTAIN, 'name' => $this->l('Contain - fit into fixed box with padding')],
                             ['id' => ImageType::RESIZE_MODE_FIT, 'name' => $this->l('Fit - preserve ratio within maximum size')],
-                            ['id' => ImageType::RESIZE_MODE_SCALE, 'name' => $this->l('Scale - preserve ratio at target size')],
                             ['id' => ImageType::RESIZE_MODE_COVER, 'name' => $this->l('Cover - fill fixed box and crop')],
                             ['id' => ImageType::RESIZE_MODE_STRETCH, 'name' => $this->l('Stretch - force fixed size')],
                         ],
                         'id' => 'id',
                         'name' => 'name',
                     ],
-                    'hint' => $this->l('Fit and scale modes allow width or height to be 0. A 0 value means that side is not limited. Scale may enlarge images; fit never does. Other modes require both dimensions.'),
+                    'hint' => $this->l('Fit mode allows width or height to be 0. A 0 value means that side is not limited. Other modes require both dimensions.'),
                 ],
             ],
             'submit' => [

@@ -446,18 +446,12 @@ class ImageManagerCore
         $dstWidth = (int)$dstWidth;
         $dstHeight = (int)$dstHeight;
 
-        if (in_array($resizeMode, [ImageType::RESIZE_MODE_FIT, ImageType::RESIZE_MODE_SCALE], true)) {
+        if ($resizeMode === ImageType::RESIZE_MODE_FIT) {
             if ($dstWidth <= 0 && $dstHeight <= 0) {
                 return !($error = static::ERROR_FILE_WIDTH);
             }
 
-            [$dstWidth, $dstHeight] = static::getFitDimensions(
-                $srcWidth,
-                $srcHeight,
-                $dstWidth,
-                $dstHeight,
-                $resizeMode === ImageType::RESIZE_MODE_SCALE
-            );
+            [$dstWidth, $dstHeight] = static::getFitDimensions($srcWidth, $srcHeight, $dstWidth, $dstHeight);
             return static::resampleImage($srcFile, $dstFile, $type, 0, 0, $srcWidth, $srcHeight, $dstWidth, $dstHeight, $imageExtension, $error, $tgtWidth, $tgtHeight);
         }
 
@@ -475,9 +469,9 @@ class ImageManagerCore
     /**
      * @return array{0:int,1:int}
      */
-    protected static function getFitDimensions($srcWidth, $srcHeight, $maxWidth, $maxHeight, $allowUpscale = false)
+    protected static function getFitDimensions($srcWidth, $srcHeight, $maxWidth, $maxHeight)
     {
-        $scale = $allowUpscale ? PHP_FLOAT_MAX : 1;
+        $scale = 1;
 
         if ((int)$maxWidth > 0) {
             $scale = min($scale, (int)$maxWidth / $srcWidth);
