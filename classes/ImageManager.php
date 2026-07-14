@@ -794,7 +794,7 @@ class ImageManagerCore
             return false;
         }
 
-        $path = (string)$imageEntity['path'];
+        $physicalImageId = $idEntity;
         $filename = (string)$idEntity;
         $idsImage = [];
 
@@ -805,19 +805,19 @@ class ImageManagerCore
                 return false;
             }
 
-            $path .= Image::getImgFolderStatic($idImage);
+            $physicalImageId = $idImage;
             $filename = (string)$idImage;
             $idsImage = [$idImage];
         }
+
+        $path = static::getImageDirectoryByEntity((string)$entityType, $physicalImageId);
 
         if ($path === '' || !static::ensureImageDirectory($path)) {
             $error = static::ERROR_FILE_NOT_EXIST;
             return false;
         }
 
-        if (!str_ends_with($path, '/')) {
-            $path .= '/';
-        }
+        $path = rtrim($path, '/\\') . DIRECTORY_SEPARATOR;
 
         $imageExtension = static::getDefaultImageExtension();
         $targetFile = $path . $filename . '.' . $imageExtension;
@@ -897,8 +897,8 @@ class ImageManagerCore
     /**
      * Get the physical image directory for an image entity.
      *
-     * For product images, $id refers to the image id because product images are stored in nested image-id folders.
-     * For all other entities, the base entity directory is returned.
+     * For product images, $id refers to the image id because product images use their existing nested layout.
+     * Other entities return either their base directory or an id-sharded directory, depending on their definition.
      *
      * @param string $entityType
      * @param int|null $id
@@ -917,9 +917,28 @@ class ImageManagerCore
         $path = rtrim((string)$imageEntity['path'], '/\\') . DIRECTORY_SEPARATOR;
         if ((string)$entityType === ImageEntity::ENTITY_TYPE_PRODUCTS && (int)$id > 0) {
             $path .= Image::getImgFolderStatic((int)$id);
+        } elseif ((int)$id > 0 && ImageEntity::normalizeStorageLayout($imageEntity['storage_layout'] ?? null) === ImageEntity::STORAGE_LAYOUT_ID_SHARDED) {
+            $path .= static::getIdShardedPath((int)$id);
         }
 
         return $path;
+    }
+
+    /**
+     * Build a deterministic directory path from the digits of an image id.
+     *
+     * @param int $id
+     *
+     * @return string
+     */
+    public static function getIdShardedPath($id)
+    {
+        $id = (int)$id;
+        if ($id <= 0) {
+            return '';
+        }
+
+        return implode(DIRECTORY_SEPARATOR, str_split((string)$id)) . DIRECTORY_SEPARATOR;
     }
 
     /**
@@ -1103,7 +1122,43 @@ class ImageManagerCore
             }
         }
 
+        if (ImageEntity::normalizeStorageLayout($imageEntity['storage_layout'] ?? null) === ImageEntity::STORAGE_LAYOUT_ID_SHARDED) {
+            static::removeEmptyShardedDirectories(
+                static::getImageDirectoryByEntity($entityType, $id),
+                static::getImageDirectoryByEntity($entityType)
+            );
+        }
+
         return $success;
+    }
+
+    /**
+     * Remove empty shard directories without removing the image entity base directory.
+     *
+     * @param string $directory
+     * @param string $baseDirectory
+     *
+     * @return void
+     */
+    protected static function removeEmptyShardedDirectories($directory, $baseDirectory)
+    {
+        $directory = rtrim((string)$directory, '/\\');
+        $baseDirectory = rtrim((string)$baseDirectory, '/\\');
+        $normalizedBase = str_replace('\\', '/', $baseDirectory);
+
+        while ($directory !== '' && $directory !== $baseDirectory && is_dir($directory)) {
+            $normalizedDirectory = str_replace('\\', '/', $directory);
+            if (!str_starts_with($normalizedDirectory . '/', $normalizedBase . '/')) {
+                break;
+            }
+
+            $entries = array_diff(scandir($directory) ?: [], ['.', '..']);
+            if ($entries || !@rmdir($directory)) {
+                break;
+            }
+
+            $directory = dirname($directory);
+        }
     }
 
     /**
@@ -1164,7 +1219,7 @@ class ImageManagerCore
         } else {
             $possibleSourceImages[] = [
                 'description' => lcfirst((string)$imageEntity['classname']) . ' ' . $idEntity,
-                'path' => $imageEntity['path'],
+                'path' => static::getImageDirectoryByEntity($entityType, $idEntity),
                 'filename' => $idEntity,
             ];
         }

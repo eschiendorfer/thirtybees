@@ -34,6 +34,12 @@
  */
 class ImageEntityCore extends ObjectModel
 {
+    /** Store all files for an image entity directly in its base directory. */
+    public const STORAGE_LAYOUT_FLAT = 'flat';
+
+    /** Shard files into one directory per digit of the physical image id. */
+    public const STORAGE_LAYOUT_ID_SHARDED = 'id_sharded';
+
     const ENTITY_TYPE_PRODUCTS = 'products';
     const ENTITY_TYPE_CATEGORIES = 'categories';
     const ENTITY_TYPE_CATEGORIES_THUMB = 'categoriesthumb';
@@ -408,6 +414,11 @@ class ImageEntityCore extends ObjectModel
                         ?? $imageDefinition['fallback_image']
                         ?? ''
                     ));
+                    $storageLayout = static::normalizeStorageLayout(
+                        $imageDefinition['storageLayout']
+                        ?? $imageDefinition['storage_layout']
+                        ?? static::STORAGE_LAYOUT_FLAT
+                    );
 
                     $imageEntities[$name] = [
                         'table' => $definition['table'],
@@ -427,6 +438,8 @@ class ImageEntityCore extends ObjectModel
                         'adminPreviewImageType' => $adminPreviewImageType,
                         'fallback_image' => $fallbackImage,
                         'fallbackImage' => $fallbackImage,
+                        'storage_layout' => $storageLayout,
+                        'storageLayout' => $storageLayout,
                         'imageTypes' => [],
                         'imageTypesByName' => [],
                         'imageTypesByRewrite' => [],
@@ -463,6 +476,20 @@ class ImageEntityCore extends ObjectModel
         }
 
         return Cache::retrieve($cacheKey);
+    }
+
+    /**
+     * @param mixed $storageLayout
+     *
+     * @return string
+     */
+    public static function normalizeStorageLayout($storageLayout)
+    {
+        $storageLayout = strtolower(trim((string)$storageLayout));
+
+        return $storageLayout === static::STORAGE_LAYOUT_ID_SHARDED
+            ? static::STORAGE_LAYOUT_ID_SHARDED
+            : static::STORAGE_LAYOUT_FLAT;
     }
 
     /**

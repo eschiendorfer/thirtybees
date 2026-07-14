@@ -627,6 +627,9 @@ class LinkCore
         }
 
         $relativePath = substr($entityPath, strlen($imageRoot));
+        if (ImageEntity::normalizeStorageLayout($imageEntity['storage_layout'] ?? null) === ImageEntity::STORAGE_LAYOUT_ID_SHARDED) {
+            $relativePath .= str_replace('\\', '/', ImageManager::getIdShardedPath((int)$id));
+        }
         $imageTypeName = (string)ImageType::getFormatedName($imageTypeName);
         $suffix = $imageTypeName !== '' ? '-' . $imageTypeName . $highDpi : $highDpi;
 
