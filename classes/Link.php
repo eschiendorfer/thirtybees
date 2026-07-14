@@ -653,7 +653,7 @@ class LinkCore
         }
 
         $relativePath = substr($entityPath, strlen($imageRoot));
-        $imageTypeName = ImageType::getFormatedName($imageTypeName);
+        $imageTypeName = (string)ImageType::getFormatedName($imageTypeName);
         $suffix = $imageTypeName !== '' ? '-' . $imageTypeName . $highDpi : $highDpi;
 
         return 'img/' . $relativePath . (int)$id . $suffix . '.' . $imageExtension;
