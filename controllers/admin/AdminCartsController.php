@@ -483,18 +483,6 @@ class AdminCartsControllerCore extends AdminController
         if ($message = Message::getMessageByCartId((int) $this->context->cart->id)) {
             $messageContent = $message['message'];
         }
-        $cartRules = $this->context->cart->getCartRules(CartRule::FILTER_ACTION_SHIPPING);
-
-        $freeShipping = false;
-        if (count($cartRules)) {
-            foreach ($cartRules as $cart_rule) {
-                if ($cart_rule['id_cart_rule'] == CartRule::getIdByCode(CartRule::BO_ORDER_CODE_PREFIX.(int) $this->context->cart->id)) {
-                    $freeShipping = true;
-                    break;
-                }
-            }
-        }
-
         $addresses = $this->context->customer->getAddresses((int) $this->context->cart->id_lang);
 
         foreach ($addresses as &$data) {
@@ -517,7 +505,6 @@ class AdminCartsControllerCore extends AdminController
                 (int) $this->context->cart->id_lang,
                 'step=3&recover_cart='.$idCart.'&token_cart='.md5(_COOKIE_KEY_.'recover_cart_'.$idCart)
             ),
-            'free_shipping'        => (int) $freeShipping,
         ];
     }
 
@@ -911,39 +898,6 @@ class AdminCartsControllerCore extends AdminController
             if ($this->context->cart->removeCartRule(Tools::getIntValue('id_cart_rule'))) {
                 $this->ajaxDie(json_encode($this->ajaxReturnVars()));
             }
-        }
-    }
-
-    /**
-     * @throws PrestaShopException
-     */
-    public function ajaxProcessupdateFreeShipping()
-    {
-        if ($this->hasEditPermission()) {
-            if (!$idCartRule = CartRule::getIdByCode(CartRule::BO_ORDER_CODE_PREFIX.(int) $this->context->cart->id)) {
-                $cartRule = new CartRule();
-                $cartRule->code = CartRule::BO_ORDER_CODE_PREFIX.(int) $this->context->cart->id;
-                $cartRule->name = [Configuration::get('PS_LANG_DEFAULT') => $this->l('Free Shipping', 'AdminTab', false, false)];
-                $cartRule->id_customer = (int) $this->context->cart->id_customer;
-                $cartRule->free_shipping = true;
-                $cartRule->quantity = 1;
-                $cartRule->quantity_per_user = 1;
-                $cartRule->minimum_amount_currency = (int) $this->context->cart->id_currency;
-                $cartRule->reduction_currency = (int) $this->context->cart->id_currency;
-                $cartRule->date_from = date('Y-m-d H:i:s', time());
-                $cartRule->date_to = date('Y-m-d H:i:s', time() + 24 * 36000);
-                $cartRule->active = 1;
-                $cartRule->add();
-            } else {
-                $cartRule = new CartRule((int) $idCartRule);
-            }
-
-            $this->context->cart->removeCartRule((int) $cartRule->id);
-            if (Tools::getValue('free_shipping')) {
-                $this->context->cart->addCartRule((int) $cartRule->id);
-            }
-
-            $this->ajaxDie(json_encode($this->ajaxReturnVars()));
         }
     }
 

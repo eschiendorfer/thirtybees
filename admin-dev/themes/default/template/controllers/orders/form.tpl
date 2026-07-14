@@ -145,28 +145,6 @@
 			return false;
 		});
 
-		$('input:radio[name="free_shipping"]').on('change',function() {
-			var free_shipping = $('input[name=free_shipping]:checked').val();
-			$.ajax({
-				type:"POST",
-				url: "{$link->getAdminLink('AdminCarts')|addslashes}",
-				async: true,
-				dataType: "json",
-				data : {
-					ajax: "1",
-					token: "{getAdminToken tab='AdminCarts'}",
-					tab: "AdminCarts",
-					action: "updateFreeShipping",
-					id_cart: id_cart,
-					id_customer: id_customer,
-					'free_shipping': free_shipping
-					},
-				success : function(res)
-				{
-					displaySummary(res);
-				}
-			});
-		});
 		$('#summary_part').on('change', 'input:radio[name="bo_use_store_credit"]', function() {
 			updateStoreCreditUsage($('input[name=bo_use_store_credit]:checked').val());
 		});
@@ -912,11 +890,6 @@
 			$('#carrier_recycled_package').attr('checked', true);
 		else
 			$('#carrier_recycled_package').removeAttr('checked');
-		if (jsonSummary.free_shipping == 1)
-			$('#free_shipping').attr('checked', true);
-		else
-			$('#free_shipping_off').attr('checked', true);
-
 		$('#gift_message').html(jsonSummary.cart.gift_message);
         if ( ! changed_shipping_price) {
             $('#shipping_price').html('<b>' + formatCurrency(
@@ -1526,25 +1499,6 @@
 					<p id="shipping_price" class="form-control-static" name="shipping_price"></p>
 				</div>
 			</div>
-			<div class="form-group">
-				<label class="control-label col-lg-3" for="free_shipping">
-					{l s='Free shipping'}
-				</label>
-				<div class="input-group col-lg-9 fixed-width-lg">
-					<span class="switch prestashop-switch">
-						<input type="radio" name="free_shipping" id="free_shipping" value="1">
-						<label for="free_shipping" class="radioCheck">
-							{l s='yes'}
-						</label>
-						<input type="radio" name="free_shipping" id="free_shipping_off" value="0" checked="checked">
-						<label for="free_shipping_off" class="radioCheck">
-							{l s='No'}
-						</label>
-						<a class="slide-button btn"></a>
-					</span>
-				</div>
-			</div>
-
 			{if $recyclable_pack}
 			<div class="form-group">
 				<div class="checkbox col-lg-9 col-offset-3">
