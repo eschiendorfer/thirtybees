@@ -36,6 +36,7 @@ class ImageTypeCore extends ObjectModel
 {
     const RESIZE_MODE_CONTAIN = 'contain';
     const RESIZE_MODE_FIT = 'fit';
+    const RESIZE_MODE_SCALE = 'scale';
     const RESIZE_MODE_COVER = 'cover';
     const RESIZE_MODE_STRETCH = 'stretch';
 
@@ -143,6 +144,7 @@ class ImageTypeCore extends ObjectModel
         return [
             static::RESIZE_MODE_CONTAIN,
             static::RESIZE_MODE_FIT,
+            static::RESIZE_MODE_SCALE,
             static::RESIZE_MODE_COVER,
             static::RESIZE_MODE_STRETCH,
         ];
@@ -163,7 +165,7 @@ class ImageTypeCore extends ObjectModel
         $width = (int)$width;
         $height = (int)$height;
 
-        if ($resizeMode === static::RESIZE_MODE_FIT) {
+        if (in_array($resizeMode, [static::RESIZE_MODE_FIT, static::RESIZE_MODE_SCALE], true)) {
             return $width > 0 || $height > 0;
         }
 
@@ -186,7 +188,7 @@ class ImageTypeCore extends ObjectModel
         }
 
         if (!static::hasValidDimensionsForResizeMode($this->resize_mode, $this->width, $this->height)) {
-            $message = 'Fit mode requires at least width or height. All other resize modes require both dimensions.';
+            $message = 'Fit and scale modes require at least width or height. All other resize modes require both dimensions.';
             if ($die) {
                 throw new PrestaShopException($message);
             }
