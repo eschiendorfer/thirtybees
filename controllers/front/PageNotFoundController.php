@@ -129,26 +129,50 @@ class PageNotFoundControllerCore extends FrontController
                 }
 
                 if (file_exists($sendPath)) {
-                    $imageExtension = pathinfo($sendPath, PATHINFO_EXTENSION);
-                    $mimeType = Media::getFileInformations('images', $imageExtension)['mimeType'] ?? 'image/jpeg';
-                    header('HTTP/1.1 200 Found');
-                    header('Status: 200 Found');
-                    header('Content-Type: '.$mimeType);
-                    readfile($sendPath);
-                    exit;
+                    $this->sendImage($sendPath);
+                }
+            }
+
+            if ($imageInfo && !empty($imageEntity['fallback_image'])) {
+                $fallbackBasePath = ImageManager::getFallbackImagePathByEntity($imageEntity['name'], null, false, $imageExtension);
+                $fallbackSource = false;
+                if ($fallbackBasePath !== '') {
+                    $fallbackDirectory = dirname($fallbackBasePath) . '/';
+                    $fallbackName = pathinfo($fallbackBasePath, PATHINFO_FILENAME);
+                    $fallbackSource = ImageManager::getSourceImage($fallbackDirectory, $fallbackName, $imageExtension, false);
+                }
+
+                if ($fallbackSource) {
+                    if ($imageType) {
+                        $fallbackPath = ImageManager::getFallbackImagePathByEntity($imageEntity['name'], $imageType->name, $highDpi, $imageExtension);
+                        if (!file_exists($fallbackPath)) {
+                            $scale = $highDpi && ImageManager::retinaSupport() ? 2 : 1;
+                            ImageManager::resizeByMode(
+                                $fallbackSource,
+                                $fallbackPath,
+                                (int)$imageType->width * $scale,
+                                (int)$imageType->height * $scale,
+                                $imageExtension,
+                                $imageType->resize_mode ?? ImageType::RESIZE_MODE_CONTAIN
+                            );
+                        }
+                    } else {
+                        $fallbackPath = $fallbackDirectory . $fallbackName . '.' . $imageExtension;
+                        if (!file_exists($fallbackPath)) {
+                            ImageManager::convertImageToExtension($fallbackSource, $imageExtension, $fallbackPath);
+                        }
+                    }
+
+                    if (file_exists($fallbackPath)) {
+                        $this->sendImage($fallbackPath);
+                    }
                 }
             }
 
             // We haven't found any image, we try to display the default image
             $imageTypeName = $imageType ? $imageType->name : '';
             if ($notFoundImage = $this->context->link->getDefaultImageUri($this->context->language->iso_code, $imageTypeName, $highDpi, '', true)) {
-                $imageExtension = pathinfo($notFoundImage, PATHINFO_EXTENSION);
-                $mimeType = Media::getFileInformations('images', $imageExtension)['mimeType'] ?? 'image/jpeg';
-                header('HTTP/1.1 200 Found');
-                header('Status: 200 Found');
-                header('Content-Type: '.$mimeType);
-                readfile($notFoundImage);
-                exit;
+                $this->sendImage($notFoundImage);
             }
 
             // We haven't even found the default image (should never happen in theory)
@@ -218,6 +242,11 @@ class PageNotFoundControllerCore extends FrontController
         $extensions = implode('|', ImageManager::getAllowedImageExtensions());
         $imageEntitites = implode('|', array_keys(ImageEntity::getImageEntities()));
 
+        $directImageInfo = $this->getImageInfoFromDirectPath($requestUri, $extensions);
+        if ($directImageInfo) {
+            return $directImageInfo;
+        }
+
         $patternImageInfo = $this->getImageInfoFromPublicUrlPattern($requestUri, $extensions);
         if ($patternImageInfo) {
             return $patternImageInfo;
@@ -265,6 +294,70 @@ class PageNotFoundControllerCore extends FrontController
         }
 
         return false;
+    }
+
+    /**
+     * Match direct /img/... URLs generated for custom image entities.
+     *
+     * @param string $requestUri
+     * @param string $extensions
+     *
+     * @return array|false
+     * @throws PrestaShopException
+     */
+    protected function getImageInfoFromDirectPath(string $requestUri, string $extensions)
+    {
+        $imageRoot = rtrim(str_replace('\\', '/', _PS_IMG_DIR_), '/') . '/';
+
+        foreach (ImageEntity::getImageEntities() as $imageEntity) {
+            $entityPath = rtrim(str_replace('\\', '/', (string)($imageEntity['path'] ?? '')), '/') . '/';
+            if (!str_starts_with($entityPath, $imageRoot)) {
+                continue;
+            }
+
+            $imageTypeNames = array_keys((array)($imageEntity['imageTypesByName'] ?? []));
+            usort($imageTypeNames, static function ($first, $second) {
+                return strlen($second) <=> strlen($first);
+            });
+            $imageTypePattern = $imageTypeNames
+                ? '(?:-(?P<imageType>'.implode('|', array_map(static function ($name) {
+                    return preg_quote((string)$name, '#');
+                }, $imageTypeNames)).'))?'
+                : '';
+
+            $relativePath = substr($entityPath, strlen($imageRoot));
+            $pattern = '#^/img/'.preg_quote($relativePath, '#').'(?P<id>[0-9]+)'.$imageTypePattern.'(?P<highDpi>2x)?\.(?P<extension>'.$extensions.')$#u';
+            if (preg_match($pattern, $requestUri, $matches)) {
+                return [
+                    'imageEntity' => $imageEntity,
+                    'id' => $matches['id'],
+                    'imageType' => $matches['imageType'] ?? '',
+                    'name' => $matches['id'],
+                    'extension' => $matches['extension'],
+                    'highDpi' => !empty($matches['highDpi']),
+                ];
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Send an image file and stop request processing.
+     *
+     * @param string $path
+     *
+     * @return never
+     */
+    protected function sendImage(string $path)
+    {
+        $imageExtension = pathinfo($path, PATHINFO_EXTENSION);
+        $mimeType = Media::getFileInformations('images', $imageExtension)['mimeType'] ?? 'image/jpeg';
+        header('HTTP/1.1 200 Found');
+        header('Status: 200 Found');
+        header('Content-Type: '.$mimeType);
+        readfile($path);
+        exit;
     }
 
     /**

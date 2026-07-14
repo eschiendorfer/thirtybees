@@ -914,9 +914,61 @@ abstract class ObjectModelCore implements Core_Foundation_Database_EntityInterfa
             $result = $conn->delete($this->def['table'].'_lang', '`'.bqSQL($this->def['primary']).'` = '.(int) $this->id);
         }
 
+        if ($result && !$hasMultishopEntries) {
+            $this->deleteAssociatedImages();
+        }
+
         // @hook actionObject*DeleteAfter
         Hook::triggerEvent('actionObjectDeleteAfter', ['object' => $this]);
         Hook::triggerEvent('actionObject'.get_class($this).'DeleteAfter', ['object' => $this]);
+
+        return $result;
+    }
+
+    /**
+     * Delete all modern image entities associated with this object.
+     *
+     * Image cleanup is intentionally best-effort. A database deletion must not
+     * be reported as failed only because a file could not be removed.
+     *
+     * @return bool True if every image entity was cleaned successfully
+     */
+    public function deleteAssociatedImages()
+    {
+        if (!$this->id || empty($this->def['images'])) {
+            return true;
+        }
+
+        $result = true;
+        foreach ($this->def['images'] as $imageEntityName => $imageDefinition) {
+            if (!is_string($imageEntityName) || !is_array($imageDefinition) || (isset($imageDefinition['deleteWithObject']) && !$imageDefinition['deleteWithObject'])) {
+                continue;
+            }
+
+            try {
+                if (!ImageManager::deleteImagesByEntity($imageEntityName, (int)$this->id)) {
+                    $result = false;
+                    Logger::addLog(
+                        sprintf('Unable to delete image entity "%s" for %s #%d.', $imageEntityName, get_class($this), (int)$this->id),
+                        3,
+                        null,
+                        get_class($this),
+                        (int)$this->id,
+                        true
+                    );
+                }
+            } catch (Throwable $throwable) {
+                $result = false;
+                Logger::addLog(
+                    sprintf('Unable to delete image entity "%s" for %s #%d: %s', $imageEntityName, get_class($this), (int)$this->id, $throwable->getMessage()),
+                    3,
+                    null,
+                    get_class($this),
+                    (int)$this->id,
+                    true
+                );
+            }
+        }
 
         return $result;
     }

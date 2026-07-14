@@ -403,6 +403,11 @@ class ImageEntityCore extends ObjectModel
                         ?? $imageDefinition['admin_preview_image_type']
                         ?? ''
                     ));
+                    $fallbackImage = trim((string)(
+                        $imageDefinition['fallbackImage']
+                        ?? $imageDefinition['fallback_image']
+                        ?? ''
+                    ));
 
                     $imageEntities[$name] = [
                         'table' => $definition['table'],
@@ -420,6 +425,8 @@ class ImageEntityCore extends ObjectModel
                         'publicUrlPattern' => $publicUrlPattern,
                         'admin_preview_image_type' => $adminPreviewImageType,
                         'adminPreviewImageType' => $adminPreviewImageType,
+                        'fallback_image' => $fallbackImage,
+                        'fallbackImage' => $fallbackImage,
                         'imageTypes' => [],
                         'imageTypesByName' => [],
                         'imageTypesByRewrite' => [],

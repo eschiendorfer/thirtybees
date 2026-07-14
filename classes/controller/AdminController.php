@@ -837,16 +837,29 @@ class AdminControllerCore extends Controller
     public function processDeleteImage()
     {
         if (Validate::isLoadedObject($object = $this->loadObject())) {
-
+            $imageEntityName = '';
+            $legacyImagePath = '';
             if (($inputName = Tools::getValue('inputName')) && !empty($this->fieldImageSettings)) {
-                foreach ($this->fieldImageSettings as $fieldImageSetting) {
+                foreach ($this->fieldImageSettings as $entityName => $fieldImageSetting) {
                     if ($fieldImageSetting['inputName']==$inputName && !empty($fieldImageSetting['path'])) {
-                        $object->image_dir = $fieldImageSetting['path'];
+                        if (is_string($entityName) && ImageEntity::getImageEntityInfo($entityName)) {
+                            $imageEntityName = $entityName;
+                        } else {
+                            $legacyImagePath = $fieldImageSetting['path'];
+                        }
                         break;
                     }
                 }
             }
-            if (($object->deleteImage())) {
+
+            if ($imageEntityName !== '') {
+                $deleted = ImageManager::deleteImagesByEntity($imageEntityName, (int)$object->id);
+            } else {
+                $object->image_dir = $legacyImagePath;
+                $deleted = $object->deleteImage();
+            }
+
+            if ($deleted) {
                 $redirect = static::$currentIndex.'&update'.$this->table.'&'.$this->identifier.'='.Tools::getValue($this->identifier).'&conf=7&token='.$this->token;
                 if (!$this->ajax) {
                     $this->redirect_after = $redirect;
@@ -1251,14 +1264,36 @@ class AdminControllerCore extends Controller
             } else {
                 if ($this->deleted) {
                     if (!empty($this->fieldImageSettings)) {
-                        foreach ($this->fieldImageSettings as $fieldImageSetting) {
-                            $object->image_dir = $fieldImageSetting['path'];
-                            $res = $object->deleteImage();
-                        }
-                    }
+                        foreach ($this->fieldImageSettings as $imageEntityName => $fieldImageSetting) {
+                            $imageError = '';
+                            try {
+                                if (is_string($imageEntityName) && ImageEntity::getImageEntityInfo($imageEntityName)) {
+                                    $imageDeleted = ImageManager::deleteImagesByEntity($imageEntityName, (int)$object->id);
+                                } else {
+                                    $object->image_dir = $fieldImageSetting['path'];
+                                    $imageDeleted = $object->deleteImage();
+                                }
+                            } catch (Throwable $throwable) {
+                                $imageDeleted = false;
+                                $imageError = ': '.$throwable->getMessage();
+                            }
 
-                    if (!$res) {
-                        $this->errors[] = Tools::displayError('Unable to delete associated images.');
+                            if (!$imageDeleted) {
+                                Logger::addLog(
+                                    sprintf(
+                                        'Unable to delete associated images for %s #%d%s.',
+                                        get_class($object),
+                                        (int)$object->id,
+                                        $imageError
+                                    ),
+                                    3,
+                                    null,
+                                    get_class($object),
+                                    (int)$object->id,
+                                    true
+                                );
+                            }
+                        }
                     }
 
                     $object->deleted = 1;
@@ -1708,18 +1743,11 @@ class AdminControllerCore extends Controller
     {
         if (!empty($_FILES[$name]['tmp_name'])) {
 
-            // Delete old image
-            if (Validate::isLoadedObject($object = $this->loadObject())) {
-                // A few times we use strings for filename instead of int -> we shouldn't delete in this case (needed for AdminLanguagesController)
-                if (Validate::isInt($id)) {
-                    $object->image_dir = $path;
-                    $object->deleteImage();
-                }
-            } else {
-                return false;
-            }
-
             if ($imageEntityName && !$width && !$height && ImageEntity::getImageEntityInfo((string)$imageEntityName)) {
+                if (!Validate::isLoadedObject($this->loadObject())) {
+                    return false;
+                }
+
                 $maxSize = (int)$this->max_image_size;
                 $error = 0;
                 if (!ImageManager::uploadImageByEntity((string)$imageEntityName, $id, $_FILES[$name], null, true, Tools::getMaxUploadSize($maxSize), null, $error)) {
@@ -1729,10 +1757,17 @@ class AdminControllerCore extends Controller
                     return false;
                 }
 
-                if ($this->afterImageUpload()) {
-                    return true;
-                }
+                return $this->afterImageUpload();
+            }
 
+            // Delete old image
+            if (Validate::isLoadedObject($object = $this->loadObject())) {
+                // A few times we use strings for filename instead of int -> we shouldn't delete in this case (needed for AdminLanguagesController)
+                if (Validate::isInt($id)) {
+                    $object->image_dir = $path;
+                    $object->deleteImage();
+                }
+            } else {
                 return false;
             }
 

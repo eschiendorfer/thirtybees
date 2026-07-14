@@ -954,6 +954,42 @@ class ImageManagerCore
     }
 
     /**
+     * Get the physical fallback image path declared by an image entity.
+     *
+     * @param string $entityType
+     * @param string|null $imageType
+     * @param bool $highDpi
+     * @param string|null $imageExtension
+     *
+     * @return string
+     * @throws PrestaShopException
+     */
+    public static function getFallbackImagePathByEntity($entityType, $imageType = null, $highDpi = false, $imageExtension = null)
+    {
+        $imageEntity = ImageEntity::getImageEntityInfo((string)$entityType);
+        if (!$imageEntity) {
+            return '';
+        }
+
+        $fallbackImage = trim((string)($imageEntity['fallback_image'] ?? ''));
+        if ($fallbackImage === '') {
+            return '';
+        }
+
+        $directory = static::getImageDirectoryByEntity($entityType);
+        if ($directory === '') {
+            return '';
+        }
+
+        $imageExtension = $imageExtension ?: static::getDefaultImageExtension();
+        $imageTypeName = ImageType::getFormatedName($imageType);
+        $suffix = $imageTypeName ? '-' . $imageTypeName . ($highDpi ? '2x' : '') : ($highDpi ? '2x' : '');
+        $fallbackName = pathinfo(basename($fallbackImage), PATHINFO_FILENAME);
+
+        return $directory . $fallbackName . $suffix . '.' . $imageExtension;
+    }
+
+    /**
      * Find an existing image file for an entity.
      *
      * @param string $entityType

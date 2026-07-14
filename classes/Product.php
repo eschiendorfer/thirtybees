@@ -577,6 +577,7 @@ class ProductCore extends ObjectModel implements InitializationCallback
         ],
         'images' => [
             ImageEntity::ENTITY_TYPE_PRODUCTS => [
+                'deleteWithObject' => false,
                 'path' => _PS_PROD_IMG_DIR_,
                 'imageTypes' => [
                     ['name' => 'backoffice_product_medium', 'width' => 150, 'height' => 150]
