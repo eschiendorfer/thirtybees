@@ -562,32 +562,6 @@ class LinkCore
     }
 
     /**
-     * Get the configured admin preview image link for an image entity.
-     *
-     * @param string $imageEntityName
-     * @param int $id
-     * @param bool $highDpi
-     * @param string $linkRewrite
-     *
-     * @return string
-     *
-     * @throws PrestaShopException
-     */
-    public static function getGenericAdminImageLink($imageEntityName, $id, $highDpi = false, $linkRewrite = '')
-    {
-        $imageEntity = ImageEntity::getImageEntityInfo((string)$imageEntityName);
-        $imageType = is_array($imageEntity)
-            ? (string)($imageEntity['admin_preview_image_type'] ?? $imageEntity['adminPreviewImageType'] ?? '')
-            : '';
-
-        if ($imageType === '' && is_array($imageEntity) && !empty($imageEntity['imageTypes'][0]['name'])) {
-            $imageType = (string)$imageEntity['imageTypes'][0]['name'];
-        }
-
-        return static::getGenericImageLink($imageEntityName, $id, $imageType ?: null, $highDpi, null, $linkRewrite);
-    }
-
-    /**
      * @param string $imageEntityName
      *
      * @return string

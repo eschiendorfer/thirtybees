@@ -5183,7 +5183,23 @@ class AdminControllerCore extends Controller
             return '';
         }
 
-        $url = Link::getGenericAdminImageLink((string)$imageEntityName, $id, (bool)$highDpi, (string)$linkRewrite);
+        $imageEntityName = (string)$imageEntityName;
+        $imageEntity = ImageEntity::getImageEntityInfo($imageEntityName);
+        if (!is_array($imageEntity)) {
+            return '';
+        }
+
+        $imageType = (string)($imageEntity['admin_preview_image_type'] ?? $imageEntity['adminPreviewImageType'] ?? '');
+        if ($imageType === '' && !empty($imageEntity['imageTypes'][0]['name'])) {
+            $imageType = (string)$imageEntity['imageTypes'][0]['name'];
+        }
+        $imageType = $imageType ?: null;
+        $highDpi = (bool)$highDpi;
+        if (!ImageManager::imageExistsByEntity($imageEntityName, $id, $imageType, $highDpi)) {
+            return '';
+        }
+
+        $url = Link::getGenericImageLink($imageEntityName, $id, $imageType, $highDpi, null, (string)$linkRewrite);
         return '<img src="' . Tools::safeOutput($url) . '" alt="" class="imgm img-thumbnail" style="max-height:' . (int)$maxHeight . 'px;" />';
     }
 
