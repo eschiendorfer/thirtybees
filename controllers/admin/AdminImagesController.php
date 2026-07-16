@@ -260,7 +260,7 @@ class AdminImagesControllerCore extends AdminController
                     'required'  => true,
                     'maxlength' => 5,
                     'suffix'    => $this->l('pixels'),
-                    'hint'      => $this->l('Maximum image width in pixels.'),
+                    'hint'      => $this->l('Maximum width for Fit; exact output width for Contain and Cover. Use 0 in Fit mode for no width limit.'),
                 ],
                 [
                     'type'      => 'text',
@@ -269,7 +269,7 @@ class AdminImagesControllerCore extends AdminController
                     'required'  => true,
                     'maxlength' => 5,
                     'suffix'    => $this->l('pixels'),
-                    'hint'      => $this->l('Maximum image height in pixels.'),
+                    'hint'      => $this->l('Maximum height for Fit; exact output height for Contain and Cover. Use 0 in Fit mode for no height limit.'),
                 ],
                 [
                     'type'     => 'select',
@@ -278,10 +278,9 @@ class AdminImagesControllerCore extends AdminController
                     'required' => true,
                     'options'  => [
                         'query' => [
-                            ['id' => ImageType::RESIZE_MODE_CONTAIN, 'name' => $this->l('Contain - fit into fixed box with padding')],
-                            ['id' => ImageType::RESIZE_MODE_FIT, 'name' => $this->l('Fit - preserve ratio within maximum size')],
-                            ['id' => ImageType::RESIZE_MODE_COVER, 'name' => $this->l('Cover - fill fixed box and crop')],
-                            ['id' => ImageType::RESIZE_MODE_STRETCH, 'name' => $this->l('Stretch - force fixed size')],
+                            ['id' => ImageType::RESIZE_MODE_CONTAIN, 'name' => $this->l('Contain - exact size, preserve ratio, add padding, no upscale')],
+                            ['id' => ImageType::RESIZE_MODE_FIT, 'name' => $this->l('Fit - maximum size, preserve ratio, no padding or upscale')],
+                            ['id' => ImageType::RESIZE_MODE_COVER, 'name' => $this->l('Cover - exact size, crop and upscale to fill')],
                         ],
                         'id' => 'id',
                         'name' => 'name',
@@ -1178,7 +1177,7 @@ class AdminImagesControllerCore extends AdminController
         if (Validate::isImageResizeMode($resizeMode)
             && !ImageType::hasValidDimensionsForResizeMode($resizeMode, Tools::getValue('width'), Tools::getValue('height'))
         ) {
-            $this->errors[] = Tools::displayError('Fit mode requires at least width or height. All other resize modes require both dimensions.');
+            $this->errors[] = Tools::displayError('Fit mode requires at least width or height. Contain and cover modes require both dimensions.');
         }
     }
 

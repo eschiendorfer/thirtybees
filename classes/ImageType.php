@@ -34,10 +34,23 @@
  */
 class ImageTypeCore extends ObjectModel
 {
-    const RESIZE_MODE_CONTAIN = 'contain';
+    /**
+     * Preserve the aspect ratio within maximum width and height constraints.
+     * Output dimensions are flexible; the image is never cropped, padded, or upscaled.
+     */
     const RESIZE_MODE_FIT = 'fit';
+
+    /**
+     * Preserve the aspect ratio in an output with exact dimensions.
+     * The complete image is centered with padding (whitespace/transparency) and is never upscaled.
+     */
+    const RESIZE_MODE_CONTAIN = 'contain';
+
+    /**
+     * Preserve the aspect ratio in an output with exact dimensions.
+     * The image is cropped centrally to fill the target and upscaled when necessary.
+     */
     const RESIZE_MODE_COVER = 'cover';
-    const RESIZE_MODE_STRETCH = 'stretch';
 
     /**
      * @var string Name
@@ -144,7 +157,6 @@ class ImageTypeCore extends ObjectModel
             static::RESIZE_MODE_CONTAIN,
             static::RESIZE_MODE_FIT,
             static::RESIZE_MODE_COVER,
-            static::RESIZE_MODE_STRETCH,
         ];
     }
 
@@ -186,7 +198,7 @@ class ImageTypeCore extends ObjectModel
         }
 
         if (!static::hasValidDimensionsForResizeMode($this->resize_mode, $this->width, $this->height)) {
-            $message = 'Fit mode requires at least width or height. All other resize modes require both dimensions.';
+            $message = 'Fit mode requires at least width or height. Contain and cover modes require both dimensions.';
             if ($die) {
                 throw new PrestaShopException($message);
             }

@@ -463,7 +463,7 @@ class ImageManagerCore
             return static::resampleImage($srcFile, $dstFile, $type, $srcX, $srcY, $cropWidth, $cropHeight, $dstWidth, $dstHeight, $imageExtension, $error, $tgtWidth, $tgtHeight);
         }
 
-        return static::resampleImage($srcFile, $dstFile, $type, 0, 0, $srcWidth, $srcHeight, $dstWidth, $dstHeight, $imageExtension, $error, $tgtWidth, $tgtHeight);
+        return false;
     }
 
     /**
