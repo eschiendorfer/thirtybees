@@ -357,6 +357,96 @@ class ImageEntityCore extends ObjectModel
     }
 
     /**
+     * Resolve an ObjectModel image entity by its form input name.
+     *
+     * @param array $fieldImageSettings
+     * @param string $inputName
+     *
+     * @return string
+     *
+     * @throws PrestaShopException
+     */
+    public static function getNameByInputName(array $fieldImageSettings, string $inputName): string
+    {
+        if ($inputName === '') {
+            return '';
+        }
+
+        foreach ($fieldImageSettings as $entityName => $fieldImageSetting) {
+            if (is_string($entityName)
+                && (string)($fieldImageSetting['inputName'] ?? '') === $inputName
+                && static::getImageEntityInfo($entityName)
+            ) {
+                return $entityName;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Return all public URLs for one ObjectModel image entity.
+     *
+     * @param string $imageEntityName
+     * @param ObjectModel $object
+     *
+     * @return string[]
+     *
+     * @throws PrestaShopException
+     */
+    public static function getPublicUrls(string $imageEntityName, ObjectModel $object): array
+    {
+        $id = (int)$object->id;
+        $imageEntity = static::getImageEntityInfo($imageEntityName);
+        if ($id <= 0 || !is_array($imageEntity)) {
+            return [];
+        }
+
+        $imageTypes = [null];
+        foreach ((array)($imageEntity['imageTypes'] ?? []) as $imageType) {
+            if (!empty($imageType['name'])) {
+                $imageTypes[] = (string)$imageType['name'];
+            }
+        }
+
+        $languageIds = Language::getLanguages(false, false, true);
+        $languageIds[] = (int)Context::getContext()->language->id;
+        $languageIds[] = (int)Configuration::get('PS_LANG_DEFAULT');
+        $languageIds = array_values(array_unique(array_filter(array_map('intval', $languageIds))));
+        if (!$languageIds) {
+            $languageIds = [0];
+        }
+
+        $urls = [];
+        foreach ($languageIds as $languageId) {
+            $rewrite = $object->getImageRewrite($languageId);
+            foreach ($imageTypes as $imageType) {
+                $urls[] = Link::getGenericImageLink(
+                    $imageEntityName,
+                    $id,
+                    $imageType,
+                    false,
+                    null,
+                    $rewrite
+                );
+
+                if ($imageType !== null && ImageManager::imageExistsByEntity($imageEntityName, $id, $imageType, true)) {
+                    $urls[] = Link::getGenericImageLink(
+                        $imageEntityName,
+                        $id,
+                        $imageType,
+                        true,
+                        null,
+                        $rewrite
+                    );
+                }
+            }
+        }
+
+        return array_values(array_unique(array_filter($urls)));
+    }
+
+    /**
      *
      * @return array
      *

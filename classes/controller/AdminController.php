@@ -836,21 +836,29 @@ class AdminControllerCore extends Controller
      */
     public function processDeleteImage()
     {
+        if (!$this->hasDeletePermission()) {
+            $this->errors[] = Tools::displayError('You do not have permission to delete this.');
+            return false;
+        }
+
         if (Validate::isLoadedObject($object = $this->loadObject())) {
-            $imageEntityName = '';
+            $inputName = (string)Tools::getValue('inputName');
+            $imageEntityName = ImageEntity::getNameByInputName($this->fieldImageSettings, $inputName);
             $legacyImagePath = '';
-            if (($inputName = Tools::getValue('inputName')) && !empty($this->fieldImageSettings)) {
+            if ($imageEntityName === '' && $inputName !== '' && !empty($this->fieldImageSettings)) {
                 foreach ($this->fieldImageSettings as $entityName => $fieldImageSetting) {
                     if ($fieldImageSetting['inputName']==$inputName && !empty($fieldImageSetting['path'])) {
-                        if (is_string($entityName) && ImageEntity::getImageEntityInfo($entityName)) {
-                            $imageEntityName = $entityName;
-                        } else {
+                        if (!is_string($entityName) || !ImageEntity::getImageEntityInfo($entityName)) {
                             $legacyImagePath = $fieldImageSetting['path'];
                         }
                         break;
                     }
                 }
             }
+
+            $publicUrls = $imageEntityName !== '' && CacheInvalidator::hasProvider()
+                ? ImageEntity::getPublicUrls($imageEntityName, $object)
+                : [];
 
             if ($imageEntityName !== '') {
                 $deleted = ImageManager::deleteImagesByEntity($imageEntityName, (int)$object->id);
@@ -860,6 +868,10 @@ class AdminControllerCore extends Controller
             }
 
             if ($deleted) {
+                if ($publicUrls && !CacheInvalidator::invalidateUrls($publicUrls)) {
+                    $this->warnings[] = $this->l('The image was deleted, but its public cache could not be invalidated.');
+                }
+
                 $redirect = static::$currentIndex.'&update'.$this->table.'&'.$this->identifier.'='.Tools::getValue($this->identifier).'&conf=7&token='.$this->token;
                 if (!$this->ajax) {
                     $this->redirect_after = $redirect;
@@ -867,6 +879,49 @@ class AdminControllerCore extends Controller
                     $this->content = 'ok';
                 }
             }
+        }
+
+        return $object;
+    }
+
+    /**
+     * Invalidate all public URLs of an ObjectModel image entity.
+     *
+     * @return ObjectModel|false
+     *
+     * @throws PrestaShopException
+     */
+    public function processInvalidateImageCache()
+    {
+        if (!$this->hasEditPermission()) {
+            $this->errors[] = Tools::displayError('You do not have permission to edit this.');
+            return false;
+        }
+
+        $object = $this->loadObject();
+        if (!Validate::isLoadedObject($object)) {
+            return false;
+        }
+
+        $imageEntityName = ImageEntity::getNameByInputName(
+            $this->fieldImageSettings,
+            (string)Tools::getValue('inputName')
+        );
+        $publicUrls = $imageEntityName !== ''
+            ? ImageEntity::getPublicUrls($imageEntityName, $object)
+            : [];
+
+        if (!$publicUrls || !CacheInvalidator::invalidateUrls($publicUrls)) {
+            $this->errors[] = $this->l('The public cache could not be invalidated.');
+        } else {
+            $this->confirmations[] = $this->l('The public cache was successfully invalidated.');
+        }
+
+        if (!$this->ajax) {
+            $this->redirect_after = static::$currentIndex
+                . '&update' . $this->table
+                . '&' . $this->identifier . '=' . (int)$object->id
+                . '&token=' . $this->token;
         }
 
         return $object;

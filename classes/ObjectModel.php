@@ -2272,6 +2272,33 @@ abstract class ObjectModelCore implements Core_Foundation_Database_EntityInterfa
     }
 
     /**
+     * Return the public URL rewrite used by ObjectModel image entities.
+     *
+     * ObjectModels with custom image rewrites can override this method.
+     *
+     * @param int $idLang
+     *
+     * @return string
+     */
+    public function getImageRewrite($idLang = 0)
+    {
+        if (!property_exists($this, 'link_rewrite')) {
+            return '';
+        }
+
+        $value = $this->link_rewrite;
+        if (is_array($value)) {
+            $idLang = (int)$idLang;
+            $idLangDefault = (int)Configuration::get('PS_LANG_DEFAULT');
+            $value = $value[$idLang]
+                ?? $value[$idLangDefault]
+                ?? reset($value);
+        }
+
+        return Tools::link_rewrite((string)$value);
+    }
+
+    /**
      * Set a list of specific fields to update
      * array(field1 => true, field2 => false,
      * langfield1 => array(1 => true, 2 => false))

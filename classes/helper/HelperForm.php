@@ -219,8 +219,28 @@ class HelperFormCore extends Helper
                                 $params['delete_url'] = $this->currentIndex.'&'.$this->identifier.'='.$this->id.'&token='.$this->token.'&action=deleteImage&inputName='.$params['name'];
                             }
 
+                            $imageActions = (array)($params['actions'] ?? []);
+                            $imageEntityName = ImageEntity::getNameByInputName(
+                                $controller->fieldImageSettings,
+                                (string)$params['name']
+                            );
+                            if ($this->id && $imageEntityName !== '' && CacheInvalidator::hasProvider()) {
+                                $imageActions[] = [
+                                    'url' => $this->currentIndex.'&'.$this->identifier.'='.$this->id.'&token='.$this->token.'&action=invalidateImageCache&inputName='.$params['name'],
+                                    'icon' => 'icon-refresh',
+                                    'label' => Translate::getAdminTranslation('Clear cache'),
+                                ];
+                            }
+
                             if (isset($params['files']) && $params['files']) {
-                                $uploader->setFiles($params['files']);
+                                $files = $params['files'];
+                                foreach ($files as &$file) {
+                                    if (($file['type'] ?? null) === HelperUploader::TYPE_IMAGE) {
+                                        $file['actions'] = array_merge((array)($file['actions'] ?? []), $imageActions);
+                                    }
+                                }
+                                unset($file);
+                                $uploader->setFiles($files);
                             } elseif (isset($params['image']) && $params['image']) { // Use for retrocompatibility
                                 $uploader->setFiles(
                                     [
@@ -229,6 +249,7 @@ class HelperFormCore extends Helper
                                             'image'      => $params['image'],
                                             'size'       => $params['size'] ?? null,
                                             'delete_url' => $params['delete_url'] ?? null,
+                                            'actions'    => $imageActions,
                                         ],
                                     ]
                                 );
@@ -253,6 +274,7 @@ class HelperFormCore extends Helper
                                         0 => [
                                             'type'  => HelperUploader::TYPE_IMAGE,
                                             'image' => '<img src="'.$params['thumb'].'" alt="'.($params['title'] ?? '').'" title="'.($params['title'] ?? '').'" />',
+                                            'actions' => $imageActions,
                                         ],
                                     ]
                                 );

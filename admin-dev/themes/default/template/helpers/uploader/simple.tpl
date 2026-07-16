@@ -37,11 +37,21 @@
             <div>
               {$file.image}
               {if isset($file.size)}<p>{l s='File size'} {$file.size}kb</p>{/if}
-              {if isset($file.delete_url)}
+              {if isset($file.delete_url) || !empty($file.actions)}
                 <p>
-                  <a class="btn btn-default" href="{$file.delete_url}">
-                    <i class="icon-trash"></i> {l s='Delete'}
-                  </a>
+                  {if isset($file.delete_url)}
+                    <a class="btn btn-default" href="{$file.delete_url|escape:'html':'UTF-8'}">
+                      <i class="icon-trash"></i> {l s='Delete'}
+                    </a>
+                  {/if}
+                  {if !empty($file.actions)}
+                    {foreach $file.actions as $action}
+                      <a class="{if !empty($action.class)}{$action.class|escape:'html':'UTF-8'}{else}btn btn-default{/if}" href="{$action.url|escape:'html':'UTF-8'}">
+                        {if !empty($action.icon)}<i class="{$action.icon|escape:'html':'UTF-8'}"></i>{/if}
+                        {$action.label|escape:'html':'UTF-8'}
+                      </a>
+                    {/foreach}
+                  {/if}
                 </p>
               {/if}
             </div>
