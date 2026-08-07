@@ -216,7 +216,19 @@ class HelperFormCore extends Helper
 
                             // Generate dynamic delete_url
                             if (isset($params['delete_url']) && $params['delete_url']===true) {
-                                $params['delete_url'] = $this->currentIndex.'&'.$this->identifier.'='.$this->id.'&token='.$this->token.'&action=deleteImage&inputName='.$params['name'];
+                                $deleteAction = 'deleteImage';
+                                $videoSettings = property_exists($controller, 'fieldVideoSettings')
+                                    ? (array)$controller->fieldVideoSettings
+                                    : [];
+                                foreach ($videoSettings as $videoDefinition) {
+                                    if (is_array($videoDefinition)
+                                        && (string)($videoDefinition['inputName'] ?? '') === (string)$params['name']
+                                    ) {
+                                        $deleteAction = 'deleteVideo';
+                                        break;
+                                    }
+                                }
+                                $params['delete_url'] = $this->currentIndex.'&'.$this->identifier.'='.$this->id.'&token='.$this->token.'&action='.$deleteAction.'&inputName='.$params['name'];
                             }
 
                             $imageActions = (array)($params['actions'] ?? []);

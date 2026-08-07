@@ -123,6 +123,8 @@ class AdminControllerCore extends Controller
     public $override_folder;
     /** @var array Name and directory where class image are located */
     public $fieldImageSettings = [];
+    /** @var array ObjectModel video entity definitions */
+    public $fieldVideoSettings = [];
     /** @var string Image type */
     public $imageType;
     /** @var string Current controller name without suffix */
@@ -444,6 +446,7 @@ class AdminControllerCore extends Controller
         $this->context->currency = new Currency(Configuration::get('PS_CURRENCY_DEFAULT'));
         $this->imageType = ImageManager::getDefaultImageExtension();
         $this->cleanFieldImageSettings();
+        $this->cleanFieldVideoSettings();
 
         $this->admin_webpath = str_ireplace(_PS_CORE_DIR_, '', _PS_ADMIN_DIR_);
         $this->admin_webpath = preg_replace('/^'.preg_quote(DIRECTORY_SEPARATOR, '/').'/', '', $this->admin_webpath);
@@ -879,6 +882,56 @@ class AdminControllerCore extends Controller
                     $this->content = 'ok';
                 }
             }
+        }
+
+        return $object;
+    }
+
+    /**
+     * Delete one ObjectModel video entity.
+     *
+     * @return ObjectModel|false
+     *
+     * @throws PrestaShopException
+     */
+    public function processDeleteVideo()
+    {
+        if (!$this->hasDeletePermission()) {
+            $this->errors[] = Tools::displayError('You do not have permission to delete this.');
+            return false;
+        }
+
+        $object = $this->loadObject();
+        if (!Validate::isLoadedObject($object)) {
+            return false;
+        }
+
+        $videoEntityName = VideoManager::getNameByInputName(
+            $this->fieldVideoSettings,
+            (string)Tools::getValue('inputName')
+        );
+        if ($videoEntityName === '') {
+            $this->errors[] = Tools::displayError('Unknown video entity.');
+            return $object;
+        }
+
+        $publicUrls = CacheInvalidator::hasProvider()
+            ? VideoManager::getPublicUrls($this->className, $videoEntityName, (int)$object->id)
+            : [];
+        if (!VideoManager::deleteVideoByEntity($this->className, $videoEntityName, (int)$object->id)) {
+            $this->errors[] = Tools::displayError('The video could not be deleted.');
+            return $object;
+        }
+
+        if ($publicUrls && !CacheInvalidator::invalidateUrls($publicUrls)) {
+            $this->warnings[] = $this->l('The video was deleted, but its public cache could not be invalidated.');
+        }
+
+        $redirect = static::$currentIndex.'&update'.$this->table.'&'.$this->identifier.'='.(int)$object->id.'&conf=7&token='.$this->token;
+        if (!$this->ajax) {
+            $this->redirect_after = $redirect;
+        } else {
+            $this->content = 'ok';
         }
 
         return $object;
@@ -1351,6 +1404,10 @@ class AdminControllerCore extends Controller
                         }
                     }
 
+                    if (!empty($this->fieldVideoSettings)) {
+                        $object->deleteAssociatedVideos();
+                    }
+
                     $object->deleted = 1;
                     if ($res = $object->update()) {
                         $this->redirect_after = static::$currentIndex.'&conf=1&token='.$this->token;
@@ -1434,7 +1491,7 @@ class AdminControllerCore extends Controller
 
                     if (!isset($result) || !$result) {
                         $this->errors[] = Tools::displayError('An error occurred while updating an object.').' <b>'.$this->table.'</b> ('.Db::getInstance()->getMsgError().')';
-                    } elseif ($this->postImage($object->id) && !count($this->errors) && $this->_redirect) {
+                    } elseif ($this->postImage($object->id) && $this->postVideo($object->id) && !count($this->errors) && $this->_redirect) {
                         $parentId = Tools::getIntValue('id_parent', 1);
                         // Specific back redirect
                         if ($back = Tools::getValue('back')) {
@@ -1754,6 +1811,80 @@ class AdminControllerCore extends Controller
         }
     }
 
+    /**
+     * Load ObjectModel video entity definitions for automatic admin uploads.
+     */
+    protected function cleanFieldVideoSettings()
+    {
+        if (empty($this->fieldVideoSettings) && $this->className && class_exists($this->className)) {
+            try {
+                $definition = ObjectModel::getDefinition($this->className);
+                if (!empty($definition['videos']) && is_array($definition['videos'])) {
+                    $this->fieldVideoSettings = $definition['videos'];
+                }
+            } catch (PrestaShopException $ignore) {
+            }
+        }
+    }
+
+    /**
+     * Process synchronous ObjectModel video uploads.
+     *
+     * @param int $id
+     *
+     * @return bool
+     */
+    protected function postVideo($id)
+    {
+        foreach ($this->fieldVideoSettings as $videoEntityName => $videoDefinition) {
+            if (!is_string($videoEntityName) || !is_array($videoDefinition)) {
+                continue;
+            }
+
+            $inputName = (string)($videoDefinition['inputName'] ?? '');
+            if ($inputName === '' || !isset($_FILES[$inputName])) {
+                continue;
+            }
+
+            $file = $_FILES[$inputName];
+            $uploadError = (int)($file['error'] ?? UPLOAD_ERR_NO_FILE);
+            if ($uploadError === UPLOAD_ERR_NO_FILE && empty($file['name'])) {
+                continue;
+            }
+
+            $oldUrls = CacheInvalidator::hasProvider()
+                ? VideoManager::getPublicUrls($this->className, $videoEntityName, (int)$id)
+                : [];
+            $error = 0;
+            if (!VideoManager::uploadVideoByEntity($this->className, $videoEntityName, (int)$id, $file, $error)) {
+                $this->errors[] = is_string($error) && $error !== ''
+                    ? $error
+                    : Tools::displayError('An error occurred while uploading the video.');
+                return false;
+            }
+
+            if ($oldUrls && !CacheInvalidator::invalidateUrls($oldUrls)) {
+                $this->warnings[] = $this->l('The video was replaced, but its previous public cache could not be invalidated.');
+            }
+
+            if (!$this->afterVideoUpload()) {
+                return false;
+            }
+        }
+
+        return !count($this->errors);
+    }
+
+    /**
+     * Hook for controllers that need work after a video upload.
+     *
+     * @return bool
+     */
+    protected function afterVideoUpload()
+    {
+        return true;
+    }
+
 
     /**
      * Overload this method for custom checking
@@ -1955,7 +2086,7 @@ class AdminControllerCore extends Controller
             $this->beforeAdd($this->object);
             if (method_exists($this->object, 'add') && !$this->object->add()) {
                 $this->errors[] = Tools::displayError('An error occurred while creating an object.').' <strong>'.$this->table.' ('.Db::getInstance()->getMsgError().')</strong>';
-            } elseif (($_POST[$this->identifier] = $this->object->id /* voluntary do affectation here */) && $this->postImage($this->object->id) && !count($this->errors) && $this->_redirect) {
+            } elseif (($_POST[$this->identifier] = $this->object->id /* voluntary do affectation here */) && $this->postImage($this->object->id) && $this->postVideo($this->object->id) && !count($this->errors) && $this->_redirect) {
                 Logger::addLog(sprintf($this->l('%s addition', 'AdminTab', false, false), $this->className), 1, null, $this->className, (int) $this->object->id, true, (int) $this->context->employee->id);
                 $parentId = Tools::getIntValue('id_parent', 1);
                 $this->afterAdd($this->object);

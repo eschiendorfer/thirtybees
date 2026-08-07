@@ -916,6 +916,7 @@ abstract class ObjectModelCore implements Core_Foundation_Database_EntityInterfa
 
         if ($result && !$hasMultishopEntries) {
             $this->deleteAssociatedImages();
+            $this->deleteAssociatedVideos();
         }
 
         // @hook actionObject*DeleteAfter
@@ -961,6 +962,57 @@ abstract class ObjectModelCore implements Core_Foundation_Database_EntityInterfa
                 $result = false;
                 Logger::addLog(
                     sprintf('Unable to delete image entity "%s" for %s #%d: %s', $imageEntityName, get_class($this), (int)$this->id, $throwable->getMessage()),
+                    3,
+                    null,
+                    get_class($this),
+                    (int)$this->id,
+                    true
+                );
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Delete all modern video entities associated with this object.
+     *
+     * Video cleanup is intentionally best-effort. A database deletion must not
+     * be reported as failed only because a file could not be removed.
+     *
+     * @return bool True if every video entity was cleaned successfully
+     */
+    public function deleteAssociatedVideos()
+    {
+        if (!$this->id || empty($this->def['videos'])) {
+            return true;
+        }
+
+        $result = true;
+        foreach ($this->def['videos'] as $videoEntityName => $videoDefinition) {
+            if (!is_string($videoEntityName)
+                || !is_array($videoDefinition)
+                || (isset($videoDefinition['deleteWithObject']) && !$videoDefinition['deleteWithObject'])
+            ) {
+                continue;
+            }
+
+            try {
+                if (!VideoManager::deleteVideoByEntity(get_class($this), $videoEntityName, (int)$this->id)) {
+                    $result = false;
+                    Logger::addLog(
+                        sprintf('Unable to delete video entity "%s" for %s #%d.', $videoEntityName, get_class($this), (int)$this->id),
+                        3,
+                        null,
+                        get_class($this),
+                        (int)$this->id,
+                        true
+                    );
+                }
+            } catch (Throwable $throwable) {
+                $result = false;
+                Logger::addLog(
+                    sprintf('Unable to delete video entity "%s" for %s #%d: %s', $videoEntityName, get_class($this), (int)$this->id, $throwable->getMessage()),
                     3,
                     null,
                     get_class($this),
