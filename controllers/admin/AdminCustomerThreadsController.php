@@ -42,6 +42,14 @@ class AdminCustomerThreadsControllerCore extends AdminController
     const SETTINGS_CONTROLLER = 'AdminCustomerServiceSettings';
 
     /**
+     * Response templates controller
+     */
+    const RESPONSE_TEMPLATES_CONTROLLER = 'AdminOrderMessage';
+
+    /** @var array<int, array<string, mixed>>|null */
+    protected $assignableEmployeesCache;
+
+    /**
      * AdminCustomerThreadsControllerCore constructor.
      *
      * @throws PrestaShopException
@@ -61,10 +69,10 @@ class AdminCustomerThreadsControllerCore extends AdminController
             $contactArray[$contact['id_contact']] = $contact['name'];
         }
 
-        $languageArray = [];
-        $languages = Language::getLanguages();
-        foreach ($languages as $language) {
-            $languageArray[$language['id_lang']] = $language['name'];
+        $statusArray = $this->getCustomerServiceStatuses();
+        $employeeArray = [-1 => $this->getUnassignedEmployeeLabel()];
+        foreach ($this->getAssignableEmployees() as $employee) {
+            $employeeArray[(int) $employee['id_employee']] = trim($employee['firstname'].' '.$employee['lastname']);
         }
 
         $this->fields_list = [
@@ -89,43 +97,29 @@ class AdminCustomerThreadsControllerCore extends AdminController
                 'filter_key'  => 'cl!id_contact',
                 'filter_type' => 'int',
             ],
-            'language'           => [
-                'title'       => $this->l('Language'),
-                'type'        => 'select',
-                'list'        => $languageArray,
-                'filter_key'  => 'l!id_lang',
-                'filter_type' => 'int',
-            ],
             'status'             => [
                 'title'       => $this->l('Status'),
-                'type'        => 'text',
+                'type'        => 'select',
+                'list'        => $statusArray,
                 'align'       => 'center',
                 'filter_key'  => 'a!status',
                 'filter_type' => 'string',
                 'callback'    => 'renderStatus',
             ],
-            'employee'           => [
-                'title'          => $this->l('Employee'),
-                'filter_key'     => 'employee',
+            'id_employee_assigned' => [
+                'title'       => $this->l('Employee'),
+                'type'        => 'select',
+                'list'        => $employeeArray,
+                'filter_key'  => 'assigned_employee_filter',
+                'filter_type' => 'int',
                 'tmpTableFilter' => true,
+                'callback'    => 'renderAssignedEmployee',
             ],
             'messages'           => [
                 'title'          => $this->l('Messages'),
                 'filter_key'     => 'messages',
                 'tmpTableFilter' => true,
                 'maxlength'      => 40,
-            ],
-            'private'            => [
-                'title'      => $this->l('Private'),
-                'type'       => 'select',
-                'filter_key' => 'private',
-                'align'      => 'center',
-                'cast'       => 'intval',
-                'callback'   => 'printOptinIcon',
-                'list'       => [
-                    '0' => $this->l('No'),
-                    '1' => $this->l('Yes'),
-                ],
             ],
             'date_upd'           => [
                 'title'        => $this->l('Last message'),
@@ -148,6 +142,78 @@ class AdminCustomerThreadsControllerCore extends AdminController
     }
 
     /**
+     * Statuses available to employees and customers.
+     *
+     * pending1 remains the persisted value for "in progress" so existing threads
+     * keep their meaning without a data migration.
+     *
+     * @return array<string, string>
+     */
+    protected function getCustomerServiceStatuses(): array
+    {
+        return [
+            CustomerThread::STATUS_OPEN             => $this->l('Open'),
+            CustomerThread::STATUS_IN_PROGRESS      => $this->l('In progress'),
+            CustomerThread::STATUS_WAITING_CUSTOMER => $this->l('Waiting for customer reply'),
+            CustomerThread::STATUS_CLOSED           => $this->l('Closed'),
+        ];
+    }
+
+    /**
+     * Employees available for customer service assignment.
+     *
+     * @return array<int, array<string, mixed>>
+     *
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    protected function getAssignableEmployees(): array
+    {
+        if ($this->assignableEmployeesCache === null) {
+            $this->assignableEmployeesCache = array_values(array_filter(
+                Employee::getEmployees(true),
+                static function (array $employee): bool {
+                    return in_array((int) $employee['id_employee'], CustomerThread::CUSTOMER_SERVICE_EMPLOYEE_IDS, true);
+                }
+            ));
+        }
+
+        return $this->assignableEmployeesCache;
+    }
+
+    /**
+     * @return int[]
+     *
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    protected function getAssignableEmployeeIds(): array
+    {
+        return array_map('intval', array_column($this->getAssignableEmployees(), 'id_employee'));
+    }
+
+    protected function getUnassignedEmployeeLabel(): string
+    {
+        return $this->l('Unassigned');
+    }
+
+    /**
+     * @return array<int, string>
+     *
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    protected function getAssignableEmployeeOptions(): array
+    {
+        $options = [0 => $this->getUnassignedEmployeeLabel()];
+        foreach ($this->getAssignableEmployees() as $employee) {
+            $options[(int) $employee['id_employee']] = trim($employee['firstname'].' '.$employee['lastname']);
+        }
+
+        return $options;
+    }
+
+    /**
      * Render list
      *
      * @return string
@@ -165,24 +231,14 @@ class AdminCustomerThreadsControllerCore extends AdminController
         $this->addRowAction('delete');
 
         $this->_select = '
-			CONCAT(c.`firstname`," ",c.`lastname`) as customer, cl.`name` as contact, l.`name` as language, group_concat(message) as messages, cm.private,
-			(
-				SELECT IFNULL(CONCAT(LEFT(e.`firstname`, 1),". ",e.`lastname`), "--")
-				FROM `'._DB_PREFIX_.'customer_message` cm2
-				INNER JOIN '._DB_PREFIX_.'employee e
-					ON e.`id_employee` = cm2.`id_employee`
-				WHERE cm2.id_employee > 0
-					AND cm2.`id_customer_thread` = a.`id_customer_thread`
-				ORDER BY cm2.`date_add` DESC LIMIT 1
-			) as employee';
+			CONCAT(c.`firstname`," ",c.`lastname`) as customer, cl.`name` as contact, group_concat(message) as messages,
+			IF(a.`id_employee_assigned` = 0, -1, a.`id_employee_assigned`) as assigned_employee_filter';
 
         $this->_join = '
 			LEFT JOIN `'._DB_PREFIX_.'customer` c
 				ON c.`id_customer` = a.`id_customer`
-			LEFT JOIN `'._DB_PREFIX_.'customer_message` cm
-				ON cm.`id_customer_thread` = a.`id_customer_thread`
-			LEFT JOIN `'._DB_PREFIX_.'lang` l
-				ON l.`id_lang` = a.`id_lang`
+			INNER JOIN `'._DB_PREFIX_.'customer_message` cm
+				ON (cm.`id_customer_thread` = a.`id_customer_thread` AND cm.`private` = 0)
 			LEFT JOIN `'._DB_PREFIX_.'contact_lang` cl
 				ON (cl.`id_contact` = a.`id_contact` AND cl.`id_lang` = '.(int) $this->context->language->id.')';
 
@@ -193,25 +249,6 @@ class AdminCustomerThreadsControllerCore extends AdminController
         $this->_group = 'GROUP BY cm.id_customer_thread';
         $this->_orderBy = 'date_upd';
         $this->_orderWay = 'DESC';
-
-        $contacts = CustomerThread::getContacts();
-
-        $categories = Contact::getCategoriesContacts();
-
-        $params = [
-            $this->l('Total threads')                     => $all = CustomerThread::getTotalCustomerThreads(),
-            $this->l('Threads pending')                   => $pending = CustomerThread::getTotalCustomerThreads('status LIKE "%pending%"'),
-            $this->l('Total number of customer messages') => CustomerMessage::getTotalCustomerMessages('id_employee = 0'),
-            $this->l('Total number of employee messages') => CustomerMessage::getTotalCustomerMessages('id_employee != 0'),
-            $this->l('Unread threads')                    => $unread = CustomerThread::getTotalCustomerThreads('status = "open"'),
-            $this->l('Closed threads')                    => $all - ($unread + $pending),
-        ];
-
-        $this->tpl_list_vars = [
-            'contacts'   => $contacts,
-            'categories' => $categories,
-            'params'     => $params,
-        ];
 
         return parent::renderList();
     }
@@ -442,6 +479,15 @@ class AdminCustomerThreadsControllerCore extends AdminController
         parent::initToolbar();
         unset($this->toolbar_btn['new']);
 
+        $responseTemplatesTabId = Tab::getIdFromClassName(static::RESPONSE_TEMPLATES_CONTROLLER);
+        if ($this->context->employee->hasAccess($responseTemplatesTabId, Profile::PERMISSION_VIEW)) {
+            $this->page_header_toolbar_btn['response_templates'] = [
+                'href' => $this->context->link->getAdminLink(static::RESPONSE_TEMPLATES_CONTROLLER),
+                'icon' => 'process-icon-edit',
+                'desc' => $this->l('Response Templates'),
+            ];
+        }
+
         $settingsTabId = Tab::getIdFromClassName(static::SETTINGS_CONTROLLER);
         if ($this->context->employee->hasAccess($settingsTabId, Profile::PERMISSION_EDIT)) {
             $this->page_header_toolbar_btn['settings'] = [
@@ -450,13 +496,15 @@ class AdminCustomerThreadsControllerCore extends AdminController
                 'desc' => $this->l('Settings'),
             ];
         }
+    }
 
-        // Add button to close old threads
-        $this->page_header_toolbar_btn['close_old_threads'] = [
-            'href' => $this->context->link->getAdminLink('AdminCustomerThreads', true, ['action' => 'closeOldThreads']),
-            'icon' => 'process-icon-refresh',
-            'desc' => $this->l('Close threads older than 30 days'),
-        ];
+    /**
+     * @return void
+     */
+    public function initPageHeaderToolbar()
+    {
+        parent::initPageHeaderToolbar();
+        $this->context->smarty->clearAssign('help_link');
     }
 
     /**
@@ -478,12 +526,6 @@ class AdminCustomerThreadsControllerCore extends AdminController
      */
     public function postProcess()
     {
-        if (Tools::getValue('action') == 'closeOldThreads') {
-            $this->processCloseOldThreads();
-            $this->redirect_after = $this->context->link->getAdminLink('AdminCustomerThreads');
-            return true;
-        }
-
         if ($idCustomerThread = Tools::getIntValue('id_customer_thread')) {
             if (($idContact = Tools::getIntValue('id_contact'))) {
                 Db::getInstance()->execute(
@@ -499,9 +541,31 @@ class AdminCustomerThreadsControllerCore extends AdminController
                     '
 					UPDATE '._DB_PREFIX_.'customer_thread
 					SET status = "'.$statusArray[$idStatus].'"
-					WHERE id_customer_thread = '.(int) $idCustomerThread.' LIMIT 1
+                    WHERE id_customer_thread = '.(int) $idCustomerThread.' LIMIT 1
 				'
                 );
+            }
+            if (Tools::isSubmit('submitThreadSettings')) {
+                $thread = new CustomerThread($idCustomerThread);
+                $status = (string) Tools::getValue('thread_status');
+                $idEmployeeAssigned = Tools::getIntValue('id_employee_assigned');
+
+                if (!array_key_exists($status, $this->getCustomerServiceStatuses())) {
+                    $this->errors[] = Tools::displayError('The selected status is invalid.');
+                }
+                if ($idEmployeeAssigned !== 0 && !in_array($idEmployeeAssigned, $this->getAssignableEmployeeIds(), true)) {
+                    $this->errors[] = Tools::displayError('The selected employee cannot be assigned to customer service threads.');
+                }
+
+                if (!$this->errors) {
+                    $thread->status = $status;
+                    $thread->id_employee_assigned = $idEmployeeAssigned;
+                    if ($thread->update()) {
+                        $this->confirmations[] = $this->l('The thread settings have been updated.');
+                    } else {
+                        $this->errors[] = Tools::displayError('The thread settings could not be updated.');
+                    }
+                }
             }
             if (isset($_POST['id_employee_forward'])) {
                 $messages = Db::readOnly()->getRow(
@@ -592,6 +656,7 @@ class AdminCustomerThreadsControllerCore extends AdminController
             }
             if (Tools::isSubmit('submitReply')) {
                 $ct = new CustomerThread($idCustomerThread);
+                $replyStatus = (string) Tools::getValue('thread_status', $ct->status);
 
                 $cm = new CustomerMessage();
                 $cm->id_employee = (int) $this->context->employee->id;
@@ -603,7 +668,9 @@ class AdminCustomerThreadsControllerCore extends AdminController
                     $cm->file_name = $fileAttachment['rename'];
                     @chmod(_PS_UPLOAD_DIR_.basename($fileAttachment['rename']), 0664);
                 }
-                if (($error = $cm->validateField('message', $cm->message, null, [], true)) !== true) {
+                if (!array_key_exists($replyStatus, $this->getCustomerServiceStatuses())) {
+                    $this->errors[] = Tools::displayError('The selected status is invalid.');
+                } elseif (($error = $cm->validateField('message', $cm->message, null, [], true)) !== true) {
                     $this->errors[] = $error;
                 } elseif (!empty($fileAttachment['name']) && $fileAttachment['error'] != 0) {
                     $this->errors[] = Tools::displayError('An error occurred during the file upload process.');
@@ -644,7 +711,10 @@ class AdminCustomerThreadsControllerCore extends AdminController
                         true,
                         $ct->id_shop
                     )) {
-                        $ct->status = 'closed';
+                        $ct->status = $replyStatus;
+                        if (in_array((int) $this->context->employee->id, $this->getAssignableEmployeeIds(), true)) {
+                            $ct->id_employee_assigned = (int) $this->context->employee->id;
+                        }
                         $ct->update();
                     }
                     Tools::redirectAdmin(
@@ -657,35 +727,6 @@ class AdminCustomerThreadsControllerCore extends AdminController
         }
 
         return parent::postProcess();
-    }
-
-    /**
-     * Process closing old threads.
-     *
-     * @throws PrestaShopException
-     */
-    public function processCloseOldThreads()
-    {
-        $dateLimit = date('Y-m-d H:i:s', strtotime('-30 days'));
-        $dateLimitEscaped = pSQL($dateLimit);
-        $countSql = '
-            SELECT COUNT(*)
-            FROM `' . _DB_PREFIX_ . 'customer_thread`
-            WHERE `status` = "open" AND `date_upd` < "' . $dateLimitEscaped . '"';
-
-        $numThreads = (int)Db::getInstance()->getValue($countSql);
-
-        if ($numThreads > 0) {
-            $updateSql = '
-                UPDATE `' . _DB_PREFIX_ . 'customer_thread`
-                SET `status` = "closed"
-                WHERE `status` = "open" AND `date_upd` < "' . $dateLimitEscaped . '"';
-            if (Db::getInstance()->execute($updateSql)) {
-                $this->confirmations[] = sprintf($this->l('%d old open threads have been successfully closed.'), $numThreads);
-            } else {
-                $this->errors[] = $this->l('An error occurred while closing old open threads.');
-            }
-        }
     }
 
     /**
@@ -838,10 +879,6 @@ class AdminCustomerThreadsControllerCore extends AdminController
         if (! Validate::isLoadedObject($thread)) {
             return '';
         }
-        $this->context->cookie->{'customer_threadFilter_cl!id_contact'} = $thread->id_contact;
-
-        $employees = Employee::getEmployees();
-
         $messages = CustomerThread::getMessageCustomerThreads($idCustomerThread);
 
         foreach ($messages as $key => $mess) {
@@ -863,60 +900,10 @@ class AdminCustomerThreadsControllerCore extends AdminController
 
         $contacts = Contact::getContacts($this->context->language->id, true);
 
-        $actions = [];
-
         if ($nextThread) {
             $nextThread = [
                 'href' => static::$currentIndex.'&id_customer_thread='.(int) $nextThread.'&viewcustomer_thread&token='.$this->token,
                 'name' => $this->l('Reply to the next unanswered message in this thread'),
-            ];
-        }
-
-        if ($thread->status != 'closed') {
-            $actions['closed'] = [
-                'href'  => static::$currentIndex.'&viewcustomer_thread&setstatus=2&id_customer_thread='.Tools::getIntValue('id_customer_thread').'&viewmsg&token='.$this->token,
-                'label' => $this->l('Mark as "handled"'),
-                'name'  => 'setstatus',
-                'value' => 2,
-            ];
-        } else {
-            $actions['open'] = [
-                'href'  => static::$currentIndex.'&viewcustomer_thread&setstatus=1&id_customer_thread='.Tools::getIntValue('id_customer_thread').'&viewmsg&token='.$this->token,
-                'label' => $this->l('Re-open'),
-                'name'  => 'setstatus',
-                'value' => 1,
-            ];
-        }
-
-        if ($thread->status != 'pending1') {
-            $actions['pending1'] = [
-                'href'  => static::$currentIndex.'&viewcustomer_thread&setstatus=3&id_customer_thread='.Tools::getIntValue('id_customer_thread').'&viewmsg&token='.$this->token,
-                'label' => $this->l('Mark as "pending 1" (will be answered later)'),
-                'name'  => 'setstatus',
-                'value' => 3,
-            ];
-        } else {
-            $actions['pending1'] = [
-                'href'  => static::$currentIndex.'&viewcustomer_thread&setstatus=1&id_customer_thread='.Tools::getIntValue('id_customer_thread').'&viewmsg&token='.$this->token,
-                'label' => $this->l('Disable pending status'),
-                'name'  => 'setstatus',
-                'value' => 1,
-            ];
-        }
-
-        if ($thread->status != 'pending2') {
-            $actions['pending2'] = [
-                'href'  => static::$currentIndex.'&viewcustomer_thread&setstatus=4&id_customer_thread='.Tools::getIntValue('id_customer_thread').'&viewmsg&token='.$this->token,
-                'label' => $this->l('Mark as "pending 2" (will be answered later)'),
-                'name'  => 'setstatus',
-                'value' => 4,
-            ];
-        } else {
-            $actions['pending2'] = [
-                'href'  => static::$currentIndex.'&viewcustomer_thread&setstatus=1&id_customer_thread='.Tools::getIntValue('id_customer_thread').'&viewmsg&token='.$this->token,
-                'label' => $this->l('Disable pending status'),
-                'name'  => 'setstatus',
-                'value' => 1,
             ];
         }
 
@@ -967,8 +954,8 @@ class AdminCustomerThreadsControllerCore extends AdminController
         $this->tpl_view_vars = [
             'id_customer_thread'            => $idCustomerThread,
             'thread'                        => $thread,
-            'actions'                       => $actions,
-            'employees'                     => $employees,
+            'assignable_employees'          => $this->getAssignableEmployeeOptions(),
+            'thread_statuses'               => $this->getCustomerServiceStatuses(),
             'current_employee'              => $this->context->employee,
             'orderMessages'                 => OrderMessage::getOrderMessages($thread->id_lang, $order, $customer),
             'messages'                      => $messages,
@@ -1083,22 +1070,6 @@ class AdminCustomerThreadsControllerCore extends AdminController
     }
 
     /**
-     * @throws PrestaShopException
-     */
-    public function ajaxProcessMarkAsRead()
-    {
-        if (! $this->hasEditPermission()) {
-            throw new PrestaShopException(Tools::displayError('You do not have permission to edit this.'));
-        }
-
-        $idThread = Tools::getIntValue('id_thread');
-        $messages = CustomerThread::getMessageCustomerThreads($idThread);
-        if (count($messages)) {
-            Db::getInstance()->execute('UPDATE `'._DB_PREFIX_.'customer_message` set `read` = 1 WHERE `id_employee` = '.(int) $this->context->employee->id.' AND `id_customer_thread` = '.(int) $idThread);
-        }
-    }
-
-    /**
      * @param int $customerMessageId
      * @return void
      * @throws PrestaShopException
@@ -1174,12 +1145,14 @@ class AdminCustomerThreadsControllerCore extends AdminController
      */
     public function renderStatus($value)
     {
+        $statusLabels = $this->getCustomerServiceStatuses();
         $statuses = [
-            'unknown'  => ['class' => 'badge', 'text' => $this->l('Unknown')],
-            'open'     => ['class' => 'badge badge-danger', 'text' => $this->l('Open')],
-            'closed'   => ['class' => 'badge badge-success', 'text' => $this->l('Closed')],
-            'pending1' => ['class' => 'badge badge-warning', 'text' => $this->l('Pending 1')],
-            'pending2' => ['class' => 'badge badge-warning', 'text' => $this->l('Pending 2')],
+            'unknown'          => ['class' => 'badge', 'text' => $this->l('Unknown')],
+            'open'             => ['class' => 'badge badge-danger', 'text' => $statusLabels[CustomerThread::STATUS_OPEN]],
+            'closed'           => ['class' => 'badge badge-success', 'text' => $statusLabels[CustomerThread::STATUS_CLOSED]],
+            'pending1'         => ['class' => 'badge badge-warning', 'text' => $statusLabels[CustomerThread::STATUS_IN_PROGRESS]],
+            'pending2'         => ['class' => 'badge badge-warning', 'text' => $statusLabels[CustomerThread::STATUS_IN_PROGRESS]],
+            'waiting_customer' => ['class' => 'badge badge-info', 'text' => $statusLabels[CustomerThread::STATUS_WAITING_CUSTOMER]],
         ];
 
         if (! array_key_exists($value, $statuses)) {
@@ -1187,5 +1160,19 @@ class AdminCustomerThreadsControllerCore extends AdminController
         }
 
         return '<span class="'.$statuses[$value]['class'] . '">' . $statuses[$value]['text'] . '</span>';
+    }
+
+    /**
+     * @param int|string $value
+     * @return string
+     *
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    public function renderAssignedEmployee($value)
+    {
+        $employees = $this->getAssignableEmployeeOptions();
+
+        return $employees[(int) $value] ?? $this->getUnassignedEmployeeLabel();
     }
 }

@@ -988,32 +988,7 @@ abstract class PaymentModuleCore extends Module
                     $cartRulesListHtml = $this->getEmailTemplateContent('order_conf_cart_rules.tpl', Mail::TYPE_HTML, $cartRulesList);
                 }
 
-                // Specify order id for message
-                $oldMessage = Message::getMessageByCartId((int) $this->context->cart->id);
-                if ($oldMessage && !$oldMessage['private']) {
-                    $updateMessage = new Message((int) $oldMessage['id_message']);
-                    $updateMessage->id_order = (int) $order->id;
-                    $updateMessage->update();
-
-                    // Add this message in the customer thread
-                    $customerThread = new CustomerThread();
-                    $customerThread->id_contact = 0;
-                    $customerThread->id_customer = (int) $order->id_customer;
-                    $customerThread->id_shop = (int) $this->context->shop->id;
-                    $customerThread->id_order = (int) $order->id;
-                    $customerThread->id_lang = (int) $this->context->language->id;
-                    $customerThread->email = $this->context->customer->email;
-                    $customerThread->status = 'open';
-                    $customerThread->token = Tools::passwdGen(12);
-                    $customerThread->add();
-
-                    $customerMessage = new CustomerMessage();
-                    $customerMessage->id_customer_thread = $customerThread->id;
-                    $customerMessage->id_employee = 0;
-                    $customerMessage->message = $updateMessage->message;
-                    $customerMessage->private = 0;
-                    $customerMessage->add();
-                }
+                $this->createCustomerThreadFromOrderMessage($order);
 
                 // Hook validate order
                 Hook::triggerEvent(
@@ -1231,6 +1206,70 @@ abstract class PaymentModuleCore extends Module
         } else {
             throw new PrestaShopException(sprintf(Tools::displayError('Order has already been placed using cart [%s]'), (int)$idCart));
         }
+    }
+
+    /**
+     * Transfer a public cart comment into customer service and notify the shop.
+     */
+    protected function createCustomerThreadFromOrderMessage(Order $order)
+    {
+        $oldMessage = Message::getMessageByCartId((int) $this->context->cart->id);
+        if (!$oldMessage || $oldMessage['private']) {
+            return;
+        }
+
+        $updateMessage = new Message((int) $oldMessage['id_message']);
+        $updateMessage->id_order = (int) $order->id;
+        $updateMessage->update();
+
+        $customerThread = new CustomerThread();
+        $customerThread->id_contact = 0;
+        $customerThread->id_customer = (int) $order->id_customer;
+        $customerThread->id_shop = (int) $this->context->shop->id;
+        $customerThread->id_order = (int) $order->id;
+        $customerThread->id_lang = (int) $this->context->language->id;
+        $customerThread->email = $this->context->customer->email;
+        $customerThread->status = CustomerThread::STATUS_OPEN;
+        $customerThread->token = Tools::passwdGen(12);
+        $customerThread->add();
+
+        $customerMessage = new CustomerMessage();
+        $customerMessage->id_customer_thread = $customerThread->id;
+        $customerMessage->id_employee = 0;
+        $customerMessage->message = $updateMessage->message;
+        $customerMessage->private = 1;
+
+        if (!$customerMessage->add()) {
+            $this->errors[] = Tools::displayError('An error occurred while saving message');
+
+            return;
+        }
+
+        Mail::Send(
+            $this->context->language->id,
+            'order_customer_comment',
+            Mail::l('Message from a customer'),
+            [
+                '{lastname}'     => $this->context->customer->lastname,
+                '{firstname}'    => $this->context->customer->firstname,
+                '{email}'        => $this->context->customer->email,
+                '{id_order}'     => (int) $order->id,
+                '{order_name}'   => $order->getUniqReference(),
+                '{message}'      => Tools::nl2br($customerMessage->message),
+                '{product_name}' => '',
+            ],
+            strval(Configuration::get('PS_SHOP_EMAIL')),
+            $this->context->shop->name,
+            strval(Configuration::get('PS_SHOP_EMAIL')),
+            $this->context->customer->firstname.' '.$this->context->customer->lastname,
+            null,
+            null,
+            _PS_MAIL_DIR_,
+            false,
+            null,
+            null,
+            $this->context->customer->email
+        );
     }
 
     /**

@@ -1384,6 +1384,17 @@ class CustomerCore extends ObjectModel
             }
         }
 
+        // Keep customer service threads aligned with the surviving account.
+        // The customer relation is reassigned above, but the thread also stores
+        // the address used for replies and must not retain the source address.
+        if ($source->email !== $target->email) {
+            $conn->update(
+                CustomerThread::$definition['table'],
+                ['email' => pSQL($target->email)],
+                'id_customer = '.$targetId." AND email = '".pSQL($source->email)."'"
+            );
+        }
+
         // delete source customer
         $source->delete();
 

@@ -34,10 +34,19 @@
  */
 class CustomerThreadCore extends ObjectModel
 {
+    public const CUSTOMER_SERVICE_EMPLOYEE_IDS = [1, 2, 5, 7, 9, 14];
+
+    public const STATUS_OPEN = 'open';
+    public const STATUS_IN_PROGRESS = 'pending1';
+    public const STATUS_WAITING_CUSTOMER = 'waiting_customer';
+    public const STATUS_CLOSED = 'closed';
+
     /** @var int $id_contact */
     public $id_contact;
     /** @var int $id_customer */
     public $id_customer;
+    /** @var int $id_employee_assigned */
+    public $id_employee_assigned;
     /**
      * Legacy order context for order-related threads.
      *
@@ -86,11 +95,12 @@ class CustomerThreadCore extends ObjectModel
             'id_lang'     => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true],
             'id_contact'  => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true],
             'id_customer' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId'],
+            'id_employee_assigned' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '0'],
             'id_order'    => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId'],
             'id_product'  => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId'],
             'entity_type' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '0'],
             'id_entity'   => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '0'],
-            'status'      => ['type' => self::TYPE_STRING, 'values' => ['open', 'closed', 'pending1', 'pending2'], 'dbDefault' => 'open'],
+            'status'      => ['type' => self::TYPE_STRING, 'values' => ['open', 'closed', 'pending1', 'pending2', 'waiting_customer'], 'dbDefault' => 'open'],
             'email'       => ['type' => self::TYPE_STRING, 'validate' => 'isEmail', 'size' => 128, 'dbNullable' => false],
             'token'       => ['type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'required' => true, 'size' => 12, 'dbNullable' => true],
             'date_add'    => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
@@ -100,6 +110,7 @@ class CustomerThreadCore extends ObjectModel
             'customer_thread' => [
                 'id_contact'  => ['type' => ObjectModel::KEY, 'columns' => ['id_contact']],
                 'id_customer' => ['type' => ObjectModel::KEY, 'columns' => ['id_customer']],
+                'id_employee_assigned' => ['type' => ObjectModel::KEY, 'columns' => ['id_employee_assigned']],
                 'id_lang'     => ['type' => ObjectModel::KEY, 'columns' => ['id_lang']],
                 'id_order'    => ['type' => ObjectModel::KEY, 'columns' => ['id_order']],
                 'id_product'  => ['type' => ObjectModel::KEY, 'columns' => ['id_product']],

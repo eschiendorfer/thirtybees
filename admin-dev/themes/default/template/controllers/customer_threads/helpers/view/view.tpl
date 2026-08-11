@@ -25,7 +25,6 @@
 
 {extends file="helpers/view/view.tpl"}
 {block name="override_tpl"}
-{include file="./modal.tpl" }
 <div class="panel">
 	<div class="panel-heading">
 		<i class="icon-comments"></i>
@@ -38,20 +37,37 @@
 	</div>
 	<div class="well">
 		<form action="{$link->getAdminLink('AdminCustomerThreads')|escape:'html':'UTF-8'}&amp;viewcustomer_thread&amp;id_customer_thread={$id_customer_thread|intval}" method="post" enctype="multipart/form-data" class="form-horizontal">
-			{foreach $actions as $action}
-				<button class="btn btn-default" name="{$action.name|escape:'html':'UTF-8'}" value="{$action.value|intval}">
-					{if isset($action.icon)}<i class="{$action.icon|escape:'html':'UTF-8'}"></i>{/if}{$action.label}
-				</button>
-			{/foreach}
-			<button class="btn btn-default" type="button" data-toggle="modal" data-target="#myModal">
-				{l s="Forward this discussion to another employee"}
-			</button>
-
-			<a href="{$link->getAdminLink('AdminCustomerThreads')|escape:'html':'UTF-8'}&amp;deletecustomer_thread&amp;id_customer_thread={$id_customer_thread|intval}"
-			   class="btn btn-default"
-			   onclick="return confirm('{l s='Delete this customer thread?'|escape:'html':'UTF-8'}');">
-				<i class="icon-trash"></i> {l s="Delete"}
-			</a>
+			<div class="row">
+				<div class="col-sm-4">
+					<div class="form-group">
+						<label class="control-label col-sm-4" for="thread_status">{l s='Status'}</label>
+						<div class="col-sm-8">
+							<select class="form-control" id="thread_status" name="thread_status">
+								{foreach from=$thread_statuses key=status_value item=status_label}
+									<option value="{$status_value|escape:'html':'UTF-8'}" {if $thread->status == $status_value || ($thread->status == 'pending2' && $status_value == 'pending1')}selected="selected"{/if}>{$status_label|escape:'html':'UTF-8'}</option>
+								{/foreach}
+							</select>
+						</div>
+					</div>
+				</div>
+				<div class="col-sm-4">
+					<div class="form-group">
+						<label class="control-label col-sm-4" for="id_employee_assigned">{l s='Employee'}</label>
+						<div class="col-sm-8">
+							<select class="form-control" id="id_employee_assigned" name="id_employee_assigned">
+								{foreach from=$assignable_employees key=id_employee item=employee_name}
+									<option value="{$id_employee|intval}" {if $thread->id_employee_assigned == $id_employee}selected="selected"{/if}>{$employee_name|escape:'html':'UTF-8'}</option>
+								{/foreach}
+							</select>
+						</div>
+					</div>
+				</div>
+				<div class="col-sm-4">
+					<button class="btn btn-primary" name="submitThreadSettings" value="1">
+						<i class="icon-save"></i> {l s='Save'}
+					</button>
+				</div>
+			</div>
 		</form>
 	</div>
 	<div class="row">
@@ -104,7 +120,7 @@
 </div>
 <div class="panel">
 
-	<form action="{$link->getAdminLink('AdminCustomerThreads')|escape:'html':'UTF-8'}&amp;id_customer_thread={$thread->id|intval}&amp;viewcustomer_thread" method="post" enctype="multipart/form-data" class="form-horizontal">
+	<form id="customer_thread_reply_form" action="{$link->getAdminLink('AdminCustomerThreads')|escape:'html':'UTF-8'}&amp;id_customer_thread={$thread->id|intval}&amp;viewcustomer_thread" method="post" enctype="multipart/form-data" class="form-horizontal">
 		<h3>{l s="Your answer to"} {if isset($customer->firstname)}{$customer->firstname|escape:'html':'UTF-8'} {$customer->lastname|escape:'html':'UTF-8'} {else} {$thread->email|idnToUtf8|escape:'htmlall':'UTF-8'}{/if}</h3>
 		<div class="form-group">
 			<label class="col-lg-12">{l s='Choose a standard message'}</label>
@@ -144,6 +160,7 @@
 			<button class="btn btn-default pull-right" name="submitReply"><i class="process-icon-mail-reply"></i> {l s='Send'}</button>
 			<input type="hidden" name="id_customer_thread" value="{$thread->id|intval}" />
 			<input type="hidden" name="msg_email" value="{$thread->email|escape:'htmlall':'UTF-8'}" />
+			<input type="hidden" id="reply_thread_status" name="thread_status" value="{$thread->status|escape:'html':'UTF-8'}" />
 		</div>
 	</form>
 </div>
@@ -164,44 +181,11 @@
 </div>
 {/if}
 <script type="text/javascript">
-	var timer;
 		$(document).ready(function(){
-			$('select[name=id_employee_forward]').change(function(){
-				if ($(this).val() >= 0)
-					$('#message_forward').show(400);
-				else
-					$('#message_forward').hide(200);
-				if ($(this).val() == 0)
-					$('#message_forward_email').show(200);
-				else
-					$('#message_forward_email').hide(200);
+			$('#customer_thread_reply_form').on('submit', function() {
+				$('#reply_thread_status').val($('#thread_status').val());
 			});
-			$('textarea[name=message_forward]').click(function(){
-				if($(this).val() == '{l s='You can add a comment here.' js=1}')
-				{
-					$(this).val('');
-				}
-			});
-			timer = setInterval("markAsRead()", 3000);
 		});
-
-	function markAsRead()
-	{
-		$.ajax({
-			type: 'POST',
-			url: 'ajax-tab.php',
-			async: true,
-			dataType: 'json',
-			data: {
-				controller: 'AdminCustomerThreads',
-				action: 'markAsRead',
-				token : '{$token|escape:'html':'UTF-8'}',
-				id_thread: {$id_customer_thread|intval}
-			}
-		});
-		clearInterval(timer);
-		timer = null;
-	}
 </script>
 
 {/block}
