@@ -1164,15 +1164,26 @@ class AdminCustomerThreadsControllerCore extends AdminController
 
     /**
      * @param int|string $value
+     * @param array<string, mixed> $row
      * @return string
      *
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public function renderAssignedEmployee($value)
+    public function renderAssignedEmployee($value, array $row)
     {
         $employees = $this->getAssignableEmployeeOptions();
+        $idEmployee = (int) $value;
+        $employeeName = $employees[$idEmployee] ?? $this->getUnassignedEmployeeLabel();
 
-        return $employees[(int) $value] ?? $this->getUnassignedEmployeeLabel();
+        if ($idEmployee <= 0 && ($row['status'] ?? null) !== CustomerThread::STATUS_CLOSED) {
+            return '<span class="badge badge-warning">'.Tools::safeOutput($employeeName).'</span>';
+        }
+
+        if ($idEmployee === (int) $this->context->employee->id) {
+            return '<span class="badge badge-info">'.Tools::safeOutput($employeeName).'</span>';
+        }
+
+        return $employeeName;
     }
 }
