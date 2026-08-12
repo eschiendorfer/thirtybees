@@ -54,9 +54,27 @@
 				<tr>
 					<th>{l s='Reference'}</th>
 					<th>{l s='Product name'}</th>
-					<th class="text-left">{l s='Registered quantity'}</th>
-					<th class="text-left">{l s='Received quantity'}</th>
-					<th class="text-left">{l s='Restocked quantity'}</th>
+					<th class="text-left">
+						<span class="title_box">
+							<span class="label-tooltip" data-toggle="tooltip" title="{l s='Quantity the customer registered for return.'}">
+								{l s='Registered quantity'}
+							</span>
+						</span>
+					</th>
+					<th class="text-left">
+						<span class="title_box">
+							<span class="label-tooltip" data-toggle="tooltip" title="{l s='Quantity actually received from the customer.'}">
+								{l s='Received quantity'}
+							</span>
+						</span>
+					</th>
+					<th class="text-left">
+						<span class="title_box">
+							<span class="label-tooltip" data-toggle="tooltip" title="{l s='Only returns in perfect condition may be returned to stock. Products sold in the Fundus must not be entered here.'}">
+								{l s='Restocked quantity'}
+							</span>
+						</span>
+					</th>
 					<th class="text-center">{l s='Action'}</th>
 				</tr>
 			</thead>
