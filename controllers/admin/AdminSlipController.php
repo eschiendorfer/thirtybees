@@ -80,6 +80,7 @@ class AdminSlipControllerCore extends AdminController
             'refund_payment_method' => [
                 'title' => $this->l('Refund method'),
                 'havingFilter' => true,
+                'callback' => 'formatRefundPaymentMethod',
             ],
             'date_add'      => [
                 'title'      => $this->l('Date issued'),
@@ -118,6 +119,20 @@ class AdminSlipControllerCore extends AdminController
         parent::__construct();
 
         $this->_where = Shop::addSqlRestriction(false, 'o');
+    }
+
+    /**
+     * @param string $paymentMethod
+     *
+     * @return string
+     */
+    public function formatRefundPaymentMethod($paymentMethod): string
+    {
+        if ((string)$paymentMethod === 'Store Credit') {
+            return $this->l('Store Credit');
+        }
+
+        return (string)$paymentMethod;
     }
 
     /**

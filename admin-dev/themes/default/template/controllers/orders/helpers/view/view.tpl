@@ -468,7 +468,7 @@
               {foreach from=$order->getOrderPaymentCollection() item=payment}
                 <tr>
                   <td>{dateFormat date=$payment->date_add full=true}</td>
-                  <td>{$payment->payment_method|escape:'html':'UTF-8'}</td>
+                  <td>{if $payment->payment_method === 'Store Credit'}{l s='Store Credit'}{else}{$payment->payment_method|escape:'html':'UTF-8'}{/if}</td>
                   <td>
                     {if isset($store_credit_payment_links[$payment->id])}
                       <a href="{$store_credit_payment_links[$payment->id].url|escape:'html':'UTF-8'}">{$store_credit_payment_links[$payment->id].id_store_credit_transaction|intval}</a>

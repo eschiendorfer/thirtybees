@@ -27,7 +27,7 @@
 		<td class="payment center small grey bold" width="44%">{l s='Refund method' pdf='true'}</td>
 		<td class="payment left white" width="56%">
 			{if $refund_payment_method}
-				{$refund_payment_method|escape:'html':'UTF-8'}
+				{if $refund_payment_method === 'Store Credit'}{l s='Store Credit' pdf='true'}{else}{$refund_payment_method|escape:'html':'UTF-8'}{/if}
 			{elseif isset($payment_methods_pdf) && $payment_methods_pdf|@count > 0}
 				{foreach from=$payment_methods_pdf item=paymentMethod name=paymentMethods}
 					{$paymentMethod}{if !$smarty.foreach.paymentMethods.last} + {/if}
