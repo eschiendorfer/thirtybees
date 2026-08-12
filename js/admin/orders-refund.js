@@ -247,7 +247,7 @@ function updateOriginalPaymentRefundConfirmation(creditTotal) {
   var $checkbox = $('#confirm_original_payment_refund');
   var amountDisplay = formatCreditRefundTotalDisplay(creditTotal);
   var confirmationTemplate = window.originalPaymentRefundConfirmationTemplate
-    || 'Ich bestätige, dass %s über Payrexx an die ursprüngliche Zahlungsmethode zurückerstattet werden.';
+    || 'I confirm that %s will be refunded via Payrexx to the original payment method.';
 
   var confirmationParts = confirmationTemplate.split('%s');
   var $confirmationText = $('#original_payment_refund_confirmation_text');

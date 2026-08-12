@@ -67,7 +67,7 @@
             {/if};
 
     var errorRefund = "{l s='Error. You cannot refund a negative amount.'}";
-    var originalPaymentRefundConfirmationTemplate = "{l s='Ich bestätige, dass %s über Payrexx an die ursprüngliche Zahlungsmethode zurückerstattet werden.' js=1}";
+    var originalPaymentRefundConfirmationTemplate = "{l s='I confirm that %s will be refunded via Payrexx to the original payment method.' js=1}";
   </script>
   {assign var="hook_invoice" value={hook h="displayInvoice" id_order=$order->id}}
   {if ($hook_invoice)}
@@ -199,7 +199,7 @@
             {if $order->hasInvoice()}
             <a id="desc-order-credit" class="btn btn-default order-credit-button" href="#refundForm">
               <i class="icon-file-text"></i>
-              {l s='Gutschrift'}
+              {l s='Credit slip'}
             </a>
             {/if}
           {/if}
@@ -1061,7 +1061,7 @@
                 <th style="display: none;" class="add_product_fields"></th>
                 <th style="display: none;" class="edit_product_fields"></th>
                 <th style="display:none" class="partial_refund_fields">
-                  <span class="title_box ">{l s='Gutschrift'}</span>
+                  <span class="title_box ">{l s='Credit slip'}</span>
                 </th>
                 <th style="display:none" class="order_product_action_fields">
                   <span class="title_box " id="order_product_action_product_header">{l s='Quantity'}</span>
@@ -1323,7 +1323,7 @@
                     </select>
                   </div>
                   <button type="submit" id="partial_refund_submit" name="partialRefund" class="btn btn-default">
-                    <i class="icon-check"></i> {l s='Gutschrift erstellen'}
+                    <i class="icon-check"></i> {l s='Create credit slip'}
                   </button>
                 </div>
               </div>

@@ -358,7 +358,7 @@ class AdminOrdersControllerCore extends AdminController
                 $this->toolbar_btn['partial_refund'] = [
                     'short' => 'Create',
                     'href'  => '',
-                    'desc'  => $this->l('Gutschrift'),
+                    'desc'  => $this->l('Credit slip'),
                     'class' => 'process-icon-partialRefund',
                 ];
             }

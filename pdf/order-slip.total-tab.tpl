@@ -101,4 +101,4 @@
 	</tr>
 
 </table>
-<p style="font-size: 8px;">* {l s='Auf 5 Rappen gerundet' pdf='true'}</p>
+<p style="font-size: 8px;">* {l s='Rounded to the nearest 0.05 CHF' pdf='true'}</p>
