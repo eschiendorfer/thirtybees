@@ -1249,9 +1249,11 @@
                       </tr>
                       <tr>
                         <td>
-                          <span class="label-tooltip" data-toggle="tooltip" title="{l s='Deduct the proportional discount from a percentage voucher.'}">
-                            {l s='Cart rule adjustment'}
-                          </span>
+                          <label class="control-label" for="credit_cart_rule_adjustment">
+                            <span class="label-tooltip" data-toggle="tooltip" title="{l s='Deduct the proportional discount from a percentage voucher.'}">
+                              {l s='Cart rule adjustment'}
+                            </span>
+                          </label>
                         </td>
                         <td class="text-right">
                           <div style="white-space: nowrap;">
@@ -1281,9 +1283,11 @@
                       </tr>
                       <tr>
                         <td>
-                          <span class="label-tooltip" data-toggle="tooltip" title="{l s='Deduct cancellation payment fees or handling fees.'}">
-                            {l s='Fee adjustment'}
-                          </span>
+                          <label class="control-label" for="credit_fee_adjustment">
+                            <span class="label-tooltip" data-toggle="tooltip" title="{l s='Deduct cancellation payment fees or handling fees.'}">
+                              {l s='Fee adjustment'}
+                            </span>
+                          </label>
                         </td>
                         <td class="text-right">
                           <div style="white-space: nowrap;">
