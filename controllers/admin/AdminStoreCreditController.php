@@ -181,7 +181,7 @@ class AdminStoreCreditControllerCore extends AdminController
         if (empty($this->display)) {
             $this->page_header_toolbar_btn['add_store_credit_transaction'] = [
                 'href' => $this->getAddStoreCreditTransactionUrl(),
-                'desc' => $this->l('Add store credit'),
+                'desc' => $this->l('Add manual correction'),
                 'icon' => 'process-icon-new',
             ];
         }
@@ -290,7 +290,7 @@ class AdminStoreCreditControllerCore extends AdminController
 
         $this->fields_form = [
             'legend' => [
-                'title' => $this->l('Add store credit'),
+                'title' => $this->l('Manual store credit correction'),
                 'icon'  => 'icon-money',
             ],
             'input'  => [
@@ -310,25 +310,7 @@ class AdminStoreCreditControllerCore extends AdminController
                     'label'    => $this->l('Amount'),
                     'name'     => 'amount_tax_incl',
                     'required' => true,
-                ],
-                [
-                    'type'    => 'select',
-                    'label'   => $this->l('Transaction type'),
-                    'name'    => 'transaction_type',
-                    'options' => [
-                        'query' => [
-                            [
-                                'id' => StoreCreditTransaction::TYPE_MANUAL_ADJUSTMENT,
-                                'name' => $this->l('Manual adjustment'),
-                            ],
-                            [
-                                'id' => StoreCreditTransaction::TYPE_REFUND_CREDIT,
-                                'name' => $this->l('Refund credit'),
-                            ],
-                        ],
-                        'id' => 'id',
-                        'name' => 'name',
-                    ],
+                    'desc'     => $this->l('Positive amounts increase the store credit. Negative amounts reduce it (for example: -25.00). A reduction is only possible up to the currently available amount.'),
                 ],
                 [
                     'type'  => 'textarea',
@@ -348,7 +330,6 @@ class AdminStoreCreditControllerCore extends AdminController
             'id_customer' => $idCustomer,
             'customer_picker' => $this->renderCustomerPicker($idCustomer, $customerLabel),
             'amount_tax_incl' => Tools::safeOutput((string)Tools::getValue('amount_tax_incl', '')),
-            'transaction_type' => (int)Tools::getValue('transaction_type', StoreCreditTransaction::TYPE_MANUAL_ADJUSTMENT),
             'note' => Tools::safeOutput((string)Tools::getValue('note', '')),
         ];
 
@@ -373,7 +354,7 @@ class AdminStoreCreditControllerCore extends AdminController
         $idCustomer = Tools::getIntValue('id_customer');
         $amountRaw = str_replace([" ", ",", "'"], ['', '.', ''], (string)Tools::getValue('amount_tax_incl'));
         $amountTaxIncl = Tools::roundPrice((float)$amountRaw);
-        $transactionType = Tools::getIntValue('transaction_type');
+        $transactionType = StoreCreditTransaction::TYPE_MANUAL_ADJUSTMENT;
         $note = trim((string)Tools::getValue('note'));
         $idEmployee = (int)$this->context->employee->id;
 
@@ -382,12 +363,6 @@ class AdminStoreCreditControllerCore extends AdminController
         }
         if ($amountTaxIncl === 0.0) {
             $this->errors[] = $this->l('Amount must not be zero.');
-        }
-        if ($amountTaxIncl < 0.0 && $transactionType !== StoreCreditTransaction::TYPE_MANUAL_ADJUSTMENT) {
-            $this->errors[] = $this->l('Negative amount is only allowed for manual adjustment.');
-        }
-        if (!StoreCreditTransaction::isValidTransactionType($transactionType) || $transactionType === StoreCreditTransaction::TYPE_PAYMENT_INSTRUMENT) {
-            $this->errors[] = $this->l('Invalid transaction type.');
         }
         if ($note !== '' && !Validate::isCleanHtml($note)) {
             $this->errors[] = $this->l('Note is invalid.');
