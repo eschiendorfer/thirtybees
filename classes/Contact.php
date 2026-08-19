@@ -89,7 +89,7 @@ class ContactCore extends ObjectModel
             'send_confirm'     => ['type' => self::TYPE_BOOL, 'validate' => 'isBool', 'dbDefault' => '1'],
 
             /* Lang fields */
-            'name'             => ['type' => self::TYPE_STRING, 'lang' => true, 'validate' => 'isGenericName', 'required' => true, 'size' => 32],
+            'name'             => ['type' => self::TYPE_STRING, 'lang' => true, 'validate' => 'isGenericName', 'required' => true, 'size' => 64],
             'description'      => ['type' => self::TYPE_STRING, 'lang' => true, 'validate' => 'isCleanHtml', 'size' => ObjectModel::SIZE_TEXT],
         ],
         'keys' => [

@@ -372,4 +372,29 @@ class ToolsTest extends Unit
         $actualLinkRewrite = Tools::generateLinkRewrite($productTitle, $allowAccentedCharacters);
         $this->assertEquals($expectedLinkRewrite, $actualLinkRewrite);
     }
+
+    /**
+     * @return array
+     */
+    public function fileNameData()
+    {
+        return [
+            ['Rechnung August 2026.PDF', 'rechnung-august-2026.pdf'],
+            ['Grösse & Farbe ändern.JPG', 'groesse-farbe-aendern.jpg'],
+            ['../../Customer_File final.DOCX', 'customer-file-final.docx'],
+            ['...zip', 'file.zip'],
+        ];
+    }
+
+    /**
+     * @param string $fileName
+     * @param string $expected
+     *
+     * @return void
+     * @dataProvider fileNameData
+     */
+    public function testGenerateFileName($fileName, $expected)
+    {
+        $this->assertEquals($expected, Tools::generateFileName($fileName));
+    }
 }

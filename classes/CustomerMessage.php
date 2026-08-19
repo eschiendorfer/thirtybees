@@ -34,6 +34,8 @@
  */
 class CustomerMessageCore extends ObjectModel
 {
+    private const CONTENT_ALLOWED_TAGS = ['br', 'p', 'ul', 'li', 'em', 's', 'strong', 'b'];
+
     /**
      * @var int $id_customer_thread
      */
@@ -48,11 +50,6 @@ class CustomerMessageCore extends ObjectModel
      * @var string $message
      */
     public $message;
-
-    /**
-     * @var string|null $file_name
-     */
-    public $file_name;
 
     /**
      * @var string $ip_address
@@ -93,8 +90,7 @@ class CustomerMessageCore extends ObjectModel
         'fields'  => [
             'id_customer_thread' => ['type' => self::TYPE_INT, 'dbType' => 'int(11)'],
             'id_employee'        => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId'],
-            'message'            => ['type' => self::TYPE_STRING, 'validate' => 'isCleanHtml', 'required' => true, 'size' => ObjectModel::SIZE_MEDIUM_TEXT],
-            'file_name'          => ['type' => self::TYPE_STRING, 'size' => 18],
+            'message'            => ['type' => self::TYPE_HTML, 'validate' => 'isCleanHtml', 'required' => true, 'size' => ObjectModel::SIZE_MEDIUM_TEXT],
             'ip_address'         => ['type' => self::TYPE_STRING, 'validate' => 'isIp2Long', 'size' => 16],
             'user_agent'         => ['type' => self::TYPE_STRING, 'size' => 250],
             'date_add'           => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
@@ -125,6 +121,70 @@ class CustomerMessageCore extends ObjectModel
     ];
 
     /**
+     * Keep the small formatting subset supported by the customer-service editor.
+     *
+     * @param string $content
+     *
+     * @return string
+     */
+    public static function sanitizeContent($content)
+    {
+        $allowedTags = '<' . implode('><', self::CONTENT_ALLOWED_TAGS) . '>';
+        $content = str_replace("\0", '', trim((string) $content));
+        $content = strip_tags($content, $allowedTags);
+        $content = preg_replace_callback(
+            '/<\s*(\/?)\s*([a-z0-9]+)(?:\s[^>]*)?\s*\/?>/i',
+            static function ($matches) {
+                $tag = mb_strtolower((string) $matches[2], 'UTF-8');
+                if (!in_array($tag, self::CONTENT_ALLOWED_TAGS, true)) {
+                    return '';
+                }
+                if ($tag === 'br') {
+                    return '<br>';
+                }
+
+                return !empty($matches[1]) ? '</' . $tag . '>' : '<' . $tag . '>';
+            },
+            $content
+        );
+
+        return trim((string) $content);
+    }
+
+    /**
+     * Check whether formatted message content contains visible text.
+     *
+     * @param string $content
+     *
+     * @return bool
+     */
+    public static function hasVisibleContent($content)
+    {
+        $content = preg_replace('/<(?:br|\/p|\/li)>/i', "\n", static::sanitizeContent($content));
+        $content = html_entity_decode(strip_tags((string) $content), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $content = str_replace("\xc2\xa0", ' ', $content);
+
+        return trim($content) !== '';
+    }
+
+    /**
+     * Render both legacy plain-text messages and formatted customer-service messages.
+     *
+     * @param string $content
+     *
+     * @return string
+     */
+    public static function renderContent($content)
+    {
+        $content = static::sanitizeContent($content);
+        $content = str_replace(["\\r\\n", "\r\n", "\\r", "\r", "\\n", "\n"], '<br>', $content);
+        $content = preg_replace('/<p>\s*(?:&nbsp;|<br>)*\s*<\/p>/i', '', $content);
+        $content = preg_replace('/(?:<br>\s*)+$/i', '', $content);
+
+        return (string) $content;
+    }
+
+    /**
      * @param int $idOrder
      * @param bool $hidePrivate
      *
@@ -133,9 +193,13 @@ class CustomerMessageCore extends ObjectModel
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public static function getMessagesByOrderId($idOrder, $hidePrivate = true)
+    public static function getMessagesByEntity($entityType, $idEntity, $hidePrivate = true)
     {
-        return Db::readOnly()->getArray(
+        if ((int)$entityType <= 0 || (int)$idEntity <= 0) {
+            return [];
+        }
+
+        $messages = Db::readOnly()->getArray(
             (new DbQuery())
                 ->select('cm.*')
                 ->select('c.`firstname` AS `cfirstname`')
@@ -147,11 +211,14 @@ class CustomerMessageCore extends ObjectModel
                 ->leftJoin('customer_thread', 'ct', 'ct.`id_customer_thread` = cm.`id_customer_thread`')
                 ->leftJoin('customer', 'c', 'ct.`id_customer` = c.`id_customer`')
                 ->leftOuterJoin('employee', 'e', 'e.`id_employee` = cm.`id_employee`')
-                ->where('ct.`id_order` = '.(int) $idOrder)
+                ->where('ct.`entity_type` = '.(int)$entityType)
+                ->where('ct.`id_entity` = '.(int)$idEntity)
                 ->where($hidePrivate ? 'cm.`private` = 0' : '')
                 ->groupBy('cm.`id_customer_message`')
                 ->orderBy('cm.`date_add` DESC')
         );
+
+        return CustomerMessageAttachment::appendToMessages($messages);
     }
 
     /**
@@ -190,35 +257,57 @@ class CustomerMessageCore extends ObjectModel
      */
     public function delete()
     {
-        if ($this->fileExists()) {
-            unlink($this->getFilePath());
+        if (!Validate::isUnsignedId($this->id)) {
+            return false;
         }
 
-        return parent::delete();
+        $db = Db::getInstance();
+        if (!$db->execute('START TRANSACTION')) {
+            return false;
+        }
+
+        $deletionPlan = ['ids' => [], 'paths' => []];
+        try {
+            if (!$this->deleteWithinTransaction($deletionPlan)) {
+                $db->execute('ROLLBACK');
+
+                return false;
+            }
+            if (!$db->execute('COMMIT')) {
+                $db->execute('ROLLBACK');
+
+                return false;
+            }
+        } catch (Exception $exception) {
+            $db->execute('ROLLBACK');
+            throw $exception;
+        }
+
+        CustomerMessageAttachment::deletePreparedFiles($deletionPlan);
+
+        return true;
     }
 
     /**
-     * @return string
-     */
-    public function getFilePath(): string
-    {
-        if ($this->file_name) {
-            return _PS_UPLOAD_DIR_ . basename($this->file_name);
-        }
-        return '';
-    }
-
-    /**
+     * Delete this message inside a transaction owned by the caller.
+     * Attachment files must be removed after that transaction commits.
+     *
+     * @param array{ids: int[], paths: string[]} $deletionPlan
+     *
      * @return bool
+     * @throws PrestaShopException
      */
-    public function fileExists(): bool
+    public function deleteWithinTransaction(array &$deletionPlan)
     {
-        $filePath = $this->getFilePath();
-        return (
-            $filePath &&
-            file_exists($filePath) &&
-            is_file($filePath)
-        );
+        $messagePlan = CustomerMessageAttachment::prepareDeletionByMessageIds([(int) $this->id]);
+        if (!CustomerMessageAttachment::deletePreparedRecords($messagePlan) || !parent::delete()) {
+            return false;
+        }
+
+        $deletionPlan['ids'] = array_merge($deletionPlan['ids'] ?? [], $messagePlan['ids']);
+        $deletionPlan['paths'] = array_merge($deletionPlan['paths'] ?? [], $messagePlan['paths']);
+
+        return true;
     }
 
 }

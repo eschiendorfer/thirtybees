@@ -632,8 +632,10 @@ class CustomerCore extends ObjectModel
             $cts = $conn->getArray('SELECT id_customer_thread FROM ' . _DB_PREFIX_ . 'customer_thread WHERE id_customer=' . $customerId);
             foreach ($cts as $ct) {
                 $customerThreadId = (int)$ct['id_customer_thread'];
-                $conn->delete('customer_thread', 'id_customer_thread = ' . $customerThreadId);
-                $conn->delete('customer_message', 'id_customer_thread = ' . $customerThreadId);
+                $customerThread = new CustomerThread($customerThreadId);
+                if (Validate::isLoadedObject($customerThread)) {
+                    $customerThread->delete();
+                }
             }
 
             CartRule::deleteByIdCustomer($customerId);

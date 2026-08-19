@@ -1222,24 +1222,21 @@ abstract class PaymentModuleCore extends Module
         $updateMessage->id_order = (int) $order->id;
         $updateMessage->update();
 
-        $customerThread = new CustomerThread();
-        $customerThread->id_contact = 0;
-        $customerThread->id_customer = (int) $order->id_customer;
-        $customerThread->id_shop = (int) $this->context->shop->id;
-        $customerThread->id_order = (int) $order->id;
-        $customerThread->id_lang = (int) $this->context->language->id;
-        $customerThread->email = $this->context->customer->email;
-        $customerThread->status = CustomerThread::STATUS_OPEN;
-        $customerThread->token = Tools::passwdGen(12);
-        $customerThread->add();
-
-        $customerMessage = new CustomerMessage();
-        $customerMessage->id_customer_thread = $customerThread->id;
-        $customerMessage->id_employee = 0;
-        $customerMessage->message = $updateMessage->message;
-        $customerMessage->private = 1;
-
-        if (!$customerMessage->add()) {
+        $request = [
+            'idCustomer' => (int)$order->id_customer,
+            'idShop' => (int)$this->context->shop->id,
+            'idLang' => (int)$this->context->language->id,
+            'entityType' => \CoreExtension\EntityTypeEnum::ORDER_VALUE,
+            'idEntity' => (int)$order->id,
+            'email' => $this->context->customer->email,
+            'message' => (string)$updateMessage->message,
+            'private' => true,
+            'status' => null,
+        ];
+        try {
+            (new CustomerServiceMessageService())->save($request);
+        } catch (PrestaShopException $exception) {
+            PrestaShopLogger::addLog($exception->getMessage(), 3);
             $this->errors[] = Tools::displayError('An error occurred while saving message');
 
             return;

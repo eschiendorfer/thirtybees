@@ -27,7 +27,15 @@ class RefundEligibilityServiceCore
             'amount_refundable_tax_incl' => (float)$orderDetail->total_price_tax_incl - (float)$resume['amount_tax_incl'],
         ];
 
-        return $this->getOrderProductActionCapabilities($order, $product);
+        $orderDetailExtension = null;
+        if (class_exists('\\CrmModule\\OrderDetailExtension')) {
+            $extension = new \CrmModule\OrderDetailExtension((int)$orderDetail->id);
+            if (Validate::isLoadedObject($extension)) {
+                $orderDetailExtension = $extension;
+            }
+        }
+
+        return $this->getOrderProductActionCapabilities($order, $product, $orderDetailExtension);
     }
 
     public function getOrderProductActionCapabilities(Order $order, array $product, $orderDetailExtension = null): array

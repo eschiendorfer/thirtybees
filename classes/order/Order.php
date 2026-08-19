@@ -32,7 +32,7 @@
 /**
  * Class OrderCore
  */
-class OrderCore extends ObjectModel
+class OrderCore extends ObjectModel implements CustomerThreadContextSourceInterfaceCore
 {
     const ROUND_ITEM = 1;
     const ROUND_LINE = 2;
@@ -964,6 +964,46 @@ class OrderCore extends ObjectModel
     public function getCurrentState()
     {
         return $this->current_state;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getCustomerThreadContextData(): array
+    {
+        $state = $this->getCurrentStateFull((int) Context::getContext()->language->id);
+        $products = [];
+        foreach ($this->getProducts() as $product) {
+            $products[] = [
+                'id_product'           => (int) ($product['product_id'] ?? 0),
+                'id_product_attribute' => (int) ($product['product_attribute_id'] ?? 0),
+                'id_order_detail'      => (int) ($product['id_order_detail'] ?? 0),
+                'product_reference'    => (string) ($product['product_reference'] ?? ''),
+                'product_name'         => (string) ($product['product_name'] ?? ''),
+                'quantity'             => (int) ($product['product_quantity'] ?? 0),
+            ];
+        }
+
+        return [
+            'context_type'           => 'order',
+            'title'                  => 'Order',
+            'reference'              => (string) $this->reference,
+            'product_quantity_label' => 'Ordered quantity',
+            'fields'                 => [[
+                'label'     => 'Status',
+                'value'     => (string) ($state['name'] ?? ''),
+                'is_status' => true,
+            ]],
+            'products'               => $products,
+            'action'                 => [
+                'label'      => 'Open order',
+                'controller' => 'AdminOrders',
+                'params'     => [
+                    'vieworder' => 1,
+                    'id_order'  => (int) $this->id,
+                ],
+            ],
+        ];
     }
 
     /**

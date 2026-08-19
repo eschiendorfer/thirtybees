@@ -32,7 +32,7 @@
 /**
  * Class OrderReturnCore
  */
-class OrderReturnCore extends ObjectModel
+class OrderReturnCore extends ObjectModel implements CustomerThreadContextSourceInterfaceCore
 {
     public const STATE_WAITING_FOR_CONFIRMATION = 1;
     public const STATE_WAITING_FOR_PACKAGE = 2;
@@ -78,6 +78,64 @@ class OrderReturnCore extends ObjectModel
     public $date_add;
     /** @var string Object last modification date */
     public $date_upd;
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getCustomerThreadContextData(): array
+    {
+        $order = new Order((int) $this->id_order);
+        $returnState = new OrderReturnState((int) $this->state, (int) Context::getContext()->language->id);
+        $products = [];
+        if (Validate::isLoadedObject($order)) {
+            foreach (static::getOrdersReturnProducts((int) $this->id, $order) as $product) {
+                $products[] = [
+                    'id_product'           => (int) ($product['product_id'] ?? 0),
+                    'id_product_attribute' => (int) ($product['product_attribute_id'] ?? 0),
+                    'id_order_detail'      => (int) ($product['id_order_detail'] ?? 0),
+                    'product_reference'    => (string) ($product['product_reference'] ?? ''),
+                    'product_name'         => (string) ($product['product_name'] ?? ''),
+                    'quantity'             => (int) ($product['product_quantity'] ?? 0),
+                ];
+            }
+        }
+
+        return [
+            'context_type'            => 'order_return',
+            'title'                   => 'Merchandise return',
+            'reference'               => '#'.(int) $this->id,
+            'related_order_id'        => (int) $this->id_order,
+            'related_order_reference' => Validate::isLoadedObject($order) ? (string) $order->reference : '',
+            'product_quantity_label'  => 'Return quantity',
+            'fields'                  => [
+                [
+                    'label'  => 'Order',
+                    'value'  => Validate::isLoadedObject($order) ? (string) $order->reference : '',
+                    'target' => [
+                        'controller' => 'AdminOrders',
+                        'params'     => [
+                            'vieworder' => 1,
+                            'id_order'  => (int) $this->id_order,
+                        ],
+                    ],
+                ],
+                [
+                    'label'     => 'Status',
+                    'value'     => Validate::isLoadedObject($returnState) ? (string) $returnState->name : '',
+                    'is_status' => true,
+                ],
+            ],
+            'products'                => $products,
+            'action'                  => [
+                'label'      => 'Open merchandise return',
+                'controller' => 'AdminReturn',
+                'params'     => [
+                    'updateorder_return' => 1,
+                    'id_order_return'     => (int) $this->id,
+                ],
+            ],
+        ];
+    }
 
     /**
      * @param int $idOrder

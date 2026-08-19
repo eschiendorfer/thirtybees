@@ -303,12 +303,12 @@ class AdminOrderServiceCasesControllerCore extends AdminController
      */
     private function getCaseTypeList(): array
     {
-        return [
-            OrderServiceCase::TYPE_DELIVERY_DAMAGE => $this->l('Delivery damage'),
-            OrderServiceCase::TYPE_ITEMS_MISSING => $this->l('Items missing'),
-            OrderServiceCase::TYPE_ITEMS_BROKEN => $this->l('Items broken'),
-            OrderServiceCase::TYPE_OTHER => $this->l('Other'),
-        ];
+        $labels = [];
+        foreach (OrderServiceCase::getValidCaseTypes() as $caseType) {
+            $labels[$caseType] = $this->l(OrderServiceCase::getCaseTypeLabelSource($caseType));
+        }
+
+        return $labels;
     }
 
     /**
@@ -342,11 +342,12 @@ class AdminOrderServiceCasesControllerCore extends AdminController
      */
     private function getRequestedSolutionList(): array
     {
-        return [
-            OrderServiceCase::SOLUTION_REPLACEMENT => $this->l('Replacement'),
-            OrderServiceCase::SOLUTION_ALTERNATE_PRODUCT => $this->l('Alternate product'),
-            OrderServiceCase::SOLUTION_VOUCHER => $this->l('Voucher'),
-        ];
+        $labels = [];
+        foreach (OrderServiceCase::getValidRequestedSolutions() as $requestedSolution) {
+            $labels[$requestedSolution] = $this->l(OrderServiceCase::getRequestedSolutionLabelSource($requestedSolution));
+        }
+
+        return $labels;
     }
 
     /**

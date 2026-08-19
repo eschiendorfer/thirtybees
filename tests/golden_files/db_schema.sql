@@ -613,7 +613,7 @@ CREATE TABLE `PREFIX_contact` (
 CREATE TABLE `PREFIX_contact_lang` (
   `id_contact` int(11) unsigned NOT NULL,
   `id_lang` int(11) unsigned NOT NULL,
-  `name` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `name` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `description` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`id_contact`,`id_lang`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -740,7 +740,6 @@ CREATE TABLE `PREFIX_customer_message` (
   `id_customer_thread` int(11) DEFAULT NULL,
   `id_employee` int(11) unsigned DEFAULT NULL,
   `message` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `file_name` varchar(18) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `ip_address` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `user_agent` varchar(250) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `date_add` datetime NOT NULL,
@@ -750,6 +749,25 @@ CREATE TABLE `PREFIX_customer_message` (
   PRIMARY KEY (`id_customer_message`),
   KEY `id_customer_thread` (`id_customer_thread`),
   KEY `id_employee` (`id_employee`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `PREFIX_customer_message_attachment` (
+  `id_customer_message_attachment` int(11) unsigned NOT NULL AUTO_INCREMENT,
+  `id_customer_message` int(11) unsigned NOT NULL DEFAULT '0',
+  `id_customer` int(11) unsigned NOT NULL DEFAULT '0',
+  `id_visitor` int(11) unsigned NOT NULL DEFAULT '0',
+  `id_employee` int(11) unsigned NOT NULL DEFAULT '0',
+  `file_name` varchar(180) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `mime_type` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `file_size` int(11) unsigned NOT NULL DEFAULT '0',
+  `upload_size` int(11) unsigned NOT NULL DEFAULT '0',
+  `date_add` datetime NOT NULL,
+  PRIMARY KEY (`id_customer_message_attachment`),
+  KEY `id_customer_message` (`id_customer_message`),
+  KEY `id_customer` (`id_customer`),
+  KEY `id_visitor` (`id_visitor`),
+  KEY `id_employee` (`id_employee`),
+  KEY `pending` (`id_customer_message`,`date_add`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `PREFIX_customer_message_sync_imap` (
@@ -768,7 +786,8 @@ CREATE TABLE `PREFIX_customer_thread` (
   `id_product` int(11) unsigned DEFAULT NULL,
   `entity_type` int(11) unsigned NOT NULL DEFAULT '0',
   `id_entity` int(11) unsigned NOT NULL DEFAULT '0',
-  `status` enum('open','closed','pending1','pending2','waiting_customer') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'open',
+  `data` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`data`)),
+  `status` enum('open','closed','pending1','waiting_customer') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'open',
   `email` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `token` varchar(12) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `date_add` datetime NOT NULL,

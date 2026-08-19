@@ -1674,6 +1674,9 @@ class AdminOrdersControllerCore extends AdminController
             'orderMessages'                => $customerServiceViewData['orderMessages'],
             'orderDocuments'               => $order->getDocuments(),
             'messages'                     => $customerServiceViewData['messages'],
+            'pending_attachments'           => $customerServiceViewData['pending_attachments'],
+            'selected_message_status'       => $customerServiceViewData['selected_message_status'],
+            'selected_message_visibility'   => $customerServiceViewData['selected_message_visibility'],
             'carrier'                      => new Carrier($order->id_carrier),
             'carriers'                     => Carrier::getCarriers($this->context->language->id, false, false, null, null, Carrier::PS_CARRIERS_ONLY, $order->id_shop),
             'history'                      => $history,
@@ -2913,10 +2916,39 @@ class AdminOrdersControllerCore extends AdminController
      */
     protected function getCustomerServiceOrderViewData(Order $order, Customer $customer): array
     {
+        $customerThreadMessages = CustomerThread::getCustomerMessages(
+            $order->id_customer,
+            null,
+            \CoreExtension\EntityTypeEnum::ORDER_VALUE,
+            $order->id
+        );
+        $currentStatus = !empty($customerThreadMessages[0]['status'])
+            ? (string) $customerThreadMessages[0]['status']
+            : CustomerThread::STATUS_OPEN;
+        $pendingAttachments = CustomerMessageAttachment::getOwnedPending(
+            Tools::getArrayValue('customer_message_attachment_ids', []),
+            0,
+            0,
+            (int) $this->context->employee->id
+        );
+
+        $messages = CustomerMessage::getMessagesByEntity(
+            \CoreExtension\EntityTypeEnum::ORDER_VALUE,
+            $order->id,
+            false
+        );
+        foreach ($messages as &$message) {
+            $message['message_html'] = CustomerMessage::renderContent((string) $message['message']);
+        }
+        unset($message);
+
         return [
-            'customer_thread_message' => CustomerThread::getCustomerMessages($order->id_customer, null, $order->id),
+            'customer_thread_message' => $customerThreadMessages,
             'orderMessages' => OrderMessage::getOrderMessages($order->id_lang, $order, $customer),
-            'messages' => CustomerMessage::getMessagesByOrderId($order->id, false),
+            'messages' => $messages,
+            'pending_attachments' => $pendingAttachments === false ? [] : $pendingAttachments,
+            'selected_message_status' => (string) Tools::getValue('status_msg', $currentStatus),
+            'selected_message_visibility' => (int) Tools::getValue('visibility', 1),
         ];
     }
 
@@ -2935,7 +2967,7 @@ class AdminOrdersControllerCore extends AdminController
         }
 
         $customer = new Customer(Tools::getIntValue('id_customer'));
-        if (!Validate::isLoadedObject($customer)) {
+        if (!Validate::isLoadedObject($customer) || (int) $customer->id !== (int) $order->id_customer) {
             $this->errors[] = Tools::displayError('The customer is invalid.');
 
             return;
@@ -2977,108 +3009,123 @@ class AdminOrdersControllerCore extends AdminController
             $this->errors[] = Tools::displayError('The selected status is invalid.');
         }
 
-        $fileAttachment = Tools::fileAttachment('file_attachment');
-        if (!empty($fileAttachment['name']) && $fileAttachment['error'] != 0) {
-            $this->errors[] = Tools::displayError('An error occurred during the file upload process.');
+        $idEmployee = (int) $this->context->employee->id;
+        $pendingAttachments = CustomerMessageAttachment::getOwnedPending(
+            Tools::getArrayValue('customer_message_attachment_ids', []),
+            0,
+            0,
+            $idEmployee
+        );
+        if ($pendingAttachments === false) {
+            $pendingAttachments = [];
+            $this->errors[] = Tools::displayError('The selected attachment is invalid.');
         }
+        $uploadedFiles = CustomerMessageAttachment::getUploadedFiles('file_attachment');
+        $this->errors = array_merge(
+            $this->errors,
+            CustomerMessageAttachment::validateUploadedFiles(
+                $uploadedFiles,
+                true,
+                count($pendingAttachments),
+                CustomerMessageAttachment::getTotalUploadSize($pendingAttachments)
+            )
+        );
 
         if (count($this->errors)) {
             return;
         }
 
-        if (!empty($fileAttachment['rename'])) {
-            $uploadPath = _PS_UPLOAD_DIR_.basename($fileAttachment['rename']);
-            if (!rename($fileAttachment['tmp_name'], $uploadPath)) {
+        if ($uploadedFiles) {
+            try {
+                $pendingAttachments = array_merge(
+                    $pendingAttachments,
+                    CustomerMessageAttachment::storeUploadedFiles($uploadedFiles, 0, 0, 0, $idEmployee)
+                );
+            } catch (Exception $exception) {
                 $this->errors[] = Tools::displayError('An error occurred during the file upload process.');
-
                 return;
             }
-            @chmod($uploadPath, 0664);
+        }
+        $_POST['customer_message_attachment_ids'] = CustomerMessageAttachment::getIds($pendingAttachments);
+        if (!$privateMessage && !CustomerMessageAttachment::canAttachToEmail($pendingAttachments)) {
+            $this->errors[] = sprintf(
+                Tools::displayError('The attachments exceed the maximum email size of %d MB.'),
+                CustomerMessageAttachment::getMaximumEmailTotalSizeMb()
+            );
+            return;
         }
 
         $assignReplyToCurrentEmployee = !$privateMessage
             && in_array((int) $this->context->employee->id, CustomerThread::CUSTOMER_SERVICE_EMPLOYEE_IDS, true);
-        $idCustomerThread = CustomerThread::getIdCustomerThreadByEmailAndIdOrder($customer->email, $order->id);
-        if (!$idCustomerThread) {
-            $customerThread = new CustomerThread();
-            $customerThread->id_contact = 0;
-            $customerThread->id_customer = (int) $order->id_customer;
-            $customerThread->id_shop = (int) $order->id_shop;
-            $customerThread->id_order = (int) $order->id;
-            $customerThread->id_lang = (int) ($customer->id_lang ?: $this->context->language->id);
-            $customerThread->email = $customer->email;
-            $customerThread->status = $threadStatus;
-            if ($assignReplyToCurrentEmployee) {
-                $customerThread->id_employee_assigned = (int) $this->context->employee->id;
-            }
-            $customerThread->token = Tools::passwdGen(12);
-            $customerThread->add();
-        } else {
-            $customerThread = new CustomerThread((int) $idCustomerThread);
-            if (
-                $customerThread->status !== $threadStatus
-                || ($assignReplyToCurrentEmployee && (int) $customerThread->id_employee_assigned !== (int) $this->context->employee->id)
-            ) {
-                $customerThread->status = $threadStatus;
-                if ($assignReplyToCurrentEmployee) {
-                    $customerThread->id_employee_assigned = (int) $this->context->employee->id;
-                }
-                $customerThread->update();
-            }
-        }
-
-        $customerMessage = new CustomerMessage();
-        $customerMessage->id_customer_thread = $customerThread->id;
-        $customerMessage->id_employee = (int) $this->context->employee->id;
-        $customerMessage->message = Tools::getValue('message');
-        $customerMessage->private = $privateMessage;
-        if (!empty($fileAttachment['rename'])) {
-            $customerMessage->file_name = $fileAttachment['rename'];
-        }
-        if (!$customerMessage->add()) {
-            $this->errors[] = Tools::displayError('An error occurred while saving the message.');
-
+        $request = [
+            'idCustomer' => (int)$order->id_customer,
+            'idEmployee' => (int)$this->context->employee->id,
+            'idShop' => (int)$order->id_shop,
+            'idLang' => (int)($customer->id_lang ?: $this->context->language->id),
+            'entityType' => \CoreExtension\EntityTypeEnum::ORDER_VALUE,
+            'idEntity' => (int)$order->id,
+            'email' => $customer->email,
+            'message' => (string)Tools::getValue('message'),
+            'private' => $privateMessage,
+            'status' => null,
+            'attachments' => $pendingAttachments,
+        ];
+        try {
+            $messageResult = (new CustomerServiceMessageService())->save($request);
+            $customerThread = $messageResult['thread'];
+            $customerMessage = $messageResult['message'];
+        } catch (PrestaShopException $exception) {
+            PrestaShopLogger::addLog($exception->getMessage(), 3);
+            $this->errors[] = Tools::displayError('An error occurred while saving the customer service message.');
             return;
         }
-        if ($customerMessage->private) {
-            Tools::redirectAdmin(static::$currentIndex.'&id_order='.(int) $order->id.'&vieworder&conf=11&token='.$this->token);
+
+        $_POST['message'] = '';
+        $_POST['customer_message_attachment_ids'] = [];
+
+        if (!$privateMessage) {
+            $varsTpl = [
+                '{lastname}'   => $customer->lastname,
+                '{firstname}'  => $customer->firstname,
+                '{id_order}'   => $order->id,
+                '{order_name}' => $order->getUniqReference(),
+                '{message}'    => CustomerMessage::renderContent($customerMessage->message),
+            ];
+            $subject = Mail::l('New message regarding your order', (int) $order->id_lang);
+            if (Configuration::get('PS_SAV_IMAP_URL') && Configuration::get('PS_SAV_IMAP_USER') && Configuration::get('PS_SAV_IMAP_PWD')) {
+                $subject .= ' #'.$customerThread->id.' #'.$customerThread->token;
+            }
+
+            if (!@Mail::Send(
+                (int) $order->id_lang,
+                'order_merchant_comment',
+                $subject,
+                $varsTpl,
+                $customer->email,
+                $customer->firstname.' '.$customer->lastname,
+                null,
+                null,
+                CustomerMessageAttachment::buildMailAttachments($pendingAttachments),
+                null,
+                _PS_MAIL_DIR_,
+                true,
+                (int) $order->id_shop
+            )) {
+                $this->errors[] = Tools::displayError('The message was saved, but the email could not be sent to the customer.');
+                return;
+            }
         }
 
-        $message = $customerMessage->message;
-        if (Configuration::get('PS_MAIL_TYPE', null, null, $order->id_shop) != Mail::TYPE_TEXT) {
-            $message = Tools::nl2br($customerMessage->message);
+        $customerThread->status = $threadStatus;
+        if ($assignReplyToCurrentEmployee) {
+            $customerThread->id_employee_assigned = $idEmployee;
         }
-        $varsTpl = [
-            '{lastname}'   => $customer->lastname,
-            '{firstname}'  => $customer->firstname,
-            '{id_order}'   => $order->id,
-            '{order_name}' => $order->getUniqReference(),
-            '{message}'    => $message,
-        ];
-        $subject = Mail::l('New message regarding your order', (int) $order->id_lang);
-        if (Configuration::get('PS_SAV_IMAP_URL') && Configuration::get('PS_SAV_IMAP_USER') && Configuration::get('PS_SAV_IMAP_PWD')) {
-            $subject .= ' #'.$customerThread->id.' #'.$customerThread->token;
+        if (!$customerThread->update()) {
+            $this->errors[] = Tools::displayError('The message was saved, but the thread settings could not be updated.');
+            return;
         }
 
-        if (@Mail::Send(
-            (int) $order->id_lang,
-            'order_merchant_comment',
-            $subject,
-            $varsTpl,
-            $customer->email,
-            $customer->firstname.' '.$customer->lastname,
-            null,
-            null,
-            $fileAttachment,
-            null,
-            _PS_MAIL_DIR_,
-            true,
-            (int) $order->id_shop
-        )) {
-            Tools::redirectAdmin(static::$currentIndex.'&id_order='.$order->id.'&vieworder&conf=11&token='.$this->token);
-        }
-
-        $this->errors[] = Tools::displayError('An error occurred while sending an email to the customer.');
+        Tools::redirectAdmin(static::$currentIndex.'&id_order='.$order->id.'&vieworder&conf=11&token='.$this->token);
     }
 
     protected function processOrderProductAction(Order $order): bool

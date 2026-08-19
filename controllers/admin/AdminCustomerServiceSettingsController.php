@@ -56,6 +56,35 @@ class AdminCustomerServiceSettingsControllerCore extends AdminController
                         'hint'  => $this->l('Allow customers to upload files using the contact page.'),
                         'type'  => 'bool',
                     ],
+                    'PS_CUSTOMER_SERVICE_MAX_ATTACHMENTS' => [
+                        'title'        => $this->l('Maximum attachments per message'),
+                        'hint'         => $this->l('Maximum number of files that can be attached to one customer service message.'),
+                        'validation'   => 'isUnsignedInt',
+                        'cast'         => 'intval',
+                        'type'         => 'text',
+                        'size'         => 5,
+                        'defaultValue' => CustomerMessageAttachment::DEFAULT_MAX_ATTACHMENTS,
+                    ],
+                    'PS_CUSTOMER_SERVICE_MAX_ATTACHMENTS_TOTAL_SIZE' => [
+                        'title'        => $this->l('Maximum customer upload size'),
+                        'hint'         => $this->l('Maximum combined size of files uploaded by a customer for one message.'),
+                        'validation'   => 'isUnsignedInt',
+                        'cast'         => 'intval',
+                        'type'         => 'text',
+                        'size'         => 5,
+                        'suffix'       => $this->l('MB'),
+                        'defaultValue' => CustomerMessageAttachment::DEFAULT_MAX_TOTAL_SIZE_MB,
+                    ],
+                    'PS_CUSTOMER_SERVICE_MAX_EMAIL_ATTACHMENTS_TOTAL_SIZE' => [
+                        'title'        => $this->l('Maximum email attachment size'),
+                        'hint'         => $this->l('Maximum combined size of attachments sent with one email.'),
+                        'validation'   => 'isUnsignedInt',
+                        'cast'         => 'intval',
+                        'type'         => 'text',
+                        'size'         => 5,
+                        'suffix'       => $this->l('MB'),
+                        'defaultValue' => CustomerMessageAttachment::DEFAULT_MAX_EMAIL_TOTAL_SIZE_MB,
+                    ],
                     'PS_CUSTOMER_SERVICE_SIGNATURE'   => [
                         'title' => $this->l('Default message'),
                         'hint'  => $this->l('Please fill out the message fields that appear by default when you answer a thread on the customer service page.'),
@@ -65,8 +94,24 @@ class AdminCustomerServiceSettingsControllerCore extends AdminController
                 ],
                 'submit' => ['title' => $this->l('Save')],
             ],
+            'service_cases' => [
+                'title'  => $this->l('Service case options'),
+                'fields' => [
+                    OrderServiceCase::CONFIG_PERIOD_DAYS => [
+                        'title'        => $this->l('Service case period'),
+                        'hint'         => $this->l('Number of days after shipping during which customers can open a service case. Enter 0 for no time limit.'),
+                        'validation'   => 'isUnsignedInt',
+                        'cast'         => 'intval',
+                        'type'         => 'text',
+                        'size'         => 5,
+                        'suffix'       => $this->l('days'),
+                        'defaultValue' => OrderServiceCase::DEFAULT_PERIOD_DAYS,
+                    ],
+                ],
+                'submit' => ['title' => $this->l('Save')],
+            ],
             'general' => [
-                'title'  => $this->l('Customer service options'),
+                'title'  => $this->l('IMAP sync settings'),
                 'fields' => [
                     'PS_SAV_IMAP_URL'                 => [
                         'title' => $this->l('IMAP URL'),

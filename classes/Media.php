@@ -1111,7 +1111,7 @@ class MediaCore
     /**
      * Get information for supported files
      *
-     * @param string $type (Atm: 'images') Todo: also use this array for other types like 'documents' in future
+     * @param string $type File group such as images, documents, or archives
      *
      * @return array|bool
      */
@@ -1168,7 +1168,67 @@ class MediaCore
                     'uploadFrontOffice' => false,
                     'uploadBackOffice'  => true,
                 ],
-            ]
+            ],
+            'documents' => [
+                'pdf' => [
+                    'mimeType'           => 'application/pdf',
+                    'mimeTypes'          => ['application/pdf'],
+                    'extensions'         => ['pdf'],
+                    'uploadFrontOffice' => true,
+                    'uploadBackOffice'  => true,
+                ],
+                'csv' => [
+                    'mimeType'           => 'text/csv',
+                    'mimeTypes'          => ['text/csv', 'text/plain', 'application/csv', 'application/vnd.ms-excel'],
+                    'extensions'         => ['csv'],
+                    'uploadFrontOffice' => true,
+                    'uploadBackOffice'  => true,
+                ],
+                'txt' => [
+                    'mimeType'           => 'text/plain',
+                    'mimeTypes'          => ['text/plain'],
+                    'extensions'         => ['txt'],
+                    'uploadFrontOffice' => true,
+                    'uploadBackOffice'  => true,
+                ],
+                'doc' => [
+                    'mimeType'           => 'application/msword',
+                    'mimeTypes'          => ['application/msword', 'application/octet-stream'],
+                    'extensions'         => ['doc'],
+                    'uploadFrontOffice' => true,
+                    'uploadBackOffice'  => true,
+                ],
+                'docx' => [
+                    'mimeType'           => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'mimeTypes'          => ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/zip'],
+                    'extensions'         => ['docx'],
+                    'uploadFrontOffice' => true,
+                    'uploadBackOffice'  => true,
+                ],
+                'xls' => [
+                    'mimeType'           => 'application/vnd.ms-excel',
+                    'mimeTypes'          => ['application/vnd.ms-excel', 'application/octet-stream'],
+                    'extensions'         => ['xls'],
+                    'uploadFrontOffice' => true,
+                    'uploadBackOffice'  => true,
+                ],
+                'xlsx' => [
+                    'mimeType'           => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    'mimeTypes'          => ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/zip'],
+                    'extensions'         => ['xlsx'],
+                    'uploadFrontOffice' => true,
+                    'uploadBackOffice'  => true,
+                ],
+            ],
+            'archives' => [
+                'zip' => [
+                    'mimeType'           => 'application/zip',
+                    'mimeTypes'          => ['application/zip', 'application/x-zip-compressed', 'multipart/x-zip'],
+                    'extensions'         => ['zip'],
+                    'uploadFrontOffice' => true,
+                    'uploadBackOffice'  => true,
+                ],
+            ],
         ];
 
         if (ImageManager::serverSupportsWebp()) {

@@ -217,7 +217,6 @@ class AdminCustomersControllerCore extends AdminController
             'open'     => $this->l('Open'),
             'closed'   => $this->l('Closed'),
             'pending1' => $this->l('Pending 1'),
-            'pending2' => $this->l('Pending 2'),
         ];
     }
 

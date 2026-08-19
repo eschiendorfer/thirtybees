@@ -60,111 +60,6 @@ class OrderDetailControllerCore extends FrontController
     }
 
     /**
-     * Start forms process
-     *
-     * @return void
-     *
-     * @throws PrestaShopDatabaseException
-     * @throws PrestaShopException
-     */
-    public function postProcess()
-    {
-        if (Tools::isSubmit('msgText') && Tools::isSubmit('id_order') && Tools::isSubmit('id_product')) {
-            $idOrder = Tools::getIntValue('id_order');
-            $msgText = Tools::getValue('msgText');
-
-            if (!$idOrder || !Validate::isUnsignedId($idOrder)) {
-                $this->errors[] = Tools::displayError('The order is no longer valid.');
-            } elseif (empty($msgText)) {
-                $this->errors[] = Tools::displayError('The message cannot be blank.');
-            } elseif (!Validate::isMessage($msgText)) {
-                $this->errors[] = Tools::displayError('This message is invalid (HTML is not allowed).');
-            }
-            if (!count($this->errors)) {
-                $order = new Order($idOrder);
-                if (Validate::isLoadedObject($order) && $order->id_customer == $this->context->customer->id) {
-                    //check if a thread already exist
-                    $idCustomerThread = CustomerThread::getIdCustomerThreadByEmailAndIdOrder($this->context->customer->email, $order->id);
-                    $idProduct = Tools::getIntValue('id_product');
-                    $cm = new CustomerMessage();
-                    if (!$idCustomerThread) {
-                        $ct = new CustomerThread();
-                        $ct->id_contact = 0;
-                        $ct->id_customer = (int) $order->id_customer;
-                        $ct->id_shop = (int) $this->context->shop->id;
-                        if ($idProduct && $order->orderContainProduct($idProduct)) {
-                            $ct->id_product = $idProduct;
-                        }
-                        $ct->id_order = (int) $order->id;
-                        $ct->id_lang = (int) $this->context->language->id;
-                        $ct->email = $this->context->customer->email;
-                        $ct->status = 'open';
-                        $ct->token = Tools::passwdGen(12);
-                        $ct->add();
-                    } else {
-                        $ct = new CustomerThread((int) $idCustomerThread);
-                        $ct->status = 'open';
-                        $ct->update();
-                    }
-
-                    $cm->id_customer_thread = $ct->id;
-                    $cm->message = $msgText;
-                    $cm->ip_address = (int) ip2long($_SERVER['REMOTE_ADDR']);
-                    $cm->add();
-
-
-                    $to = static::getRecipientEmail();
-                    $toName = strval(Configuration::get('PS_SHOP_NAME'));
-                    $customer = $this->context->customer;
-
-                    $product = new Product($idProduct);
-                    $productName = '';
-                    if (Validate::isLoadedObject($product) && isset($product->name[(int) $this->context->language->id])) {
-                        $productName = $product->name[(int) $this->context->language->id];
-                    }
-
-                    if (Validate::isLoadedObject($customer)) {
-                        Mail::Send(
-                            $this->context->language->id,
-                            'order_customer_comment',
-                            Mail::l('Message from a customer'),
-                            [
-                                '{lastname}'     => $customer->lastname,
-                                '{firstname}'    => $customer->firstname,
-                                '{email}'        => $customer->email,
-                                '{id_order}'     => (int) $order->id,
-                                '{order_name}'   => $order->getUniqReference(),
-                                '{message}'      => Tools::nl2br($msgText),
-                                '{product_name}' => $productName,
-                            ],
-                            $to,
-                            $toName,
-                            strval(Configuration::get('PS_SHOP_EMAIL')),
-                            $customer->firstname.' '.$customer->lastname,
-                            null,
-                            null,
-                            _PS_MAIL_DIR_,
-                            false,
-                            null,
-                            null,
-                            $customer->email
-                        );
-                    }
-
-
-                    if (Tools::getValue('ajax') != 'true') {
-                        Tools::redirect('index.php?controller=order-detail&id_order='.(int) $idOrder);
-                    }
-
-                    $this->context->smarty->assign('message_confirmation', true);
-                } else {
-                    $this->errors[] = Tools::displayError('Order not found');
-                }
-            }
-        }
-    }
-
-    /**
      * Handle ajax call
      *
      * @return void
@@ -215,6 +110,21 @@ class OrderDetailControllerCore extends FrontController
                 Product::addCustomizationPrice($products, $customizedDatas);
 
                 OrderReturn::addReturnedQuantity($products, $order->id);
+                if (class_exists('\\CrmModule\\CustomerServiceOrderService')) {
+                    $customerServiceOrderService = new \CrmModule\CustomerServiceOrderService($this->context);
+                    foreach ($products as &$product) {
+                        $orderDetail = new OrderDetail((int)$product['id_order_detail']);
+                        $product['returnable_quantity'] = Validate::isLoadedObject($orderDetail)
+                            ? $customerServiceOrderService->getReturnableQuantity($order, $orderDetail)
+                            : 0;
+                        $product['serviceable_quantity'] = Validate::isLoadedObject($orderDetail)
+                            ? $customerServiceOrderService->getServiceableQuantity($order, $orderDetail)
+                            : 0;
+                        $orderDetailExtension = new \CrmModule\OrderDetailExtension((int)$product['id_order_detail']);
+                        $product['has_been_shipped'] = (int)$orderDetailExtension->shipping_quantity > 0;
+                    }
+                    unset($product);
+                }
                 $orderStatus = new OrderState((int) $idOrderState, (int) $order->id_lang);
 
                 $customer = new Customer($order->id_customer);
@@ -229,6 +139,27 @@ class OrderDetailControllerCore extends FrontController
                 if ($orderPaymentMethodsText === '' && (string)$order->payment !== '') {
                     $orderPaymentMethodsText = (string)$order->payment;
                 }
+                $customerMessages = CustomerMessage::getMessagesByEntity(
+                    \CoreExtension\EntityTypeEnum::ORDER_VALUE,
+                    (int)$order->id,
+                    true
+                );
+                foreach ($customerMessages as &$customerMessage) {
+                    $customerMessage['message_html'] = CustomerMessage::renderContent(
+                        (string) $customerMessage['message']
+                    );
+                    foreach ($customerMessage['attachments'] as &$attachment) {
+                        $attachment['download_url'] = $this->context->link->getPageLink(
+                            'contact',
+                            true,
+                            null,
+                            ['downloadCustomerMessageAttachment' => (int) $attachment['id_customer_message_attachment']]
+                        );
+                    }
+                    unset($attachment);
+                }
+                unset($customerMessage);
+
                 $this->context->smarty->assign(
                     [
                         'shop_name'                     => strval(Configuration::get('PS_SHOP_NAME')),
@@ -252,7 +183,7 @@ class OrderDetailControllerCore extends FrontController
                         'deliveryAddressFormatedValues' => $deliveryAddressFormatedValues,
                         'deliveryState'                 => (Validate::isLoadedObject($addressDelivery) && $addressDelivery->id_state) ? new State($addressDelivery->id_state) : false,
                         'is_guest'                      => false,
-                        'messages'                      => CustomerMessage::getMessagesByOrderId((int) $order->id, true),
+                        'messages'                      => $customerMessages,
                         'CUSTOMIZE_FILE'                => Product::CUSTOMIZE_FILE,
                         'CUSTOMIZE_TEXTFIELD'           => Product::CUSTOMIZE_TEXTFIELD,
                         'isRecyclable'                  => Configuration::get('PS_RECYCLABLE_PACK'),

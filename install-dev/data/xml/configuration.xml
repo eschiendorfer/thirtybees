@@ -224,6 +224,18 @@
     <configuration id="PS_CUSTOMER_SERVICE_FILE_UPLOAD" name="PS_CUSTOMER_SERVICE_FILE_UPLOAD">
       <value>1</value>
     </configuration>
+    <configuration id="PS_CUSTOMER_SERVICE_MAX_ATTACHMENTS" name="PS_CUSTOMER_SERVICE_MAX_ATTACHMENTS">
+      <value>10</value>
+    </configuration>
+    <configuration id="PS_CUSTOMER_SERVICE_MAX_ATTACHMENTS_TOTAL_SIZE" name="PS_CUSTOMER_SERVICE_MAX_ATTACHMENTS_TOTAL_SIZE">
+      <value>100</value>
+    </configuration>
+    <configuration id="PS_CUSTOMER_SERVICE_MAX_EMAIL_ATTACHMENTS_TOTAL_SIZE" name="PS_CUSTOMER_SERVICE_MAX_EMAIL_ATTACHMENTS_TOTAL_SIZE">
+      <value>15</value>
+    </configuration>
+    <configuration id="PS_CUSTOMER_SERVICE_CASE_PERIOD_DAYS" name="PS_CUSTOMER_SERVICE_CASE_PERIOD_DAYS">
+      <value>730</value>
+    </configuration>
     <configuration id="PS_CUSTOMER_SERVICE_SIGNATURE" name="PS_CUSTOMER_SERVICE_SIGNATURE">
       <value/>
     </configuration>

@@ -56,6 +56,7 @@ class CustomerThreadCore extends ObjectModel
      * Remove this column if the order context can be derived safely from the target
      * entity.
      *
+     * @deprecated Use entity_type/id_entity. Kept temporarily for schema compatibility only.
      * @var int $id_order
      */
     public $id_order;
@@ -66,6 +67,7 @@ class CustomerThreadCore extends ObjectModel
      * entity_type/id_entity target such as an order return or service case.
      * Long-term target is to remove this column.
      *
+     * @deprecated Use entity_type/id_entity. Kept temporarily for schema compatibility only.
      * @var int $id_product
      */
     public $id_product;
@@ -73,6 +75,14 @@ class CustomerThreadCore extends ObjectModel
     public $entity_type;
     /** @var int $id_entity */
     public $id_entity;
+    /**
+     * Structured transition data for request types that do not yet have a
+     * dedicated business entity. Stable workflows should use
+     * entity_type/id_entity instead.
+     *
+     * @var string|null $data
+     */
+    public $data;
     /** @var string $status */
     public $status;
     /** @var string $email */
@@ -100,7 +110,8 @@ class CustomerThreadCore extends ObjectModel
             'id_product'  => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId'],
             'entity_type' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '0'],
             'id_entity'   => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '0'],
-            'status'      => ['type' => self::TYPE_STRING, 'values' => ['open', 'closed', 'pending1', 'pending2', 'waiting_customer'], 'dbDefault' => 'open'],
+            'data'        => ['type' => self::TYPE_STRING, 'dbType' => 'longtext', 'charset' => ['utf8mb4', 'utf8mb4_bin'], 'allow_null' => true, 'dbNullable' => true],
+            'status'      => ['type' => self::TYPE_STRING, 'values' => ['open', 'closed', 'pending1', 'waiting_customer'], 'dbDefault' => 'open'],
             'email'       => ['type' => self::TYPE_STRING, 'validate' => 'isEmail', 'size' => 128, 'dbNullable' => false],
             'token'       => ['type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'required' => true, 'size' => 12, 'dbNullable' => true],
             'date_add'    => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
@@ -119,6 +130,52 @@ class CustomerThreadCore extends ObjectModel
             ],
         ],
     ];
+
+    /**
+     * Find the single conversation belonging to a concrete entity.
+     */
+    public static function getIdByEntity($idCustomer, $entityType, $idEntity)
+    {
+        if ((int) $idCustomer <= 0 || (int) $entityType <= 0 || (int) $idEntity <= 0) {
+            return 0;
+        }
+
+        // This lookup decides whether a write creates a new thread. Use the
+        // primary connection so replica lag cannot create avoidable duplicates.
+        return (int) Db::getInstance()->getValue(
+            (new DbQuery())
+                ->select('`id_customer_thread`')
+                ->from(static::$definition['table'])
+                ->where('`id_customer` = '.(int) $idCustomer)
+                ->where('`entity_type` = '.(int) $entityType)
+                ->where('`id_entity` = '.(int) $idEntity)
+                ->orderBy('`id_customer_thread` ASC')
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getDataArray()
+    {
+        if (!$this->data) {
+            return [];
+        }
+
+        $data = json_decode((string) $this->data, true);
+
+        return is_array($data) ? $data : [];
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public function setDataArray(array $data)
+    {
+        $this->data = $data
+            ? json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+            : null;
+    }
 
     /**
      * @var array Webservice parameters
@@ -154,48 +211,35 @@ class CustomerThreadCore extends ObjectModel
     /**
      * @param int $idCustomer
      * @param int|null $read
-     * @param int|null $idOrder
+     * @param int|null $entityType
+     * @param int|null $idEntity
      *
      * @return array
      *
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    public static function getCustomerMessages($idCustomer, $read = null, $idOrder = null)
+    public static function getCustomerMessages($idCustomer, $read = null, $entityType = null, $idEntity = null)
     {
         $sql = (new DbQuery())
             ->select('*')
             ->from('customer_thread', 'ct')
             ->leftJoin('customer_message', 'cm', 'ct.`id_customer_thread` = cm.`id_customer_thread`')
-            ->where('`id_customer` = '.(int) $idCustomer);
+            ->where('`id_customer` = '.(int) $idCustomer)
+            ->orderBy('cm.`date_add` ASC, cm.`id_customer_message` ASC');
 
         if ($read !== null) {
             $sql->where('cm.`read` = '.(int) $read);
         }
-        if ($idOrder !== null) {
-            $sql->where('ct.`id_order` = '.(int) $idOrder);
+        if ($entityType !== null || $idEntity !== null) {
+            if ((int)$entityType <= 0 || (int)$idEntity <= 0) {
+                return [];
+            }
+            $sql->where('ct.`entity_type` = '.(int)$entityType);
+            $sql->where('ct.`id_entity` = '.(int)$idEntity);
         }
 
-        return Db::readOnly()->getArray($sql);
-    }
-
-    /**
-     * @param string $email
-     * @param int $idOrder
-     *
-     * @return int
-     *
-     * @throws PrestaShopException
-     */
-    public static function getIdCustomerThreadByEmailAndIdOrder($email, $idOrder)
-    {
-        return (int)Db::readOnly()->getValue(
-            (new DbQuery())
-                ->select('cm.`id_customer_thread`')
-                ->from('customer_thread', 'cm')
-                ->where('cm.`email` = \''.pSQL($email).'\'')
-                ->where('cm.`id_order` = '.(int) $idOrder)
-        );
+        return CustomerMessageAttachment::appendToMessages(Db::readOnly()->getArray($sql));
     }
 
     /**
@@ -246,7 +290,7 @@ class CustomerThreadCore extends ObjectModel
      */
     public static function getMessageCustomerThreads($idCustomerThread)
     {
-        return Db::readOnly()->getArray(
+        $messages = Db::readOnly()->getArray(
             (new DbQuery())
                 ->select('ct.*, cm.*, cl.name subject, CONCAT(e.firstname, \' \', e.lastname) employee_name')
                 ->select('CONCAT(c.firstname, \' \', c.lastname) customer_name, c.firstname')
@@ -258,6 +302,8 @@ class CustomerThreadCore extends ObjectModel
                 ->where('ct.`id_customer_thread` = '.(int) $idCustomerThread)
                 ->orderBy('cm.`date_add` ASC')
         );
+
+        return CustomerMessageAttachment::appendToMessages($messages);
     }
 
     /**
@@ -311,26 +357,49 @@ class CustomerThreadCore extends ObjectModel
             return false;
         }
 
-        $return = true;
-        $result = Db::readOnly()->getArray(
+        $db = Db::getInstance();
+        if (!$db->execute('START TRANSACTION')) {
+            return false;
+        }
+
+        $deletionPlan = ['ids' => [], 'paths' => []];
+        try {
+            $result = $db->getArray(
             (new DbQuery())
                 ->select('`id_customer_message`')
                 ->from('customer_message')
                 ->where('`id_customer_thread` = '.(int) $this->id)
-        );
+            );
 
-        if (count($result)) {
             foreach ($result as $res) {
                 $message = new CustomerMessage((int) $res['id_customer_message']);
-                if (!Validate::isLoadedObject($message)) {
-                    $return = false;
-                } else {
-                    $return = $message->delete() && $return;
+                if (
+                    !Validate::isLoadedObject($message)
+                    || !$message->deleteWithinTransaction($deletionPlan)
+                ) {
+                    $db->execute('ROLLBACK');
+
+                    return false;
                 }
             }
-        }
-        $return = parent::delete() && $return;
 
-        return $return;
+            if (!parent::delete()) {
+                $db->execute('ROLLBACK');
+
+                return false;
+            }
+            if (!$db->execute('COMMIT')) {
+                $db->execute('ROLLBACK');
+
+                return false;
+            }
+        } catch (Exception $exception) {
+            $db->execute('ROLLBACK');
+            throw $exception;
+        }
+
+        CustomerMessageAttachment::deletePreparedFiles($deletionPlan);
+
+        return true;
     }
 }

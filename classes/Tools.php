@@ -1990,6 +1990,47 @@ class ToolsCore
     }
 
     /**
+     * Generate a portable, human-readable file name.
+     *
+     * The extension is handled separately from the base name so dots and
+     * special characters in an uploaded name cannot affect the resulting
+     * extension. File type validation remains the caller's responsibility.
+     *
+     * @param string $fileName
+     * @param int $maxLength
+     *
+     * @return string
+     */
+    public static function generateFileName($fileName, $maxLength = 180)
+    {
+        $fileName = basename(str_replace('\\', '/', trim((string) $fileName)));
+        $extension = mb_strtolower((string) pathinfo($fileName, PATHINFO_EXTENSION), 'UTF-8');
+        $extension = preg_replace('/[^a-z0-9]+/', '', $extension);
+
+        $baseName = (string) pathinfo($fileName, PATHINFO_FILENAME);
+        $baseName = str_replace(
+            ['ä', 'ö', 'ü', 'ß'],
+            ['ae', 'oe', 'ue', 'ss'],
+            mb_strtolower($baseName, 'UTF-8')
+        );
+        $baseName = str_replace(['.', '_'], '-', $baseName);
+        $baseName = static::generateLinkRewrite($baseName, false);
+        if ($baseName === '') {
+            $baseName = 'file';
+        }
+
+        $maxLength = max(16, (int) $maxLength);
+        $extensionLength = $extension === '' ? 0 : Tools::strlen($extension) + 1;
+        $baseName = Tools::substr($baseName, 0, max(1, $maxLength - $extensionLength));
+        $baseName = rtrim($baseName, '-');
+        if ($baseName === '') {
+            $baseName = 'file';
+        }
+
+        return $baseName . ($extension === '' ? '' : '.' . $extension);
+    }
+
+    /**
      * Replace all accented chars by their equivalent non accented chars.
      *
      * @param string $str

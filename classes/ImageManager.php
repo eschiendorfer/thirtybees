@@ -1995,7 +1995,7 @@ class ImageManagerCore
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    protected static function saveSourceImage($sourceFile, $targetFile, $maxWidth, $maxHeight, $imageExtension, &$error = 0)
+    public static function saveSourceImage($sourceFile, $targetFile, $maxWidth, $maxHeight, $imageExtension, &$error = 0)
     {
         $preparedSource = static::createOrientationNormalizedTemporarySource($sourceFile, $imageExtension, $error);
         if (! $preparedSource) {

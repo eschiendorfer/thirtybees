@@ -29,39 +29,41 @@
 	{assign var="type" value="employee"}
 {/if}
 
-<div class="message-item{if $initial}-initial-body{/if}">
-{if !$initial}
-	<div class="message-avatar">
-		<div class="avatar-md">
+<div class="customer-thread-message customer-thread-message-{$type|escape:'html':'UTF-8'}">
+	<div class="customer-thread-message-header clearfix">
+		<strong>
 			{if $type == 'customer'}
-				<i class="icon-user icon-3x"></i>
+				{if !empty($message.customer_name)}{$message.customer_name|escape:'html':'UTF-8'}{else}{l s='Guest'}{/if}
 			{else}
-				{if isset($current_employee->firstname)}<img src="{$message.employee_image}" alt="{$current_employee->firstname|escape:'html':'UTF-8'}" />{/if}
+				{$message.employee_name|escape:'html':'UTF-8'}
 			{/if}
+		</strong>
+		<span class="text-muted pull-right">
+			<i class="icon-calendar"></i> {dateFormat date=$message.date_add full=0}
+			<i class="icon-time"></i> {$message.date_add|substr:11:5}
+		</span>
+	</div>
+
+	<div class="customer-thread-message-text">{$message.message_html}</div>
+
+	{if !empty($message.attachments)}
+		<div class="customer-message-attachments">
+			{foreach from=$message.attachments item=attachment}
+				{if !empty($attachment.preview_url)}
+					<a href="{$attachment.inline_url|escape:'html':'UTF-8'}"
+					   class="customer-message-attachment customer-message-attachment-image js-customer-thread-image"
+					   target="_blank"
+					   data-attachment-name="{$attachment.full_file_name|escape:'html':'UTF-8'}"
+					   title="{$attachment.full_file_name|escape:'html':'UTF-8'}">
+						<img src="{$attachment.preview_url|escape:'html':'UTF-8'}" alt="{$attachment.full_file_name|escape:'html':'UTF-8'}">
+					</a>
+				{else}
+					<a href="{$attachment.inline_url|escape:'html':'UTF-8'}" class="customer-message-attachment customer-message-attachment-file" target="_blank" title="{$attachment.full_file_name|escape:'html':'UTF-8'}">
+						<span class="customer-message-file-icon"><i class="icon-file-text icon-2x"></i></span>
+						<span class="customer-message-file-name">{$attachment.full_file_name|escape:'html':'UTF-8'}</span>
+					</a>
+				{/if}
+			{/foreach}
 		</div>
-	</div>
-{/if}
-	<div class="message-body">
-		{if !$initial}
-			<h4 class="message-item-heading">
-				<i class="icon-mail-reply text-muted"></i>
-					{if $type == 'customer'}
-						{$message.customer_name|escape:'html':'UTF-8'}
-					{else}
-						{$message.employee_name|escape:'html':'UTF-8'}
-					{/if}
-			</h4>
-		{/if}
-		<span class="message-date">&nbsp;<i class="icon-calendar"></i> - {dateFormat date=$message.date_add full=0} - <i class="icon-time"></i> {$message.date_add|substr:11:5}</span>
-		{if $message.file_name}
-			<span class="message-product">
-				&nbsp;<i class="icon-link"></i>
-				<a href="{$link->getAdminLink('AdminCustomerThreads', true, ['showMessageAttachment' => $message.id_customer_message])|escape:'htmlall':'UTF-8'}" target="_blank">
-					{l s="Attachment"}
-				</a>
-			</span>
-		{/if}
-		{if isset($message.product_name)} <span class="message-attachment">&nbsp;<i class="icon-book"></i> <a href="{$message.product_link|escape:'html':'UTF-8'}" class="_blank">{l s="Product:"} {$message.product_name|escape:'html':'UTF-8'} </a></span>{/if}
-		<p class="message-item-text">{$message.message|escape:'html':'UTF-8'|nl2br}</p>
-	</div>
+	{/if}
 </div>
