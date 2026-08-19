@@ -39,18 +39,28 @@ class AdminOrderCancellationsControllerCore extends AdminController
                 'filter_key' => 'o!reference',
                 'align' => 'text-center',
                 'class' => 'fixed-width-xs',
+                'callback' => 'displayOrderDetailLink',
             ],
             'customer' => [
                 'title' => $this->l('Customer'),
                 'havingFilter' => true,
+                'callback' => 'displayCustomerDetailLink',
             ],
             'status' => [
                 'title' => $this->l('Status'),
+                'type' => 'select',
+                'list' => $this->getStatusList(),
                 'filter_key' => 'a!status',
+                'filter_type' => 'string',
+                'callback' => 'displayStatusLabel',
             ],
             'requested_refund_method' => [
                 'title' => $this->l('Requested refund method'),
+                'type' => 'select',
+                'list' => $this->getRefundMethodList(),
                 'filter_key' => 'a!requested_refund_method',
+                'filter_type' => 'string',
+                'callback' => 'displayRefundMethodLabel',
             ],
             'cancelled_quantity' => [
                 'title' => $this->l('Cancelled quantity'),
@@ -229,6 +239,28 @@ class AdminOrderCancellationsControllerCore extends AdminController
     }
 
     /**
+     * @param string $value
+     *
+     * @return string
+     */
+    public function displayStatusLabel($value): string
+    {
+        return $this->getStatusLabel((string)$value);
+    }
+
+    /**
+     * @param string|null $value
+     *
+     * @return string
+     */
+    public function displayRefundMethodLabel($value): string
+    {
+        $refundMethod = (string)$value;
+
+        return $refundMethod !== '' ? $this->getRefundMethodLabel($refundMethod) : '-';
+    }
+
+    /**
      * @return array
      */
     private function getStatusList(): array
@@ -278,12 +310,18 @@ class AdminOrderCancellationsControllerCore extends AdminController
             return '';
         }
 
-        $labels = [
+        return $this->getRefundMethodList()[$refundMethod] ?? str_replace('_', ' ', $refundMethod);
+    }
+
+    /**
+     * @return array
+     */
+    private function getRefundMethodList(): array
+    {
+        return [
             OrderCancellation::REFUND_METHOD_STORE_CREDIT => $this->l('Store credit'),
             OrderCancellation::REFUND_METHOD_ORIGINAL_PAYMENT => $this->l('Original payment'),
         ];
-
-        return $labels[$refundMethod] ?? str_replace('_', ' ', $refundMethod);
     }
 
     /**
@@ -291,20 +329,21 @@ class AdminOrderCancellationsControllerCore extends AdminController
      */
     private function getRefundMethodOptions(): array
     {
-        return [
+        $options = [
             [
                 'id' => '',
                 'name' => '-',
             ],
-            [
-                'id' => OrderCancellation::REFUND_METHOD_STORE_CREDIT,
-                'name' => $this->l('Store credit'),
-            ],
-            [
-                'id' => OrderCancellation::REFUND_METHOD_ORIGINAL_PAYMENT,
-                'name' => $this->l('Original payment'),
-            ],
         ];
+
+        foreach ($this->getRefundMethodList() as $id => $name) {
+            $options[] = [
+                'id' => $id,
+                'name' => $name,
+            ];
+        }
+
+        return $options;
     }
 
     /**

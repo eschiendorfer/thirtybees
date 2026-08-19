@@ -39,10 +39,12 @@ class AdminOrderServiceCasesControllerCore extends AdminController
                 'filter_key' => 'o!reference',
                 'align' => 'text-center',
                 'class' => 'fixed-width-xs',
+                'callback' => 'displayOrderDetailLink',
             ],
             'customer' => [
                 'title' => $this->l('Customer'),
                 'havingFilter' => true,
+                'callback' => 'displayCustomerDetailLink',
             ],
             'status' => [
                 'title' => $this->l('Status'),

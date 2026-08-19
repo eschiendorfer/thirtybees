@@ -3520,6 +3520,59 @@ class AdminControllerCore extends Controller
     }
 
     /**
+     * @param string $reference
+     * @param array $row
+     *
+     * @return string
+     *
+     * @throws PrestaShopException
+     */
+    public function displayOrderDetailLink($reference, $row): string
+    {
+        return $this->renderAdminEntityLink($reference, $row, 'id_order', 'AdminOrders', 'vieworder');
+    }
+
+    /**
+     * @param string $customer
+     * @param array $row
+     *
+     * @return string
+     *
+     * @throws PrestaShopException
+     */
+    public function displayCustomerDetailLink($customer, $row): string
+    {
+        return $this->renderAdminEntityLink($customer, $row, 'id_customer', 'AdminCustomers', 'viewcustomer');
+    }
+
+    /**
+     * @param string $label
+     * @param array $row
+     * @param string $idKey
+     * @param string $controller
+     * @param string $action
+     *
+     * @return string
+     *
+     * @throws PrestaShopException
+     */
+    private function renderAdminEntityLink($label, array $row, string $idKey, string $controller, string $action): string
+    {
+        $label = Tools::safeOutput((string)$label);
+        $idEntity = (int)($row[$idKey] ?? 0);
+        if ($idEntity <= 0) {
+            return $label;
+        }
+
+        $url = $this->context->link->getAdminLink($controller, true, [
+            $action => true,
+            $idKey => $idEntity,
+        ]);
+
+        return '<a href="'.Tools::safeOutput($url).'">'.$label.'</a>';
+    }
+
+    /**
      * Function used to render the list to display for this controller
      *
      * @return string|false

@@ -47,7 +47,7 @@ class AdminSlipControllerCore extends AdminController
         $this->table = 'order_slip';
         $this->className = 'OrderSlip';
 
-        $this->_select = 'a.`id_order_slip` AS id_pdf, o.`id_shop`, o.`reference`, CONCAT(c.`firstname`, \' \', c.`lastname`) AS `customer`, COALESCE((SELECT NULLIF(op.`payment_method`, \'\') FROM `'._DB_PREFIX_.'order_payment` op WHERE op.`id_order_slip` = a.`id_order_slip` ORDER BY op.`id_order_payment` DESC LIMIT 1), o.`payment`) AS refund_payment_method, ROUND(ROUND((a.`total_products_tax_incl` + a.`total_shipping_tax_incl` - a.`adjustment_cart_rule_tax_incl` - a.`adjustment_fee_tax_incl`) * 20) / 20, 2) AS total_tax_incl';
+        $this->_select = 'a.`id_order_slip` AS id_pdf, o.`id_shop`, o.`reference`, c.`id_customer`, CONCAT(c.`firstname`, \' \', c.`lastname`) AS `customer`, COALESCE((SELECT NULLIF(op.`payment_method`, \'\') FROM `'._DB_PREFIX_.'order_payment` op WHERE op.`id_order_slip` = a.`id_order_slip` ORDER BY op.`id_order_payment` DESC LIMIT 1), o.`payment`) AS refund_payment_method, ROUND(ROUND((a.`total_products_tax_incl` + a.`total_shipping_tax_incl` - a.`adjustment_cart_rule_tax_incl` - a.`adjustment_fee_tax_incl`) * 20) / 20, 2) AS total_tax_incl';
         $this->_join .= ' LEFT JOIN '._DB_PREFIX_.'orders o ON (o.`id_order` = a.`id_order`)';
         $this->_join .= ' LEFT JOIN '._DB_PREFIX_.'customer c ON (o.`id_customer` = c.`id_customer`)';
         $this->_group = ' GROUP BY a.`id_order_slip`';
@@ -63,11 +63,12 @@ class AdminSlipControllerCore extends AdminController
                 'filter_key' => 'o!reference',
                 'align' => 'text-center',
                 'class' => 'fixed-width-xs',
-                'callback' => 'getOrderLink'
+                'callback' => 'displayOrderDetailLink',
             ],
             'customer' => [
                 'title' => $this->l('Customer'),
                 'havingFilter' => true,
+                'callback' => 'displayCustomerDetailLink',
             ],
             'total_tax_incl' => [
                 'title' => $this->l('Total (tax incl.)'),
@@ -194,19 +195,4 @@ class AdminSlipControllerCore extends AdminController
         return '<span class="badge">'.Tools::displayPrice((float)$total).'</span>';
     }
 
-    /**
-     * @param int $reference
-     * @param array $row
-     * @return string
-     * @throws PrestaShopException
-     */
-    public static function getOrderLink($reference, $row)
-    {
-        $params = [
-            'vieworder'=> true,
-            'id_order' => (int)$row['id_order']
-        ];
-        $link = Context::getContext()->link->getAdminLink('AdminOrders', true, $params);
-        return "<a href='{$link}'>{$reference}</a>";
-    }
 }
