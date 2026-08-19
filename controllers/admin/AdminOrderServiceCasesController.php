@@ -22,7 +22,7 @@ class AdminOrderServiceCasesControllerCore extends AdminController
         $this->className = 'OrderServiceCase';
         $this->identifier = 'id_order_service_case';
 
-        $this->_select = 'o.`id_order`, o.`id_shop`, o.`id_currency`, o.`reference`, c.`id_customer`, CONCAT(c.`firstname`, \' \', c.`lastname`) AS `customer`, COALESCE(SUM(oscd.`product_quantity`), 0) AS `service_case_quantity`, CASE a.`case_type` WHEN 1 THEN \'Delivery damage\' WHEN 2 THEN \'Items missing\' WHEN 3 THEN \'Items broken\' WHEN 4 THEN \'Other\' ELSE \'Unknown\' END AS `case_type_label`, CASE a.`requested_solution` WHEN 1 THEN \'Replacement\' WHEN 2 THEN \'Alternate product\' WHEN 3 THEN \'Voucher\' ELSE \'-\' END AS `requested_solution_label`';
+        $this->_select = 'o.`id_order`, o.`id_shop`, o.`id_currency`, o.`reference`, c.`id_customer`, CONCAT(c.`firstname`, \' \', c.`lastname`) AS `customer`, COALESCE(SUM(oscd.`product_quantity`), 0) AS `service_case_quantity`';
         $this->_join = ' LEFT JOIN `'._DB_PREFIX_.'orders` o ON (o.`id_order` = a.`id_order`)';
         $this->_join .= ' LEFT JOIN `'._DB_PREFIX_.'customer` c ON (c.`id_customer` = o.`id_customer`)';
         $this->_join .= ' LEFT JOIN `'._DB_PREFIX_.'order_service_case_detail` oscd ON (oscd.`id_order_service_case` = a.`id_order_service_case`)';
@@ -46,15 +46,27 @@ class AdminOrderServiceCasesControllerCore extends AdminController
             ],
             'status' => [
                 'title' => $this->l('Status'),
+                'type' => 'select',
+                'list' => $this->getStatusList(),
                 'filter_key' => 'a!status',
+                'filter_type' => 'string',
+                'callback' => 'displayStatusLabel',
             ],
-            'case_type_label' => [
+            'case_type' => [
                 'title' => $this->l('Case type'),
-                'havingFilter' => true,
+                'type' => 'select',
+                'list' => $this->getCaseTypeList(),
+                'filter_key' => 'a!case_type',
+                'filter_type' => 'int',
+                'callback' => 'displayCaseTypeLabel',
             ],
-            'requested_solution_label' => [
+            'requested_solution' => [
                 'title' => $this->l('Requested solution'),
-                'havingFilter' => true,
+                'type' => 'select',
+                'list' => $this->getRequestedSolutionList(),
+                'filter_key' => 'a!requested_solution',
+                'filter_type' => 'int',
+                'callback' => 'displayRequestedSolutionLabel',
             ],
             'service_case_quantity' => [
                 'title' => $this->l('Quantity'),
@@ -256,6 +268,38 @@ class AdminOrderServiceCasesControllerCore extends AdminController
         ];
 
         return parent::renderView();
+    }
+
+    /**
+     * @param string $value
+     *
+     * @return string
+     */
+    public function displayStatusLabel($value): string
+    {
+        return $this->getStatusLabel((string)$value);
+    }
+
+    /**
+     * @param string $value
+     *
+     * @return string
+     */
+    public function displayCaseTypeLabel($value): string
+    {
+        return $this->getCaseTypeLabel((int)$value);
+    }
+
+    /**
+     * @param string|null $value
+     *
+     * @return string
+     */
+    public function displayRequestedSolutionLabel($value): string
+    {
+        $requestedSolution = (int)$value;
+
+        return $requestedSolution > 0 ? $this->getRequestedSolutionLabel($requestedSolution) : '-';
     }
 
     /**
