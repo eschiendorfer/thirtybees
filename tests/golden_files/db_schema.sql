@@ -779,7 +779,7 @@ CREATE TABLE `PREFIX_customer_thread` (
   `id_customer_thread` int(11) unsigned NOT NULL AUTO_INCREMENT,
   `id_shop` int(11) unsigned NOT NULL DEFAULT '1',
   `id_lang` int(11) unsigned NOT NULL,
-  `id_contact` int(11) unsigned NOT NULL,
+  `id_contact` int(11) unsigned NOT NULL DEFAULT '0',
   `id_customer` int(11) unsigned DEFAULT NULL,
   `id_employee_assigned` int(11) unsigned NOT NULL DEFAULT '0',
   `id_order` int(11) unsigned DEFAULT NULL,
@@ -910,6 +910,18 @@ CREATE TABLE `PREFIX_employee_shop` (
   `id_shop` int(11) unsigned NOT NULL,
   PRIMARY KEY (`id_employee`,`id_shop`),
   KEY `id_shop` (`id_shop`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `PREFIX_entity_employee_assignment` (
+  `id_entity_employee_assignment` int(11) unsigned NOT NULL AUTO_INCREMENT,
+  `entity_type` int(11) unsigned NOT NULL,
+  `id_entity` int(11) unsigned NOT NULL,
+  `id_employee` int(11) unsigned NOT NULL,
+  `date_add` datetime NOT NULL,
+  `date_upd` datetime NOT NULL,
+  PRIMARY KEY (`id_entity_employee_assignment`),
+  UNIQUE KEY `entity` (`entity_type`,`id_entity`),
+  KEY `id_employee` (`id_employee`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `PREFIX_feature` (
@@ -1421,10 +1433,11 @@ CREATE TABLE `PREFIX_order_cancellation` (
   `id_order_cancellation` int(11) unsigned NOT NULL AUTO_INCREMENT,
   `id_order` int(11) unsigned NOT NULL,
   `id_employee` int(11) unsigned DEFAULT NULL,
-  `status` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'requested',
+  `status` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'open',
   `requested_refund_method` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `quoted_refund_total_tax_incl` decimal(20,6) DEFAULT NULL,
   `quoted_fee_tax_incl` decimal(20,6) DEFAULT NULL,
+  `quoted_shipping_tax_incl` decimal(20,6) DEFAULT NULL,
   `migrated` tinyint(1) unsigned NOT NULL DEFAULT '0',
   `date_add` datetime NOT NULL,
   `date_upd` datetime NOT NULL,
@@ -1437,7 +1450,14 @@ CREATE TABLE `PREFIX_order_cancellation_detail` (
   `id_order_cancellation_detail` int(11) unsigned NOT NULL AUTO_INCREMENT,
   `id_order_cancellation` int(11) unsigned NOT NULL,
   `id_order_detail` int(11) unsigned NOT NULL,
+  `id_product` int(11) unsigned NOT NULL DEFAULT '0',
+  `id_product_attribute` int(11) unsigned NOT NULL DEFAULT '0',
+  `product_reference` varchar(64) DEFAULT NULL,
+  `product_name` varchar(255) DEFAULT NULL,
   `product_quantity` int(11) unsigned NOT NULL DEFAULT '0',
+  `quoted_product_amount_tax_incl` decimal(20,6) DEFAULT NULL,
+  `quoted_fee_tax_incl` decimal(20,6) DEFAULT NULL,
+  `quoted_fee_policy` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   PRIMARY KEY (`id_order_cancellation_detail`),
   KEY `id_order_cancellation` (`id_order_cancellation`),
   KEY `id_order_detail` (`id_order_detail`)
@@ -1695,6 +1715,8 @@ CREATE TABLE `PREFIX_order_slip` (
   `adjustment_cart_rule_tax_incl` decimal(20,6) NOT NULL DEFAULT '0.000000',
   `adjustment_fee_tax_excl` decimal(20,6) NOT NULL DEFAULT '0.000000',
   `adjustment_fee_tax_incl` decimal(20,6) NOT NULL DEFAULT '0.000000',
+  `adjustment_shipping_charge_tax_excl` decimal(20,6) NOT NULL DEFAULT '0.000000',
+  `adjustment_shipping_charge_tax_incl` decimal(20,6) NOT NULL DEFAULT '0.000000',
   `date_add` datetime NOT NULL,
   `date_upd` datetime NOT NULL,
   PRIMARY KEY (`id_order_slip`),

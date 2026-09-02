@@ -34,18 +34,25 @@
  */
 class CustomerThreadCore extends ObjectModel
 {
-    public const CUSTOMER_SERVICE_EMPLOYEE_IDS = [1, 2, 5, 7, 9, 14];
-
     public const STATUS_OPEN = 'open';
     public const STATUS_IN_PROGRESS = 'pending1';
     public const STATUS_WAITING_CUSTOMER = 'waiting_customer';
     public const STATUS_CLOSED = 'closed';
 
-    /** @var int $id_contact */
+    /**
+     * Historical contact/department reference.
+     *
+     * @var int
+     * @deprecated New customer-service threads use entity type, entity ID and
+     * EntityEmployeeAssignment for routing. This value is retained for old data only.
+     */
     public $id_contact;
     /** @var int $id_customer */
     public $id_customer;
-    /** @var int $id_employee_assigned */
+    /**
+     * @deprecated Use EntityEmployeeAssignment. Kept for schema compatibility.
+     * @var int $id_employee_assigned
+     */
     public $id_employee_assigned;
     /**
      * Legacy order context for order-related threads.
@@ -103,7 +110,8 @@ class CustomerThreadCore extends ObjectModel
         'fields'  => [
             'id_shop'     => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '1'],
             'id_lang'     => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true],
-            'id_contact'  => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true],
+            // @deprecated Historical only; new threads persist 0.
+            'id_contact'  => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '0'],
             'id_customer' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId'],
             'id_employee_assigned' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '0'],
             'id_order'    => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId'],
@@ -243,28 +251,6 @@ class CustomerThreadCore extends ObjectModel
     }
 
     /**
-     * @return array
-     *
-     * @throws PrestaShopDatabaseException
-     * @throws PrestaShopException
-     */
-    public static function getContacts()
-    {
-        return Db::readOnly()->getArray(
-            (new DbQuery())
-                ->select('cl.*, COUNT(*) as `total`')
-                ->select('(SELECT `id_customer_thread` FROM `'._DB_PREFIX_.'customer_thread` ct2 WHERE status = "open" AND ct.`id_contact` = ct2.`id_contact` '.Shop::addSqlRestriction().' ORDER BY `date_upd` ASC LIMIT 1) AS `id_customer_thread`')
-                ->from('customer_thread', 'ct')
-                ->leftJoin('contact_lang', 'cl', 'cl.`id_contact` = ct.`id_contact` AND cl.`id_lang` = '.(int) Context::getContext()->language->id)
-                ->where('ct.`status` = "open"')
-                ->where('ct.`id_contact` IS NOT NULL')
-                ->where('cl.`id_contact` IS NOT NULL '.Shop::addSqlRestriction())
-                ->groupBy('ct.`id_contact`')
-                ->having('COUNT(*) > 0')
-        );
-    }
-
-    /**
      * @param string|null $where
      *
      * @return int
@@ -292,11 +278,10 @@ class CustomerThreadCore extends ObjectModel
     {
         $messages = Db::readOnly()->getArray(
             (new DbQuery())
-                ->select('ct.*, cm.*, cl.name subject, CONCAT(e.firstname, \' \', e.lastname) employee_name')
+                ->select('ct.*, cm.*, CONCAT(e.firstname, \' \', e.lastname) employee_name')
                 ->select('CONCAT(c.firstname, \' \', c.lastname) customer_name, c.firstname')
                 ->from('customer_thread', 'ct')
                 ->leftJoin('customer_message', 'cm', 'ct.`id_customer_thread` = cm.`id_customer_thread`')
-                ->leftJoin('contact_lang', 'cl', 'cl.`id_contact` = ct.`id_contact` AND cl.`id_lang` = '.(int) Context::getContext()->language->id)
                 ->leftJoin('employee', 'e', 'e.`id_employee` = cm.`id_employee`')
                 ->leftJoin('customer', 'c', '(IFNULL(ct.`id_customer`, ct.`email`) = IFNULL(c.`id_customer`, c.`email`))')
                 ->where('ct.`id_customer_thread` = '.(int) $idCustomerThread)
@@ -304,29 +289,6 @@ class CustomerThreadCore extends ObjectModel
         );
 
         return CustomerMessageAttachment::appendToMessages($messages);
-    }
-
-    /**
-     * @param int $idCustomerThread
-     *
-     * @return false|null|string
-     *
-     * @throws PrestaShopException
-     */
-    public static function getNextThread($idCustomerThread)
-    {
-        $context = Context::getContext();
-
-        return Db::readOnly()->getValue(
-            (new DbQuery())
-                ->select('`id_customer_thread`')
-                ->from('customer_thread', 'ct')
-                ->where('ct.status = "open"')
-                ->where('ct.`date_upd` = (SELECT date_add FROM '._DB_PREFIX_.'customer_message WHERE (id_employee IS NULL OR id_employee = 0) AND id_customer_thread = '.(int) $idCustomerThread.' ORDER BY date_add DESC LIMIT 1)')
-                ->where($context->cookie->{'customer_threadFilter_cl!id_contact'} ? 'ct.`id_contact` = '.(int) $context->cookie->{'customer_threadFilter_cl!id_contact'} : '')
-                ->where($context->cookie->{'customer_threadFilter_l!id_lang'} ? 'ct.`id_lang` = '.(int) $context->cookie->{'customer_threadFilter_l!id_lang'} : '')
-                ->orderBy('ct.`date_upd` ASC')
-        );
     }
 
     /**

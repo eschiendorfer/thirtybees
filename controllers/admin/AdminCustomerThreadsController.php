@@ -46,11 +46,6 @@ class AdminCustomerThreadsControllerCore extends AdminController
      */
     const RESPONSE_TEMPLATES_CONTROLLER = 'AdminOrderMessage';
 
-    /**
-     * Contacts controller
-     */
-    const CONTACTS_CONTROLLER = 'AdminContacts';
-
     /** @var array<int, array<string, mixed>>|null */
     protected $assignableEmployeesCache;
 
@@ -66,84 +61,61 @@ class AdminCustomerThreadsControllerCore extends AdminController
         $this->table = 'customer_thread';
         $this->className = 'CustomerThread';
         $this->lang = false;
+        $this->list_id = 'customer_service_work_items';
 
-        $contactArray = [];
-        $contacts = Contact::getContacts($this->context->language->id, true);
-
-        foreach ($contacts as $contact) {
-            $contactArray[$contact['id_contact']] = $contact['name'];
-        }
-
-        $statusArray = $this->getCustomerServiceStatuses();
-        $employeeArray = [-1 => $this->getUnassignedEmployeeLabel()];
+        $statusArray = $this->getWorkItemStatuses();
+        $employeeArray = [0 => $this->getUnassignedEmployeeLabel()];
         foreach ($this->getAssignableEmployees() as $employee) {
             $employeeArray[(int) $employee['id_employee']] = trim($employee['firstname'].' '.$employee['lastname']);
         }
 
         $this->fields_list = [
-            'id_customer_thread' => [
-                'title' => $this->l('ID'),
-                'align' => 'center',
-                'class' => 'fixed-width-xs',
-            ],
-            'customer'           => [
-                'title'          => $this->l('Customer'),
-                'filter_key'     => 'customer',
-                'tmpTableFilter' => true,
-            ],
-            'email'              => [
-                'title'      => $this->l('Email'),
-                'filter_key' => 'a!email',
-            ],
-            'contact'            => [
-                'title'       => $this->l('Type'),
+            'entity_type' => [
+                'title'       => $this->l('Entity type'),
                 'type'        => 'select',
-                'list'        => $contactArray,
-                'filter_key'  => 'cl!id_contact',
+                'list'        => $this->getWorkItemEntityTypes(),
+                'filter_key'  => 'a!entity_type',
                 'filter_type' => 'int',
+                'callback'    => 'renderWorkItemEntity',
             ],
-            'status'             => [
+            'customer' => [
+                'title'      => $this->l('Customer'),
+                'filter_key' => 'a!customer',
+                'callback'   => 'renderWorkItemCustomer',
+            ],
+            'normalized_status' => [
                 'title'       => $this->l('Status'),
                 'type'        => 'select',
                 'list'        => $statusArray,
                 'align'       => 'center',
-                'filter_key'  => 'a!status',
-                'filter_type' => 'string',
+                'filter_key'  => 'a!normalized_status',
                 'callback'    => 'renderStatus',
             ],
             'id_employee_assigned' => [
-                'title'       => $this->l('Employee'),
+                'title'       => $this->l('Assigned to'),
                 'type'        => 'select',
                 'list'        => $employeeArray,
-                'filter_key'  => 'assigned_employee_filter',
+                'filter_key'  => 'a!id_employee_assigned',
                 'filter_type' => 'int',
-                'tmpTableFilter' => true,
                 'callback'    => 'renderAssignedEmployee',
             ],
-            'messages'           => [
-                'title'          => $this->l('Messages'),
-                'filter_key'     => 'messages',
-                'tmpTableFilter' => true,
-                'maxlength'      => 40,
-            ],
-            'date_upd'           => [
-                'title'        => $this->l('Last message'),
-                'havingFilter' => true,
-                'type'         => 'datetime',
+            'last_activity' => [
+                'title'      => $this->l('Last activity'),
+                'filter_key' => 'a!last_activity',
+                'type'       => 'datetime',
             ],
         ];
 
-        $this->bulk_actions = [
-            'delete' => [
-                'text'    => $this->l('Delete selected'),
-                'confirm' => $this->l('Delete selected items?'),
-                'icon'    => 'icon-trash',
-            ],
-        ];
-
-        $this->shopLinkType = 'shop';
+        $this->bulk_actions = [];
+        $this->shopLinkType = false;
+        $this->list_no_link = true;
+        $this->_orderBy = 'status_priority';
+        $this->_orderWay = 'DESC';
 
         parent::__construct();
+
+        $this->addRowAction('primary');
+        $this->addRowAction('remove');
     }
 
     /**
@@ -156,6 +128,11 @@ class AdminCustomerThreadsControllerCore extends AdminController
 
         if (Tools::getIntValue('id_customer_thread') > 0) {
             $this->addJS(_PS_MODULE_DIR_.'tb_framework/views/js/components/file_upload.js');
+            $themeBaseUri = __PS_BASE_URI__.$this->admin_webpath.'/themes/'.$this->bo_theme;
+            $this->addCSS($themeBaseUri.'/css/customer_thread_workspace.css');
+            $this->addJS($themeBaseUri.'/js/customer_thread_workspace.js');
+        } else {
+            $this->addJS(__PS_BASE_URI__.$this->admin_webpath.'/themes/'.$this->bo_theme.'/js/customer_service_work_items.js');
         }
     }
 
@@ -171,9 +148,32 @@ class AdminCustomerThreadsControllerCore extends AdminController
     {
         return [
             CustomerThread::STATUS_OPEN             => $this->l('Open'),
-            CustomerThread::STATUS_IN_PROGRESS      => $this->l('In progress'),
-            CustomerThread::STATUS_WAITING_CUSTOMER => $this->l('Waiting for customer reply'),
-            CustomerThread::STATUS_CLOSED           => $this->l('Closed'),
+            CustomerThread::STATUS_IN_PROGRESS      => $this->l('In inquiry'),
+            CustomerThread::STATUS_WAITING_CUSTOMER => $this->l('Waiting for customer'),
+            CustomerThread::STATUS_CLOSED           => $this->l('Completed'),
+        ];
+    }
+
+    /** @return array<string, string> */
+    protected function getWorkItemStatuses(): array
+    {
+        return [
+            CustomerServiceWorkItemProvider::STATUS_OPEN => $this->l('Open'),
+            CustomerServiceWorkItemProvider::STATUS_INQUIRY => $this->l('In inquiry'),
+            CustomerServiceWorkItemProvider::STATUS_WAITING_CUSTOMER => $this->l('Waiting for customer'),
+            CustomerServiceWorkItemProvider::STATUS_CLOSED => $this->l('Completed'),
+        ];
+    }
+
+    /** @return array<int, string> */
+    protected function getWorkItemEntityTypes(): array
+    {
+        return [
+            (int)\CoreExtension\EntityTypeEnum::ORDER_CANCELLATION_VALUE => $this->l('Cancellation'),
+            (int)\CoreExtension\EntityTypeEnum::ORDER_RETURN_VALUE => $this->l('Merchandise return'),
+            (int)\CoreExtension\EntityTypeEnum::ORDER_SERVICE_CASE_VALUE => $this->l('Service case'),
+            (int)\CoreExtension\EntityTypeEnum::PRODUCT_WISH_VALUE => $this->l('Product wish'),
+            (int)\CoreExtension\EntityTypeEnum::CUSTOMER_THREAD_VALUE => $this->l('Message'),
         ];
     }
 
@@ -188,12 +188,7 @@ class AdminCustomerThreadsControllerCore extends AdminController
     protected function getAssignableEmployees(): array
     {
         if ($this->assignableEmployeesCache === null) {
-            $this->assignableEmployeesCache = array_values(array_filter(
-                Employee::getEmployees(true),
-                static function (array $employee): bool {
-                    return in_array((int) $employee['id_employee'], CustomerThread::CUSTOMER_SERVICE_EMPLOYEE_IDS, true);
-                }
-            ));
+            $this->assignableEmployeesCache = array_values(Employee::getEmployees(true));
         }
 
         return $this->assignableEmployeesCache;
@@ -245,31 +240,74 @@ class AdminCustomerThreadsControllerCore extends AdminController
         // Check the new IMAP messages before rendering the list
         $this->renderProcessSyncImap();
 
-        $this->addRowAction('view');
-        $this->addRowAction('delete');
+        return parent::renderList();
+    }
 
-        $this->_select = '
-			CONCAT(c.`firstname`," ",c.`lastname`) as customer, cl.`name` as contact, group_concat(message) as messages,
-			IF(a.`id_employee_assigned` = 0, -1, a.`id_employee_assigned`) as assigned_employee_filter';
-
-        $this->_join = '
-			LEFT JOIN `'._DB_PREFIX_.'customer` c
-				ON c.`id_customer` = a.`id_customer`
-			INNER JOIN `'._DB_PREFIX_.'customer_message` cm
-				ON (cm.`id_customer_thread` = a.`id_customer_thread` AND cm.`private` = 0)
-			LEFT JOIN `'._DB_PREFIX_.'contact_lang` cl
-				ON (cl.`id_contact` = a.`id_contact` AND cl.`id_lang` = '.(int) $this->context->language->id.')';
-
-        if ($idOrder = Tools::getIntValue('id_order')) {
-            $this->_where .= ' AND a.`entity_type` = '.(int)\CoreExtension\EntityTypeEnum::ORDER_VALUE
-                .' AND a.`id_entity` = '.(int)$idOrder;
+    /**
+     * Read the shared queue from a UNION of its domain entities. This keeps the
+     * domain status authoritative and avoids a duplicate work-item table.
+     */
+    public function getList(
+        $idLang,
+        $orderBy = null,
+        $orderWay = null,
+        $start = 0,
+        $limit = null,
+        $idLangShop = false
+    ) {
+        $this->ensureListIdDefinition();
+        $limit = $limit === false
+            ? 0
+            : HelperList::resolvePagination($this->list_id, $this->context->cookie, $this->_pagination, $this->_default_pagination);
+        $useLimit = $limit > 0;
+        if ($useLimit && $limit !== $this->_default_pagination) {
+            $this->context->cookie->{$this->list_id.'_pagination'} = $limit;
+        } elseif (isset($this->context->cookie->{$this->list_id.'_pagination'})) {
+            unset($this->context->cookie->{$this->list_id.'_pagination'});
         }
 
-        $this->_group = 'GROUP BY cm.id_customer_thread';
-        $this->_orderBy = 'date_upd';
-        $this->_orderWay = 'DESC';
+        $orderBy = $this->resolveOrderBy($orderBy);
+        $orderWay = $this->resolveOrderWay($orderWay);
+        $allowedOrderFields = ['entity_type', 'customer', 'normalized_status', 'id_employee_assigned', 'last_activity', 'status_priority'];
+        if (!in_array($orderBy, $allowedOrderFields, true) || !Validate::isOrderWay($orderWay)) {
+            $orderBy = 'status_priority';
+            $orderWay = 'DESC';
+        }
+        $this->_orderBy = $orderBy;
+        $this->_orderWay = strtoupper($orderWay);
 
-        return parent::renderList();
+        $start = 0;
+        if ($useLimit && Tools::getIntValue('submitFilter'.$this->list_id)) {
+            $start = (Tools::getIntValue('submitFilter'.$this->list_id) - 1) * $limit;
+        }
+
+        $shopIds = Shop::getContextListShopID();
+        if (!$shopIds) {
+            $shopIds = [(int)$this->context->shop->id];
+        }
+        $baseSql = (new CustomerServiceWorkItemProvider())->getBaseSql($shopIds);
+        $where = ' WHERE 1 '.($this->_filter ?? '');
+        $orderSql = $orderBy === 'status_priority'
+            ? 'a.`status_priority` DESC, a.`last_activity` DESC'
+            : 'a.`'.bqSQL($orderBy).'` '.pSQL($orderWay).', a.`last_activity` DESC';
+        $limitSql = $useLimit ? ' LIMIT '.(int)$start.', '.(int)$limit : '';
+        $this->_listsql = 'SELECT a.* FROM ('.$baseSql.') a'.$where.' ORDER BY '.$orderSql.$limitSql;
+        $countSql = 'SELECT COUNT(*) FROM ('.$baseSql.') a'.$where;
+
+        try {
+            $this->_list = Db::readOnly()->getArray($this->_listsql);
+            $this->_listTotal = (int)Db::readOnly()->getValue($countSql);
+            foreach ($this->_list as &$workItem) {
+                $workItem['email'] = Tools::convertEmailFromIdn((string)($workItem['email'] ?? ''));
+                $this->addWorkItemActions($workItem);
+            }
+            unset($workItem);
+        } catch (PrestaShopDatabaseException $exception) {
+            PrestaShopLogger::addLog($exception->getMessage(), 3);
+            $this->_list = [];
+            $this->_listTotal = 0;
+            $this->_list_error = Tools::displayError('The customer-service work queue could not be loaded.');
+        }
     }
 
     /**
@@ -412,22 +450,6 @@ class AdminCustomerThreadsControllerCore extends AdminController
                             continue;
                         }
 
-                        // we want to assign unrecognized mails to the right contact category
-                        $contacts = Contact::getContacts($this->context->language->id, true);
-                        if (!$contacts) {
-                            continue;
-                        }
-
-                        foreach ($contacts as $contact) {
-                            if (strpos($overview->to, $contact['email']) !== false) {
-                                $idContact = $contact['id_contact'];
-                            }
-                        }
-
-                        if (!isset($idContact)) { // if not use the default contact category
-                            $idContact = $contacts[0]['id_contact'];
-                        }
-
                         $customer = new Customer();
                         $client = $customer->getByEmail($from); //check if we already have a customer with this email
                         $newThreadCustomerId = (int)($client->id ?? 0);
@@ -458,7 +480,6 @@ class AdminCustomerThreadsControllerCore extends AdminController
                                 'idCustomer' => $newCt ? $newThreadCustomerId : (int)$ct->id_customer,
                                 'idShop' => $newCt ? (int)$this->context->shop->id : (int)$ct->id_shop,
                                 'idLang' => $newCt ? (int)Configuration::get('PS_LANG_DEFAULT') : (int)$ct->id_lang,
-                                'idContact' => $newCt ? (int)$idContact : (int)$ct->id_contact,
                                 'idCustomerThread' => $newCt ? 0 : (int)$ct->id,
                                 'email' => $newCt ? $from : (string)$ct->email,
                                 'token' => $newCt ? '' : (string)($matches2[1] ?? ''),
@@ -510,15 +531,6 @@ class AdminCustomerThreadsControllerCore extends AdminController
             ];
         }
 
-        $contactsTabId = Tab::getIdFromClassName(static::CONTACTS_CONTROLLER);
-        if ($this->context->employee->hasAccess($contactsTabId, Profile::PERMISSION_VIEW)) {
-            $this->page_header_toolbar_btn['contacts'] = [
-                'href' => $this->context->link->getAdminLink(static::CONTACTS_CONTROLLER),
-                'icon' => 'process-icon-envelope',
-                'desc' => $this->l('Departments'),
-            ];
-        }
-
         $settingsTabId = Tab::getIdFromClassName(static::SETTINGS_CONTROLLER);
         if ($this->context->employee->hasAccess($settingsTabId, Profile::PERMISSION_EDIT)) {
             $this->page_header_toolbar_btn['settings'] = [
@@ -547,17 +559,6 @@ class AdminCustomerThreadsControllerCore extends AdminController
     }
 
     /**
-     * @param bool $value
-     * @param Customer $customer
-     *
-     * @return string
-     */
-    public function printOptinIcon($value, $customer)
-    {
-        return ($value ? '<i class="icon-check"></i>' : '<i class="icon-remove"></i>');
-    }
-
-    /**
      * @return bool
      *
      * @throws PrestaShopException
@@ -565,294 +566,72 @@ class AdminCustomerThreadsControllerCore extends AdminController
      */
     public function postProcess()
     {
+        if (Tools::isSubmit('submitEntityThreadReply')) {
+            $this->processEntityReply();
+            return false;
+        }
+
         if ($idCustomerThread = Tools::getIntValue('id_customer_thread')) {
-            if (($idContact = Tools::getIntValue('id_contact'))) {
-                Db::getInstance()->execute(
-                    '
-					UPDATE '._DB_PREFIX_.'customer_thread
-					SET id_contact = '.(int) $idContact.'
-					WHERE id_customer_thread = '.(int) $idCustomerThread
-                );
-            }
-            if ($idStatus = Tools::getIntValue('setstatus')) {
-                $statusArray = [1 => CustomerThread::STATUS_OPEN, 2 => CustomerThread::STATUS_CLOSED, 3 => CustomerThread::STATUS_IN_PROGRESS];
-                if (isset($statusArray[$idStatus])) {
-                    Db::getInstance()->execute(
-                    '
-					UPDATE '._DB_PREFIX_.'customer_thread
-					SET status = "'.$statusArray[$idStatus].'"
-                    WHERE id_customer_thread = '.(int) $idCustomerThread.'
-				'
-                    );
-                }
-            }
-            if (isset($_POST['id_employee_forward'])) {
-                $messages = Db::readOnly()->getRow(
-                    '
-					SELECT ct.*, cm.*, cl.name subject, CONCAT(e.firstname, \' \', e.lastname) employee_name,
-						CONCAT(c.firstname, \' \', c.lastname) customer_name, c.firstname
-					FROM '._DB_PREFIX_.'customer_thread ct
-					LEFT JOIN '._DB_PREFIX_.'customer_message cm
-						ON (ct.id_customer_thread = cm.id_customer_thread)
-					LEFT JOIN '._DB_PREFIX_.'contact_lang cl
-						ON (cl.id_contact = ct.id_contact AND cl.id_lang = '.(int) $this->context->language->id.')
-					LEFT OUTER JOIN '._DB_PREFIX_.'employee e
-						ON e.id_employee = cm.id_employee
-					LEFT OUTER JOIN '._DB_PREFIX_.'customer c
-						ON (c.email = ct.email)
-					WHERE ct.id_customer_thread = '.Tools::getIntValue('id_customer_thread').'
-					ORDER BY cm.date_add DESC
-				'
-                );
-                $output = $this->displayMessage($messages, true, Tools::getIntValue('id_employee_forward'));
-                $currentEmployee = $this->context->employee;
-                $idEmployee = Tools::getIntValue('id_employee_forward');
-                $employee = new Employee($idEmployee);
-                $email = Tools::convertEmailToIdn(Tools::getValue('email'));
-                $message = Tools::getValue('message_forward');
-                if (!CustomerMessage::hasVisibleContent(CustomerMessage::sanitizeContent((string)$message))) {
-                    $this->errors[] = Tools::displayError('The message cannot be blank.');
-                } elseif (Validate::isLoadedObject($employee)) {
-                    $params = [
-                        '{messages}'  => stripslashes($output),
-                        '{employee}'  => $currentEmployee->firstname.' '.$currentEmployee->lastname,
-                        '{comment}'   => stripslashes(Tools::nl2br($_POST['message_forward'])),
-                        '{firstname}' => $employee->firstname,
-                        '{lastname}'  => $employee->lastname,
-                    ];
-
-                    if (Mail::Send(
-                        $this->context->language->id,
-                        'forward_msg',
-                        Mail::l('Fwd: Customer message', $this->context->language->id),
-                        $params,
-                        $employee->email,
-                        $employee->firstname.' '.$employee->lastname,
-                        $currentEmployee->email,
-                        $currentEmployee->firstname.' '.$currentEmployee->lastname,
-                        null,
-                        null,
-                        _PS_MAIL_DIR_,
-                        true
-                    )) {
-                        $this->savePrivateEmployeeMessage(
-                            $idCustomerThread,
-                            $this->l('Message forwarded to').' '.$employee->firstname.' '.$employee->lastname."\n".$this->l('Comment:').' '.$message
-                        );
-                    }
-                } elseif ($email && Validate::isEmail($email)) {
-                    $params = [
-                        '{messages}'  => Tools::nl2br(stripslashes($output)),
-                        '{employee}'  => $currentEmployee->firstname.' '.$currentEmployee->lastname,
-                        '{comment}'   => stripslashes($_POST['message_forward']),
-                        '{firstname}' => '',
-                        '{lastname}'  => '',
-                    ];
-
-                    if (Mail::Send(
-                        $this->context->language->id,
-                        'forward_msg',
-                        Mail::l('Fwd: Customer message', $this->context->language->id),
-                        $params,
-                        $email,
-                        null,
-                        $currentEmployee->email,
-                        $currentEmployee->firstname.' '.$currentEmployee->lastname,
-                        null,
-                        null,
-                        _PS_MAIL_DIR_,
-                        true
-                    )) {
-                        $this->savePrivateEmployeeMessage(
-                            $idCustomerThread,
-                            $this->l('Message forwarded to').' '.Tools::convertEmailFromIdn($email)."\n".$this->l('Comment:').' '.$message
-                        );
-                    }
-                } else {
-                    $this->errors[] = '<div class="alert error">'.Tools::displayError('The email address is invalid.').'</div>';
-                }
-            }
             if (Tools::isSubmit('submitReply')) {
                 $ct = new CustomerThread($idCustomerThread);
-                $replyStatus = (string) Tools::getValue('thread_status', $ct->status);
+                $replyStatus = (string) Tools::getValue('thread_status', CustomerThread::STATUS_CLOSED);
                 $idEmployee = (int) $this->context->employee->id;
-                $pendingAttachments = CustomerMessageAttachment::getOwnedPending(
-                    $this->getSubmittedAttachmentIds(),
-                    0,
-                    0,
-                    $idEmployee
-                );
-                if ($pendingAttachments === false) {
-                    $pendingAttachments = [];
-                    $this->errors[] = Tools::displayError('The selected attachment is invalid.');
-                }
-
-                $uploadedFiles = CustomerMessageAttachment::getUploadedFiles('file_attachment');
+                $pendingAttachments = $this->prepareReplyAttachments($idEmployee);
                 if (!array_key_exists($replyStatus, $this->getCustomerServiceStatuses())) {
                     $this->errors[] = Tools::displayError('The selected status is invalid.');
                 }
                 $replyMessage = (string)Tools::getValue('reply_message');
-                if (!Validate::isEmail(Tools::getValue('msg_email'))) {
-                    $this->errors[] = Tools::displayError('The email address is invalid.');
-                }
-                $this->errors = array_merge(
-                    $this->errors,
-                    CustomerMessageAttachment::validateUploadedFiles(
-                        $uploadedFiles,
-                        true,
-                        count($pendingAttachments),
-                        CustomerMessageAttachment::getTotalUploadSize($pendingAttachments)
-                    )
-                );
-
-                if (!$this->errors && $uploadedFiles) {
-                    try {
-                        $pendingAttachments = array_merge(
-                            $pendingAttachments,
-                            CustomerMessageAttachment::storeUploadedFiles($uploadedFiles, 0, 0, 0, $idEmployee)
-                        );
-                    } catch (Exception $exception) {
-                        $this->errors[] = Tools::displayError('An error occurred during the file upload process.');
+                $hasReplyContent = CustomerMessage::hasVisibleContent(CustomerMessage::sanitizeContent($replyMessage))
+                    || !empty($pendingAttachments);
+                if (!$this->errors && !$hasReplyContent) {
+                    $ct->status = $replyStatus;
+                    if (!$ct->update()) {
+                        $this->errors[] = Tools::displayError('The thread status could not be updated.');
+                    } else {
+                        Tools::redirectAdmin($this->getReplyReturnUrl($ct));
                     }
                 }
-
-                if (!$this->errors && !CustomerMessageAttachment::canAttachToEmail($pendingAttachments)) {
-                    $this->errors[] = sprintf(
-                        Tools::displayError('The attachments exceed the maximum email size of %d MB.'),
-                        CustomerMessageAttachment::getMaximumEmailTotalSizeMb()
-                    );
-                }
-
-                $this->setSubmittedAttachmentIds(CustomerMessageAttachment::getIds($pendingAttachments));
-                if (!$this->errors) {
-                    $request = [
-                        'idCustomer' => (int)$ct->id_customer,
-                        'idEmployee' => $idEmployee,
-                        'idShop' => (int)$ct->id_shop,
-                        'idLang' => (int)$ct->id_lang,
-                        'idContact' => (int)$ct->id_contact,
-                        'idCustomerThread' => (int)$ct->id,
-                        'email' => (string)$ct->email,
-                        'message' => $replyMessage,
-                        'status' => null,
-                        'attachments' => $pendingAttachments,
-                    ];
+                if (!$this->errors && $hasReplyContent) {
                     try {
-                        $messageResult = (new CustomerServiceMessageService())->save($request);
-                        $ct = $messageResult['thread'];
-                        $cm = $messageResult['message'];
+                        $replyResult = (new CustomerServiceReplyService())->send([
+                            'idCustomer' => (int)$ct->id_customer,
+                            'idEmployee' => $idEmployee,
+                            'idShop' => (int)$ct->id_shop,
+                            'idLang' => (int)$ct->id_lang,
+                            'idCustomerThread' => (int)$ct->id,
+                            'email' => (string)$ct->email,
+                            'message' => $replyMessage,
+                            'status' => $replyStatus,
+                            'attachments' => $pendingAttachments,
+                        ]);
+                        $ct = $replyResult['thread'];
                     } catch (PrestaShopException $exception) {
                         PrestaShopLogger::addLog($exception->getMessage(), 3);
-                        $this->errors[] = Tools::displayError('An error occurred while saving the message.');
+                        $this->errors[] = Tools::displayError('The customer message could not be sent.');
                     }
                 }
 
-                if (!$this->errors) {
+                if (!$this->errors && $hasReplyContent) {
                     $_POST['reply_message'] = '';
                     $this->setSubmittedAttachmentIds([]);
-                    $customer = new Customer($ct->id_customer);
-                    $params = [
-                        '{reply}'     => CustomerMessage::renderContent($cm->message),
-                        '{link}'      => Tools::url(
-                            $this->context->link->getPageLink('contact', true, null, null, false, $ct->id_shop),
-                            'id_customer_thread='.(int) $ct->id.'&token='.$ct->token
-                        ),
-                        '{firstname}' => $customer->firstname,
-                        '{lastname}'  => $customer->lastname,
-                    ];
-                    //#ct == id_customer_thread    #tc == token of thread   <== used in the synchronization imap
-                    $contact = new Contact((int) $ct->id_contact, (int) $ct->id_lang);
-
-                    if (Validate::isLoadedObject($contact)) {
-                        $fromName = $contact->name;
-                        $fromEmail = $contact->email;
-                    } else {
-                        $fromName = null;
-                        $fromEmail = null;
-                    }
-
-                    if (!Mail::Send(
-                        (int) $ct->id_lang,
-                        'reply_msg',
-                        sprintf(Mail::l('An answer to your message is available #ct%1$s #tc%2$s', $ct->id_lang), $ct->id, $ct->token),
-                        $params,
-                        Tools::getValue('msg_email'),
-                        null,
-                        Tools::convertEmailToIdn($fromEmail),
-                        $fromName,
-                        CustomerMessageAttachment::buildMailAttachments($pendingAttachments),
-                        null,
-                        _PS_MAIL_DIR_,
-                        true,
-                        $ct->id_shop
-                    )) {
+                    if (empty($replyResult['email_sent'])) {
                         $this->errors[] = Tools::displayError('The message was saved, but the email could not be sent to the customer.');
                     }
 
+                    if (in_array($idEmployee, $this->getAssignableEmployeeIds(), true)) {
+                        [$assignmentEntityType, $assignmentEntityId] = $this->getThreadAssignmentTarget($ct);
+                        if (!EntityEmployeeAssignment::assign($assignmentEntityType, $assignmentEntityId, $idEmployee)) {
+                            $this->errors[] = Tools::displayError('The reply was saved, but the assignment could not be updated.');
+                        }
+                    }
                     if (!$this->errors) {
-                        $ct->status = $replyStatus;
-                        if (in_array($idEmployee, $this->getAssignableEmployeeIds(), true)) {
-                            $ct->id_employee_assigned = $idEmployee;
-                        }
-                        if ($ct->update()) {
-                            Tools::redirectAdmin(
-                                static::$currentIndex.'&id_customer_thread='.(int) $idCustomerThread.'&viewcustomer_thread&token='.Tools::getValue('token')
-                            );
-                        }
-                        $this->errors[] = Tools::displayError('The thread settings could not be updated.');
+                        Tools::redirectAdmin($this->getReplyReturnUrl($ct));
                     }
                 }
             }
         }
 
         return parent::postProcess();
-    }
-
-    /**
-     * @param array $message
-     * @param bool $email
-     * @param int|null $idEmployee
-     *
-     * @return string
-     *
-     * @throws PrestaShopDatabaseException
-     * @throws PrestaShopException
-     * @throws SmartyException
-     */
-    protected function displayMessage($message, $email = false, $idEmployee = null)
-    {
-        $tpl = $this->createTemplate('message.tpl');
-
-        $contacts = Contact::getContacts($this->context->language->id, true);
-        $contactArray = [];
-        foreach ($contacts as $contact) {
-            $contactArray[$contact['id_contact']] = ['id_contact' => $contact['id_contact'], 'name' => $contact['name']];
-        }
-        $contacts = $contactArray;
-
-        $message['date_add'] = Tools::displayDate($message['date_add'], null, true);
-        $message['user_agent'] = strip_tags($message['user_agent']);
-        $message['message'] = preg_replace(
-            '/(https?:\/\/[a-z0-9#%&_=\(\)\.\? \+\-@\/]{6,1000})([\s\n<])/Uui',
-            '<a href="\1">\1</a>\2',
-            CustomerMessage::renderContent((string) $message['message'])
-        );
-
-        $tpl->assign(
-            [
-                'thread_url'        => Tools::getAdminUrl(basename(_PS_ADMIN_DIR_).'/'.$this->context->link->getAdminLink('AdminCustomerThreads').'&amp;id_customer_thread='.(int) $message['id_customer_thread'].'&amp;viewcustomer_thread=1'),
-                'link'              => $this->context->link,
-                'current'           => static::$currentIndex,
-                'token'             => $this->token,
-                'message'           => $message,
-                'email'             => Tools::convertEmailFromIdn($email),
-                'id_employee'       => $idEmployee,
-                'PS_SHOP_NAME'      => Configuration::get('PS_SHOP_NAME'),
-                'contacts'          => $contacts,
-            ]
-        );
-
-        return $tpl->fetch();
     }
 
     /**
@@ -895,25 +674,46 @@ class AdminCustomerThreadsControllerCore extends AdminController
 
         $field = (string) Tools::getValue('field');
         $value = (string) Tools::getValue('value');
-        if ($field === 'status') {
-            if (!array_key_exists($value, $this->getCustomerServiceStatuses())) {
-                $this->respondThreadSettingJson(false, $this->l('The selected status is invalid.'));
-            }
-            $thread->status = $value;
-        } elseif ($field === 'id_employee_assigned') {
+        if ($field === 'id_employee_assigned') {
             $idEmployee = (int) $value;
             if ($idEmployee !== 0 && !in_array($idEmployee, $this->getAssignableEmployeeIds(), true)) {
-                $this->respondThreadSettingJson(false, $this->l('The selected employee cannot be assigned to customer service threads.'));
+                $this->respondThreadSettingJson(false, $this->l('The selected employee cannot be assigned.'));
             }
-            $thread->id_employee_assigned = $idEmployee;
+            [$assignmentEntityType, $assignmentEntityId] = $this->getThreadAssignmentTarget($thread);
+            $updated = EntityEmployeeAssignment::assign($assignmentEntityType, $assignmentEntityId, $idEmployee);
+            $this->respondThreadSettingJson(
+                $updated,
+                $updated ? $this->l('The assignment has been updated.') : $this->l('The assignment could not be updated.')
+            );
         } else {
             $this->respondThreadSettingJson(false, $this->l('The selected setting is invalid.'));
         }
+    }
 
-        $updated = $thread->update();
+    /**
+     * Update an assignment directly from the shared work queue.
+     */
+    public function ajaxProcessUpdateEntityAssignment()
+    {
+        if (!$this->hasEditPermission()) {
+            $this->respondThreadSettingJson(false, $this->l('You do not have permission to change this assignment.'));
+        }
+
+        $entityType = Tools::getIntValue('entity_type');
+        $idEntity = Tools::getIntValue('id_entity');
+        $idEmployee = Tools::getIntValue('id_employee');
+        $provider = new CustomerServiceWorkItemProvider();
+        if (!$provider->entityExists($entityType, $idEntity)) {
+            $this->respondThreadSettingJson(false, $this->l('The work item could not be found.'));
+        }
+        if ($idEmployee !== 0 && !in_array($idEmployee, $this->getAssignableEmployeeIds(), true)) {
+            $this->respondThreadSettingJson(false, $this->l('The selected employee cannot be assigned.'));
+        }
+
+        $updated = EntityEmployeeAssignment::assign($entityType, $idEntity, $idEmployee);
         $this->respondThreadSettingJson(
             $updated,
-            $updated ? $this->l('The thread has been updated.') : $this->l('The thread could not be updated.')
+            $updated ? $this->l('The assignment has been updated.') : $this->l('The assignment could not be updated.')
         );
     }
 
@@ -1009,51 +809,62 @@ class AdminCustomerThreadsControllerCore extends AdminController
      */
     public function getKpis(): array
     {
-        $time = time();
+        $counts = $this->getWorkItemCounts();
         $kpis = [];
 
-        /* The data generation is located in AdminStatsControllerCore */
-
-        $helper = new HelperKpi();
-        $helper->id = 'box-pending-messages';
-        $helper->icon = 'icon-envelope';
-        $helper->color = 'color1';
-        $helper->href = $this->context->link->getAdminLink('AdminCustomerThreads');
-        $helper->title = $this->l('Pending Discussion Threads', null, null, false);
-        if (ConfigurationKPI::get('PENDING_MESSAGES') !== false) {
-            $helper->value = ConfigurationKPI::get('PENDING_MESSAGES');
+        $definitions = [
+            ['open', 'icon-inbox', 'color1', $this->l('Open'), [
+                'normalized_status' => CustomerServiceWorkItemProvider::STATUS_OPEN,
+            ]],
+            ['inquiry', 'icon-search', 'color2', $this->l('In inquiry'), [
+                'normalized_status' => CustomerServiceWorkItemProvider::STATUS_INQUIRY,
+            ]],
+            ['waiting-customer', 'icon-user', 'color3', $this->l('Waiting for customer'), [
+                'normalized_status' => CustomerServiceWorkItemProvider::STATUS_WAITING_CUSTOMER,
+            ]],
+            ['unassigned', 'icon-user', 'color4', $this->l('Unassigned'), [
+                'normalized_status' => CustomerServiceWorkItemProvider::STATUS_OPEN,
+                'id_employee_assigned' => '0',
+            ]],
+        ];
+        foreach ($definitions as [$id, $icon, $color, $title, $filters]) {
+            $helper = new HelperKpi();
+            $helper->id = 'box-'.$id;
+            $helper->icon = $icon;
+            $helper->color = $color;
+            $helper->title = $title;
+            $helper->value = (int)($counts[$id] ?? 0);
+            $params = ['submitFilterForced' => 1];
+            foreach ($filters as $filterField => $filterValue) {
+                $params['list_idFilter_a!'.$filterField] = $filterValue;
+            }
+            $helper->href = $this->context->link->getAdminLink('AdminCustomerThreads', true, $params);
+            $helper->refresh = false;
+            $kpis[] = $helper;
         }
-        $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=pending_messages';
-        $helper->refresh = (bool) (ConfigurationKPI::get('PENDING_MESSAGES_EXPIRE') < $time);
-        $kpis[] = $helper;
-
-        $helper = new HelperKpi();
-        $helper->id = 'box-age';
-        $helper->icon = 'icon-time';
-        $helper->color = 'color2';
-        $helper->title = $this->l('Average Response Time', null, null, false);
-        $helper->subtitle = $this->l('30 days', null, null, false);
-        if (ConfigurationKPI::get('AVG_MSG_RESPONSE_TIME', $this->context->employee->id_lang) !== false) {
-            $helper->value = ConfigurationKPI::get('AVG_MSG_RESPONSE_TIME', $this->context->employee->id_lang);
-        }
-        $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=avg_msg_response_time';
-        $helper->refresh = (bool) (ConfigurationKPI::get('AVG_MSG_RESPONSE_TIME_EXPIRE', $this->context->employee->id_lang) < $time);
-        $kpis[] = $helper;
-
-        $helper = new HelperKpi();
-        $helper->id = 'box-messages-per-thread';
-        $helper->icon = 'icon-copy';
-        $helper->color = 'color3';
-        $helper->title = $this->l('Messages per Thread', null, null, false);
-        $helper->subtitle = $this->l('30 day', null, null, false);
-        if (ConfigurationKPI::get('MESSAGES_PER_THREAD') !== false) {
-            $helper->value = ConfigurationKPI::get('MESSAGES_PER_THREAD');
-        }
-        $helper->source = $this->context->link->getAdminLink('AdminStats').'&ajax=1&action=getKpi&kpi=messages_per_thread';
-        $helper->refresh = (bool) (ConfigurationKPI::get('MESSAGES_PER_THREAD_EXPIRE') < $time);
-        $kpis[] = $helper;
 
         return $kpis;
+    }
+
+    /** @return array<string, int> */
+    private function getWorkItemCounts(): array
+    {
+        $shopIds = Shop::getContextListShopID();
+        if (!$shopIds) {
+            $shopIds = [(int)$this->context->shop->id];
+        }
+        $baseSql = (new CustomerServiceWorkItemProvider())->getBaseSql($shopIds);
+        $row = Db::readOnly()->getRow(
+            'SELECT'
+            .' SUM(a.`normalized_status` = "'.pSQL(CustomerServiceWorkItemProvider::STATUS_OPEN).'") AS `open`,'
+            .' SUM(a.`normalized_status` = "'.pSQL(CustomerServiceWorkItemProvider::STATUS_INQUIRY).'") AS `inquiry`,'
+            .' SUM(a.`normalized_status` = "'.pSQL(CustomerServiceWorkItemProvider::STATUS_WAITING_CUSTOMER).'") AS `waiting-customer`,'
+            .' SUM(a.`normalized_status` = "'.pSQL(CustomerServiceWorkItemProvider::STATUS_OPEN).'"'
+            .' AND a.`id_employee_assigned` = 0) AS `unassigned`'
+            .' FROM ('.$baseSql.') a'
+        );
+
+        return is_array($row) ? array_map('intval', $row) : [];
     }
 
     /**
@@ -1067,6 +878,17 @@ class AdminCustomerThreadsControllerCore extends AdminController
      */
     public function renderView()
     {
+        // Keep old bookmarks working, but never render a second workspace for a domain entity.
+        if (Tools::getIntValue('start_entity_thread') === 1) {
+            $this->redirectEntityView(
+                Tools::getIntValue('entity_type'),
+                Tools::getIntValue('id_entity')
+            );
+
+            $this->errors[] = Tools::displayError('The customer-service entity could not be loaded.');
+            return '';
+        }
+
         if (!$idCustomerThread = Tools::getIntValue('id_customer_thread')) {
             return '';
         }
@@ -1076,82 +898,160 @@ class AdminCustomerThreadsControllerCore extends AdminController
         if (! Validate::isLoadedObject($thread)) {
             return '';
         }
-        $messages = CustomerThread::getMessageCustomerThreads($idCustomerThread);
-
-        foreach ($messages as $key => $mess) {
-            $messages[$key]['customer_name'] = trim((string) $mess['customer_name']);
-            $messages[$key]['message_html'] = CustomerMessage::renderContent((string) $mess['message']);
-            foreach ($mess['attachments'] as $attachmentKey => $attachment) {
-                $attachmentUrl = $this->context->link->getAdminLink('AdminCustomerThreads', true, [
-                    'showMessageAttachment' => (int) $attachment['id_customer_message_attachment'],
-                ]);
-                $messages[$key]['attachments'][$attachmentKey]['download_url'] = $attachmentUrl;
-                $messages[$key]['attachments'][$attachmentKey]['inline_url'] = $this->context->link->getAdminLink('AdminCustomerThreads', true, [
-                    'showMessageAttachment' => (int) $attachment['id_customer_message_attachment'],
-                    'inline'                => 1,
-                ]);
-                $messages[$key]['attachments'][$attachmentKey]['preview_url'] = !empty($attachment['is_image'])
-                    ? $this->context->link->getAdminLink('AdminCustomerThreads', true, [
-                        'showMessageAttachment' => (int) $attachment['id_customer_message_attachment'],
-                        'thumbnail'             => !empty($attachment['has_thumbnail']) ? 1 : 0,
-                        'inline'                => 1,
-                    ])
-                    : '';
-            }
-            if ($mess['id_employee']) {
-                $employee = new Employee($mess['id_employee']);
-                $messages[$key]['employee_image'] = $employee->getImage();
-            }
-
+        if (!Tools::isSubmit('submitReply')) {
+            $this->redirectEntityView((int)$thread->entity_type, (int)$thread->id_entity);
         }
-
-        $contacts = Contact::getContacts($this->context->language->id, true);
+        $workspaceProvider = new CustomerThreadWorkspaceDataProvider($this->context);
+        $conversation = $workspaceProvider->getConversation($thread);
 
         $customer = null;
         if ($thread->id_customer) {
             $customer = new Customer($thread->id_customer);
         }
-        $firstMessage = $messages[0];
-
-        if (!$messages[0]['id_employee']) {
-            unset($messages[0]);
-        }
-
-        $contact = '';
-        foreach ($contacts as $c) {
-            if ($c['id_contact'] == $thread->id_contact) {
-                $contact = $c['name'];
-            }
-        }
-
-        $order = (int)$thread->entity_type === \CoreExtension\EntityTypeEnum::ORDER_VALUE
-            ? new Order((int)$thread->id_entity)
-            : null;
+        $threadContext = (new CustomerThreadContextProvider($this->context))->getForThread($thread);
+        $idOrder = (int)($threadContext['related_order_id'] ?? 0);
+        $order = $idOrder > 0 ? new Order($idOrder) : null;
         if (! Validate::isLoadedObject($order)) {
             $order = null;
         }
 
-        $threadContext = (new CustomerThreadContextProvider($this->context))->getForThread($thread);
-        $defaultReplyMessage = str_replace('\r\n', "\n", Configuration::get('PS_CUSTOMER_SERVICE_SIGNATURE', (int) $thread->id_lang));
-        $pendingAttachments = $this->getPendingEmployeeAttachments();
+        [$assignmentEntityType, $assignmentEntityId] = $this->getThreadAssignmentTarget($thread);
         $this->tpl_view_vars = [
-            'id_customer_thread'            => $idCustomerThread,
             'thread'                        => $thread,
             'assignable_employees'          => $this->getAssignableEmployeeOptions(),
-            'thread_statuses'               => $this->getCustomerServiceStatuses(),
-            'current_employee'              => $this->context->employee,
-            'orderMessages'                 => OrderMessage::getOrderMessages($thread->id_lang, $order, $customer),
-            'messages'                      => $messages,
-            'first_message'                 => $firstMessage,
-            'contact'                       => $contact,
-            'customer'                      => $customer ?? false,
-            'reply_message'                 => (string) Tools::getValue('reply_message', $defaultReplyMessage),
+            'assigned_employee_id'          => EntityEmployeeAssignment::getEmployeeId($assignmentEntityType, $assignmentEntityId),
+            'messages'                      => $conversation['messages'],
+            'first_message'                 => $conversation['first_message'],
             'thread_entity_context'         => $threadContext,
-            'customer_overview'             => $this->getCustomerOverview($thread, $customer),
-            'customer_message_upload'       => $this->getBackOfficeUploadData($pendingAttachments),
+            'customer_overview'             => $this->getCustomerOverview(
+                $customer,
+                (string)$thread->email,
+                (int)$thread->id
+            ),
+            'message_form'                  => $workspaceProvider->getMessageFormData(
+                (int)$thread->id_lang,
+                $order,
+                $customer,
+                $this->context->link->getAdminLink('AdminCustomerThreads', true, [
+                    'id_customer_thread' => (int)$thread->id,
+                    'viewcustomer_thread' => 1,
+                ]),
+                'submitReply',
+                [
+                    'id_customer_thread' => (int)$thread->id,
+                ],
+                $this->getBackOfficeUploadData($this->getPendingEmployeeAttachments()),
+                (string)$thread->status
+            ),
         ];
 
         return parent::renderView();
+    }
+
+    private function processEntityReply(): void
+    {
+        if (!$this->hasEditPermission()) {
+            $this->errors[] = Tools::displayError('You do not have permission to contact this customer.');
+            return;
+        }
+
+        $target = $this->resolveEntityReplyTarget();
+        if (!$target) {
+            $this->errors[] = Tools::displayError('The customer-service entity could not be loaded.');
+            return;
+        }
+
+        $idEmployee = (int)$this->context->employee->id;
+        $pendingAttachments = $this->prepareReplyAttachments($idEmployee);
+        $message = (string)Tools::getValue('reply_message');
+        $replyStatus = (string)Tools::getValue('thread_status', CustomerThread::STATUS_CLOSED);
+        if (!array_key_exists($replyStatus, $this->getCustomerServiceStatuses())) {
+            $this->errors[] = Tools::displayError('The selected status is invalid.');
+        }
+        if (!$this->errors && !CustomerMessage::hasVisibleContent(CustomerMessage::sanitizeContent($message)) && !$pendingAttachments) {
+            $this->errors[] = Tools::displayError('The message cannot be blank.');
+        }
+        if ($this->errors) {
+            return;
+        }
+
+        try {
+            $result = (new CustomerServiceReplyService())->send([
+                'idCustomer' => (int)$target['customer']->id,
+                'idEmployee' => $idEmployee,
+                'idShop' => (int)$target['id_shop'],
+                'idLang' => (int)$target['id_lang'],
+                'entityType' => (int)$target['entity_type'],
+                'idEntity' => (int)$target['id_entity'],
+                'email' => (string)$target['customer']->email,
+                'message' => $message,
+                'status' => $replyStatus,
+                'attachments' => $pendingAttachments,
+            ]);
+        } catch (PrestaShopException $exception) {
+            PrestaShopLogger::addLog($exception->getMessage(), 3);
+            $this->errors[] = Tools::displayError('The customer message could not be sent.');
+            return;
+        }
+
+        EntityEmployeeAssignment::assign((int)$target['entity_type'], (int)$target['id_entity'], $idEmployee);
+        if (empty($result['email_sent'])) {
+            $this->warnings[] = Tools::displayError('The message was saved, but the email could not be sent to the customer.');
+        }
+        $this->setSubmittedAttachmentIds([]);
+        Tools::redirectAdmin($this->getReplyReturnUrl($result['thread']));
+    }
+
+    /** @return array<string, mixed>|null */
+    private function resolveEntityReplyTarget(): ?array
+    {
+        $entityType = Tools::getIntValue('entity_type');
+        $idEntity = Tools::getIntValue('id_entity');
+        if (!in_array($entityType, [
+            (int)\CoreExtension\EntityTypeEnum::ORDER_CANCELLATION_VALUE,
+            (int)\CoreExtension\EntityTypeEnum::ORDER_RETURN_VALUE,
+            (int)\CoreExtension\EntityTypeEnum::ORDER_SERVICE_CASE_VALUE,
+            (int)\CoreExtension\EntityTypeEnum::PRODUCT_WISH_VALUE,
+        ], true) || $idEntity <= 0) {
+            return null;
+        }
+
+        $entityTypeEnum = \CoreExtension\EntityTypeEnum::tryFrom($entityType);
+        $className = $entityTypeEnum ? $entityTypeEnum->getObjectModelClassName() : null;
+        if (!$className || !class_exists($className)) {
+            return null;
+        }
+        $entity = new $className($idEntity);
+        if (!Validate::isLoadedObject($entity)) {
+            return null;
+        }
+
+        $order = null;
+        $idCustomer = property_exists($entity, 'id_customer') ? (int)$entity->id_customer : 0;
+        if (property_exists($entity, 'id_order') && (int)$entity->id_order > 0) {
+            $order = new Order((int)$entity->id_order);
+            if (!Validate::isLoadedObject($order)) {
+                return null;
+            }
+            $idCustomer = (int)$order->id_customer;
+        }
+        $customer = new Customer($idCustomer);
+        if (!Validate::isLoadedObject($customer)) {
+            return null;
+        }
+
+        $idShop = $order && Validate::isLoadedObject($order) ? (int)$order->id_shop : (int)$customer->id_shop;
+        $idLang = (int)$customer->id_lang > 0 ? (int)$customer->id_lang : (int)$this->context->language->id;
+
+        return [
+            'entity_type' => $entityType,
+            'id_entity' => $idEntity,
+            'entity' => $entity,
+            'customer' => $customer,
+            'order' => $order && Validate::isLoadedObject($order) ? $order : null,
+            'id_shop' => $idShop > 0 ? $idShop : (int)$this->context->shop->id,
+            'id_lang' => $idLang,
+        ];
     }
 
     /**
@@ -1182,11 +1082,15 @@ class AdminCustomerThreadsControllerCore extends AdminController
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
-    protected function getCustomerOverview(CustomerThread $thread, ?Customer $customer): array
+    protected function getCustomerOverview(
+        ?Customer $customer,
+        string $fallbackEmail = '',
+        int $excludedThreadId = 0
+    ): array
     {
         $overview = [
             'name'           => Validate::isLoadedObject($customer) ? $customer->firstname.' '.$customer->lastname : '',
-            'email'          => Validate::isLoadedObject($customer) ? $customer->email : $thread->email,
+            'email'          => Validate::isLoadedObject($customer) ? $customer->email : $fallbackEmail,
             'url'            => Validate::isLoadedObject($customer)
                 ? $this->context->link->getAdminLink('AdminCustomers').'&id_customer='.(int) $customer->id.'&viewcustomer'
                 : '',
@@ -1206,7 +1110,7 @@ class AdminCustomerThreadsControllerCore extends AdminController
                 ->select('`id_customer_thread`')
                 ->from('customer_thread')
                 ->where('`id_customer` = '.(int) $customer->id)
-                ->where('`id_customer_thread` != '.(int) $thread->id)
+                ->where('`id_customer_thread` != '.(int)$excludedThreadId)
                 ->orderBy('`date_upd` DESC')
                 ->limit(3)
         );
@@ -1262,35 +1166,6 @@ class AdminCustomerThreadsControllerCore extends AdminController
 
 
     /**
-     * AdminController::getList() override
-     *
-     * @see AdminController::getList()
-     *
-     * @param int $idLang
-     * @param string|null $orderBy
-     * @param string|null $orderWay
-     * @param int $start
-     * @param int|null $limit
-     * @param int|bool $idLangShop
-     *
-     * @throws PrestaShopException
-     */
-    public function getList($idLang, $orderBy = null, $orderWay = null, $start = 0, $limit = null, $idLangShop = false)
-    {
-        parent::getList($idLang, $orderBy, $orderWay, $start, $limit, $idLangShop);
-
-        $nbItems = count($this->_list);
-        for ($i = 0; $i < $nbItems; ++$i) {
-            if (isset($this->_list[$i]['messages'])) {
-                $this->_list[$i]['messages'] = Tools::htmlentitiesDecodeUTF8($this->_list[$i]['messages']);
-            }
-            if (isset($this->_list[$i]['email'])) {
-                $this->_list[$i]['email'] = Tools::convertEmailFromIdn($this->_list[$i]['email']);
-            }
-        }
-    }
-
-    /**
      * @param int $attachmentId
      * @return void
      * @throws PrestaShopException
@@ -1334,35 +1209,50 @@ class AdminCustomerThreadsControllerCore extends AdminController
         return $attachments === false ? [] : $attachments;
     }
 
-    /**
-     * @return int[]
-     */
-    private function savePrivateEmployeeMessage(int $idCustomerThread, string $message): void
+    /** @return CustomerMessageAttachment[] */
+    private function prepareReplyAttachments(int $idEmployee): array
     {
-        $thread = new CustomerThread($idCustomerThread);
-        if (!Validate::isLoadedObject($thread)) {
-            $this->errors[] = Tools::displayError('The customer-service thread is invalid.');
-            return;
+        $attachments = CustomerMessageAttachment::getOwnedPending(
+            $this->getSubmittedAttachmentIds(),
+            0,
+            0,
+            $idEmployee
+        );
+        if ($attachments === false) {
+            $attachments = [];
+            $this->errors[] = Tools::displayError('The selected attachment is invalid.');
         }
 
-        $request = [
-            'idCustomer' => (int)$thread->id_customer,
-            'idEmployee' => (int)$this->context->employee->id,
-            'idShop' => (int)$thread->id_shop,
-            'idLang' => (int)$thread->id_lang,
-            'idContact' => (int)$thread->id_contact,
-            'idCustomerThread' => (int)$thread->id,
-            'email' => (string)$thread->email,
-            'message' => $message,
-            'private' => true,
-            'status' => null,
-        ];
-        try {
-            (new CustomerServiceMessageService())->save($request);
-        } catch (PrestaShopException $exception) {
-            PrestaShopLogger::addLog($exception->getMessage(), 3);
-            $this->errors[] = Tools::displayError('The internal customer-service message could not be saved.');
+        $uploadedFiles = CustomerMessageAttachment::getUploadedFiles('file_attachment');
+        $this->errors = array_merge(
+            $this->errors,
+            CustomerMessageAttachment::validateUploadedFiles(
+                $uploadedFiles,
+                true,
+                count($attachments),
+                CustomerMessageAttachment::getTotalUploadSize($attachments)
+            )
+        );
+        if (!$this->errors && $uploadedFiles) {
+            try {
+                $attachments = array_merge(
+                    $attachments,
+                    CustomerMessageAttachment::storeUploadedFiles($uploadedFiles, 0, 0, 0, $idEmployee)
+                );
+            } catch (Exception $exception) {
+                $this->errors[] = Tools::displayError('An error occurred during the file upload process.');
+            }
         }
+        if (!$this->errors && !CustomerMessageAttachment::canAttachToEmail($attachments)) {
+            $this->errors[] = sprintf(
+                Tools::displayError('The attachments exceed the maximum email size of %d MB.'),
+                CustomerMessageAttachment::getMaximumEmailTotalSizeMb()
+            );
+        }
+
+        $this->setSubmittedAttachmentIds(CustomerMessageAttachment::getIds($attachments));
+
+        return $attachments;
     }
 
     protected function getSubmittedAttachmentIds(): array
@@ -1399,23 +1289,13 @@ class AdminCustomerThreadsControllerCore extends AdminController
      */
     protected function getBackOfficeUploadData(array $attachments): array
     {
-        $payload = [];
-        foreach ($attachments as $attachment) {
-            $payload[] = $this->getAttachmentPayload($attachment);
-        }
-
         $maximumCount = CustomerMessageAttachment::getMaximumAttachmentCount();
         $maximumEmailSizeMb = CustomerMessageAttachment::getMaximumEmailTotalSizeMb();
-        $endpoint = $this->context->link->getAdminLink('AdminCustomerThreads');
 
-        return [
-            'value'            => json_encode(['attachments' => $payload], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            'upload_url'       => $endpoint,
-            'delete_url'       => $endpoint,
-            'max_files'        => $maximumCount,
-            'max_total_size'   => CustomerMessageAttachment::getMaximumTotalBytes(),
-            'help'             => sprintf($this->l('Up to %1$d files and %2$d MB in total.'), $maximumCount, $maximumEmailSizeMb),
-        ];
+        return (new CustomerThreadWorkspaceDataProvider($this->context))->getUploadData(
+            $attachments,
+            sprintf($this->l('Up to %1$d files and %2$d MB in total.'), $maximumCount, $maximumEmailSizeMb)
+        );
     }
 
     /**
@@ -1423,22 +1303,7 @@ class AdminCustomerThreadsControllerCore extends AdminController
      */
     protected function getAttachmentPayload(CustomerMessageAttachment $attachment): array
     {
-        return [
-            'id_attachment' => (int) $attachment->id,
-            'url'           => $this->context->link->getAdminLink('AdminCustomerThreads', true, [
-                'showMessageAttachment' => (int) $attachment->id,
-                'thumbnail'             => $attachment->thumbnailExists() ? 1 : 0,
-                'inline'                => 1,
-            ]),
-            'open_url'      => $this->context->link->getAdminLink('AdminCustomerThreads', true, [
-                'showMessageAttachment' => (int) $attachment->id,
-                'inline'                => 1,
-            ]),
-            'name'          => $attachment->getFullFileName(),
-            'mime'          => (string) $attachment->mime_type,
-            'file_size'     => (int) $attachment->file_size,
-            'upload_size'   => (int) $attachment->upload_size,
-        ];
+        return (new CustomerThreadWorkspaceDataProvider($this->context))->getAttachmentPayload($attachment);
     }
 
     /**
@@ -1467,28 +1332,20 @@ class AdminCustomerThreadsControllerCore extends AdminController
     }
 
     /**
-     * @param string $content
-     *
-     * @return string
-     */
-    protected function displayButton($content)
-    {
-        return '<div><p>'.$content.'</p></div>';
-    }
-
-    /**
      * @param string $value
      * @return string
      */
     public function renderStatus($value)
     {
-        $statusLabels = $this->getCustomerServiceStatuses();
+        $threadStatusLabels = $this->getCustomerServiceStatuses();
+        $workItemStatusLabels = $this->getWorkItemStatuses();
         $statuses = [
             'unknown'          => ['class' => 'badge', 'text' => $this->l('Unknown')],
-            'open'             => ['class' => 'badge badge-danger', 'text' => $statusLabels[CustomerThread::STATUS_OPEN]],
-            'closed'           => ['class' => 'badge badge-success', 'text' => $statusLabels[CustomerThread::STATUS_CLOSED]],
-            'pending1'         => ['class' => 'badge badge-warning', 'text' => $statusLabels[CustomerThread::STATUS_IN_PROGRESS]],
-            'waiting_customer' => ['class' => 'badge badge-info', 'text' => $statusLabels[CustomerThread::STATUS_WAITING_CUSTOMER]],
+            CustomerServiceWorkItemProvider::STATUS_OPEN => ['class' => 'badge badge-danger', 'text' => $workItemStatusLabels[CustomerServiceWorkItemProvider::STATUS_OPEN]],
+            CustomerServiceWorkItemProvider::STATUS_CLOSED => ['class' => 'badge badge-success', 'text' => $workItemStatusLabels[CustomerServiceWorkItemProvider::STATUS_CLOSED]],
+            CustomerServiceWorkItemProvider::STATUS_INQUIRY => ['class' => 'badge badge-warning', 'text' => $workItemStatusLabels[CustomerServiceWorkItemProvider::STATUS_INQUIRY]],
+            CustomerThread::STATUS_IN_PROGRESS => ['class' => 'badge badge-warning', 'text' => $threadStatusLabels[CustomerThread::STATUS_IN_PROGRESS]],
+            CustomerServiceWorkItemProvider::STATUS_WAITING_CUSTOMER => ['class' => 'badge badge-info', 'text' => $workItemStatusLabels[CustomerServiceWorkItemProvider::STATUS_WAITING_CUSTOMER]],
         ];
 
         if (! array_key_exists($value, $statuses)) {
@@ -1510,16 +1367,167 @@ class AdminCustomerThreadsControllerCore extends AdminController
     {
         $employees = $this->getAssignableEmployeeOptions();
         $idEmployee = (int) $value;
-        $employeeName = $employees[$idEmployee] ?? $this->getUnassignedEmployeeLabel();
-
-        if ($idEmployee <= 0 && ($row['status'] ?? null) !== CustomerThread::STATUS_CLOSED) {
-            return '<span class="badge badge-warning">'.Tools::safeOutput($employeeName).'</span>';
+        $options = '';
+        foreach ($employees as $employeeId => $employeeName) {
+            $options .= '<option value="'.(int)$employeeId.'"'.((int)$employeeId === $idEmployee ? ' selected="selected"' : '').'>'
+                .Tools::safeOutput($employeeName).'</option>';
         }
 
-        if ($idEmployee === (int) $this->context->employee->id) {
-            return '<span class="badge badge-info">'.Tools::safeOutput($employeeName).'</span>';
+        return '<select class="form-control input-sm js-entity-employee-assignment"'
+            .' data-entity-type="'.(int)($row['entity_type'] ?? 0).'"'
+            .' data-id-entity="'.(int)($row['id_entity'] ?? 0).'">'.$options.'</select>';
+    }
+
+    public function renderWorkItemEntity($value, array $row): string
+    {
+        $labels = $this->getWorkItemEntityTypes();
+        $label = $labels[(int)$value] ?? $this->l('Unknown');
+
+        return Tools::safeOutput($label).' <span class="text-muted">#'.(int)($row['id_entity'] ?? 0).'</span>';
+    }
+
+    public function renderWorkItemCustomer($value, array $row): string
+    {
+        $label = trim((string)$value);
+        if ($label === '') {
+            $label = (string)($row['email'] ?? '');
+        }
+        if ($label === '') {
+            $label = '-';
+        }
+        if ((int)($row['id_customer'] ?? 0) <= 0) {
+            return Tools::safeOutput($label);
         }
 
-        return $employeeName;
+        $url = $this->context->link->getAdminLink('AdminCustomers', true, [
+            'viewcustomer' => 1,
+            'id_customer' => (int)$row['id_customer'],
+        ]);
+
+        return '<a href="'.Tools::safeOutput($url).'">'.Tools::safeOutput($label).'</a>';
+    }
+
+    /** @param array<string, mixed> $workItem */
+    private function addWorkItemActions(array &$workItem): void
+    {
+        $entityType = (int)($workItem['entity_type'] ?? 0);
+        $idEntity = (int)($workItem['id_entity'] ?? 0);
+        $idThread = (int)($workItem['id_customer_thread'] ?? 0);
+        $entityUrl = $this->getWorkItemEntityUrl($entityType, $idEntity);
+        $threadUrl = $idThread > 0 ? $this->getThreadUrl($idThread) : '';
+
+        // A queue row represents one task. Structured tasks always open their
+        // domain entity; a free customer request is itself the domain entity.
+        $targetUrl = $entityUrl !== '' ? $entityUrl : $threadUrl;
+        if ($targetUrl !== '') {
+            $workItem['primary'] = $this->renderWorkItemActionLink($targetUrl, $this->l('Edit'), 'icon-pencil');
+        }
+
+        if (
+            $entityType === (int)\CoreExtension\EntityTypeEnum::CUSTOMER_THREAD_VALUE
+            && $idThread > 0
+            && $this->hasDeletePermission()
+        ) {
+            $workItem['remove'] = $this->renderWorkItemDeleteLink($idThread);
+        }
+    }
+
+    private function renderWorkItemActionLink(string $url, string $label, string $icon): string
+    {
+        return '<a href="'.Tools::safeOutput($url).'" class="btn btn-default" title="'.Tools::safeOutput($label).'">'
+            .'<i class="'.Tools::safeOutput($icon).'"></i> '.Tools::safeOutput($label).'</a>';
+    }
+
+    private function renderWorkItemDeleteLink(int $idCustomerThread): string
+    {
+        $label = $this->l('Delete');
+        $confirm = json_encode($this->l('Delete selected item?', 'Helper'));
+        $url = $this->context->link->getAdminLink('AdminCustomerThreads', true, [
+            'deletecustomer_thread' => 1,
+            'id_customer_thread' => $idCustomerThread,
+        ]);
+
+        return '<a href="'.Tools::safeOutput($url).'" class="delete" title="'.Tools::safeOutput($label).'"'
+            .' onclick="return confirm('.htmlspecialchars((string)$confirm, ENT_QUOTES, 'UTF-8').');">'
+            .'<i class="icon-trash"></i> '.Tools::safeOutput($label).'</a>';
+    }
+
+    private function getThreadUrl(int $idCustomerThread): string
+    {
+        return $this->context->link->getAdminLink('AdminCustomerThreads', true, [
+            'viewcustomer_thread' => 1,
+            'id_customer_thread' => $idCustomerThread,
+        ]);
+    }
+
+    private function getReplyReturnUrl(CustomerThread $thread): string
+    {
+        $entityType = Tools::getIntValue('return_entity_type');
+        $idEntity = Tools::getIntValue('return_id_entity');
+        if (
+            $entityType > 0
+            && $idEntity > 0
+            && (int)$thread->entity_type === $entityType
+            && (int)$thread->id_entity === $idEntity
+        ) {
+            $entityUrl = $this->getWorkItemEntityUrl($entityType, $idEntity);
+            if ($entityUrl !== '') {
+                return $entityUrl.'&conf=4';
+            }
+        }
+
+        return $this->getThreadUrl((int)$thread->id);
+    }
+
+    private function redirectEntityView(int $entityType, int $idEntity): void
+    {
+        if (
+            $entityType <= 0
+            || $idEntity <= 0
+            || $entityType === (int)\CoreExtension\EntityTypeEnum::CUSTOMER_THREAD_VALUE
+            || !(new CustomerServiceWorkItemProvider())->entityExists($entityType, $idEntity)
+        ) {
+            return;
+        }
+
+        $entityUrl = $this->getWorkItemEntityUrl($entityType, $idEntity);
+        if ($entityUrl !== '') {
+            Tools::redirectAdmin($entityUrl);
+        }
+    }
+
+    private function getWorkItemEntityUrl(int $entityType, int $idEntity): string
+    {
+        $targets = [
+            (int)\CoreExtension\EntityTypeEnum::ORDER_CANCELLATION_VALUE => ['AdminOrderCancellations', 'vieworder_cancellation', 'id_order_cancellation'],
+            (int)\CoreExtension\EntityTypeEnum::ORDER_RETURN_VALUE => ['AdminReturn', 'updateorder_return', 'id_order_return'],
+            (int)\CoreExtension\EntityTypeEnum::ORDER_SERVICE_CASE_VALUE => ['AdminOrderServiceCases', 'vieworder_service_case', 'id_order_service_case'],
+            (int)\CoreExtension\EntityTypeEnum::PRODUCT_WISH_VALUE => ['AdminProductWishes', 'viewgenzo_crm_product_wish', 'id_product_wish'],
+        ];
+        if (!isset($targets[$entityType])) {
+            return '';
+        }
+        [$controller, $action, $identifier] = $targets[$entityType];
+
+        return $this->context->link->getAdminLink($controller, true, [
+            $action => 1,
+            $identifier => $idEntity,
+        ]);
+    }
+
+    /** @return int[] */
+    private function getThreadAssignmentTarget(CustomerThread $thread): array
+    {
+        $entityType = (int)$thread->entity_type;
+        $idEntity = (int)$thread->id_entity;
+        $provider = new CustomerServiceWorkItemProvider();
+        if (
+            $entityType !== (int)\CoreExtension\EntityTypeEnum::CUSTOMER_THREAD_VALUE
+            && $provider->entityExists($entityType, $idEntity)
+        ) {
+            return [$entityType, $idEntity];
+        }
+
+        return [(int)\CoreExtension\EntityTypeEnum::CUSTOMER_THREAD_VALUE, (int)$thread->id];
     }
 }

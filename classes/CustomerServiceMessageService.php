@@ -56,7 +56,9 @@ class CustomerServiceMessageServiceCore
             $thread->id_customer = $request['idCustomer'];
             $thread->id_shop = $request['idShop'];
             $thread->id_lang = $request['idLang'];
-            $thread->id_contact = $request['idContact'];
+            // @deprecated id_contact is retained only for historical threads. New
+            // customer-service routing is based on the domain entity and assignment.
+            $thread->id_contact = 0;
             $thread->email = $request['email'];
             $thread->token = Tools::passwdGen(12);
             $thread->entity_type = $request['entityType'];
@@ -74,10 +76,6 @@ class CustomerServiceMessageServiceCore
         } elseif ($threadCreated) {
             $thread->status = CustomerThread::STATUS_OPEN;
         }
-        if ($request['idEmployeeAssigned'] !== null) {
-            $thread->id_employee_assigned = (int)$request['idEmployeeAssigned'];
-        }
-
         if (!$thread->save()) {
             throw new PrestaShopException('The customer-service thread could not be saved.');
         }
@@ -91,8 +89,12 @@ class CustomerServiceMessageServiceCore
         $userAgentSize = (int)ObjectModel::getDefinition('CustomerMessage', 'user_agent')['size'];
         $message->user_agent = Tools::substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, $userAgentSize);
 
-        if (!CustomerMessage::hasVisibleContent($message->message)) {
+        $hasVisibleMessage = CustomerMessage::hasVisibleContent($message->message);
+        if (!$hasVisibleMessage && !$request['attachments']) {
             throw new PrestaShopException('The customer-service message cannot be blank.');
+        }
+        if (!$hasVisibleMessage) {
+            $message->message = '';
         }
         $validation = $message->validateField('message', $message->message, null, [], true);
         if ($validation !== true) {
@@ -124,7 +126,6 @@ class CustomerServiceMessageServiceCore
             'idEmployee' => 0,
             'idShop' => 0,
             'idLang' => 0,
-            'idContact' => 0,
             'idCustomerThread' => 0,
             'entityType' => 0,
             'idEntity' => 0,
@@ -133,7 +134,6 @@ class CustomerServiceMessageServiceCore
             'message' => '',
             'private' => false,
             'status' => CustomerThread::STATUS_OPEN,
-            'idEmployeeAssigned' => null,
             'threadData' => [],
             'attachments' => [],
         ], $request);
@@ -259,7 +259,7 @@ class CustomerServiceMessageServiceCore
         }
     }
 
-    private function canCustomerReference(int $entityTypeId, int $idEntity, int $idCustomer): bool
+    public function canCustomerReference(int $entityTypeId, int $idEntity, int $idCustomer): bool
     {
         if ($entityTypeId <= 0 || $idEntity <= 0 || $idCustomer <= 0) {
             return false;

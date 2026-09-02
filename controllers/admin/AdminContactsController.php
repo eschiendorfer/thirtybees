@@ -32,6 +32,9 @@
 /**
  * Class AdminContactsControllerCore
  *
+ * @deprecated Contacts are no longer used as customer-service departments.
+ * This controller remains temporarily for historical records and legacy callers.
+ *
  * @property Contact|null $object
  */
 class AdminContactsControllerCore extends AdminController

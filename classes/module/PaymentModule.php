@@ -1242,31 +1242,6 @@ abstract class PaymentModuleCore extends Module
             return;
         }
 
-        Mail::Send(
-            $this->context->language->id,
-            'order_customer_comment',
-            Mail::l('Message from a customer'),
-            [
-                '{lastname}'     => $this->context->customer->lastname,
-                '{firstname}'    => $this->context->customer->firstname,
-                '{email}'        => $this->context->customer->email,
-                '{id_order}'     => (int) $order->id,
-                '{order_name}'   => $order->getUniqReference(),
-                '{message}'      => Tools::nl2br($customerMessage->message),
-                '{product_name}' => '',
-            ],
-            strval(Configuration::get('PS_SHOP_EMAIL')),
-            $this->context->shop->name,
-            strval(Configuration::get('PS_SHOP_EMAIL')),
-            $this->context->customer->firstname.' '.$this->context->customer->lastname,
-            null,
-            null,
-            _PS_MAIL_DIR_,
-            false,
-            null,
-            null,
-            $this->context->customer->email
-        );
     }
 
     /**

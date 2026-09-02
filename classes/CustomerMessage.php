@@ -90,7 +90,9 @@ class CustomerMessageCore extends ObjectModel
         'fields'  => [
             'id_customer_thread' => ['type' => self::TYPE_INT, 'dbType' => 'int(11)'],
             'id_employee'        => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId'],
-            'message'            => ['type' => self::TYPE_HTML, 'validate' => 'isCleanHtml', 'required' => true, 'size' => ObjectModel::SIZE_MEDIUM_TEXT],
+            // An attachment is real message content on its own. The persistence service
+            // therefore accepts an empty text only when at least one attachment exists.
+            'message'            => ['type' => self::TYPE_HTML, 'validate' => 'isCleanHtml', 'required' => false, 'size' => ObjectModel::SIZE_MEDIUM_TEXT],
             'ip_address'         => ['type' => self::TYPE_STRING, 'validate' => 'isIp2Long', 'size' => 16],
             'user_agent'         => ['type' => self::TYPE_STRING, 'size' => 250],
             'date_add'           => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
@@ -182,6 +184,64 @@ class CustomerMessageCore extends ObjectModel
         $content = preg_replace('/(?:<br>\s*)+$/i', '', $content);
 
         return (string) $content;
+    }
+
+    /**
+     * Render message content for an interactive web view.
+     *
+     * URLs remain plain text in storage and email output. Only the web-facing
+     * representation turns explicit HTTP(S) URLs into safe links.
+     *
+     * @param string $content
+     *
+     * @return string
+     */
+    public static function renderWebContent($content)
+    {
+        $content = static::renderContent($content);
+        $parts = preg_split('/(<[^>]+>)/u', $content, -1, PREG_SPLIT_DELIM_CAPTURE);
+        if ($parts === false) {
+            return $content;
+        }
+
+        foreach ($parts as $index => $part) {
+            if ($part === '' || $part[0] === '<') {
+                continue;
+            }
+            $linkedPart = preg_replace_callback(
+                '~\bhttps?://[^\s<]+~iu',
+                static function ($matches) {
+                    $url = (string)$matches[0];
+                    $suffix = '';
+
+                    while ($url !== '' && preg_match('/[.,;:!?]$/u', $url)) {
+                        $suffix = mb_substr($url, -1, 1, 'UTF-8').$suffix;
+                        $url = mb_substr($url, 0, -1, 'UTF-8');
+                    }
+                    foreach ([')' => '(', ']' => '[', '}' => '{'] as $closing => $opening) {
+                        while (
+                            mb_substr($url, -1, 1, 'UTF-8') === $closing
+                            && substr_count($url, $closing) > substr_count($url, $opening)
+                        ) {
+                            $suffix = $closing.$suffix;
+                            $url = mb_substr($url, 0, -1, 'UTF-8');
+                        }
+                    }
+
+                    $href = html_entity_decode($url, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                    if (!preg_match('~^https?://~i', $href)) {
+                        return (string)$matches[0];
+                    }
+
+                    return '<a href="'.htmlspecialchars($href, ENT_QUOTES, 'UTF-8').'" target="_blank" rel="noopener noreferrer nofollow">'
+                        .$url.'</a>'.$suffix;
+                },
+                $part
+            );
+            $parts[$index] = $linkedPart === null ? $part : $linkedPart;
+        }
+
+        return implode('', $parts);
     }
 
     /**

@@ -49,8 +49,24 @@ class AdminCustomerServiceSettingsControllerCore extends AdminController
 
         $this->fields_options = [
             'contact' => [
-                'title'  => $this->l('Contact options'),
+                'title'  => $this->l('Customer service options'),
                 'fields' => [
+                    Configuration::CUSTOMER_SERVICE_EMAIL => [
+                        'title'        => $this->l('Customer service email address'),
+                        'hint'         => $this->l('Address used as the sender of customer service replies and as the mailbox for email replies from customers.'),
+                        'validation'   => 'isEmail',
+                        'type'         => 'text',
+                        'required'     => true,
+                        'defaultValue' => Configuration::get(Configuration::SHOP_EMAIL),
+                    ],
+                    Configuration::CUSTOMER_SERVICE_SENDER_NAME => [
+                        'title'        => $this->l('Customer service sender name'),
+                        'hint'         => $this->l('Name displayed as the sender of customer service replies.'),
+                        'validation'   => 'isGenericName',
+                        'type'         => 'text',
+                        'required'     => true,
+                        'defaultValue' => Configuration::get(Configuration::SHOP_NAME),
+                    ],
                     'PS_CUSTOMER_SERVICE_FILE_UPLOAD' => [
                         'title' => $this->l('Allow file uploading'),
                         'hint'  => $this->l('Allow customers to upload files using the contact page.'),

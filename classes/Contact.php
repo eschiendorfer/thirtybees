@@ -31,6 +31,9 @@
 
 /**
  * Class ContactCore
+ *
+ * @deprecated Customer service no longer uses contacts as departments or mail
+ * identities. The model remains temporarily for historical data and legacy callers.
  */
 class ContactCore extends ObjectModel
 {

@@ -49,6 +49,35 @@ class CustomerThreadContextProviderCore
     }
 
     /**
+     * Resolve the context of a domain entity even before a conversation exists.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function getForEntity(int $entityTypeId, int $idEntity, $backOffice = true): ?array
+    {
+        if ($entityTypeId <= 0 || $idEntity <= 0) {
+            return null;
+        }
+
+        $entityType = \CoreExtension\EntityTypeEnum::tryFrom($entityTypeId);
+        if (!$entityType) {
+            return null;
+        }
+
+        $className = $entityType->getObjectModelClassName();
+        if (!$className || !class_exists($className)) {
+            return null;
+        }
+
+        $entity = new $className($idEntity);
+        if (!Validate::isLoadedObject($entity) || !$entity instanceof CustomerThreadContextSourceInterfaceCore) {
+            return null;
+        }
+
+        return $this->prepareContext($entity->getCustomerThreadContextData(), (bool)$backOffice);
+    }
+
+    /**
      * Render only known transition-data keys. Never expose arbitrary JSON.
      */
     protected function getTransitionContext(CustomerThread $thread): ?array
@@ -59,7 +88,7 @@ class CustomerThreadContextProviderCore
             'technical_problem' => 'Technical problem',
             'content_report' => 'Content report',
             'job_application' => 'Job application',
-            'supplier_proposal' => 'Become a supplier',
+            'supplier_proposal' => 'Supplier proposal',
             'sponsoring' => 'Sponsoring request',
             'partnership' => 'Collaboration',
             'business_other' => 'Other business request',
@@ -160,7 +189,17 @@ class CustomerThreadContextProviderCore
                         (int) $this->context->shop->id
                     );
                 } else {
-                    $product['url'] = $this->context->link->getProductLink($idProduct);
+                    $productObject = new Product(
+                        $idProduct,
+                        false,
+                        (int)$this->context->language->id,
+                        (int)$this->context->shop->id
+                    );
+                    if (Validate::isLoadedObject($productObject) && (bool)$productObject->active) {
+                        $product['url'] = $this->context->link->getProductLink($productObject);
+                    } else {
+                        unset($product['url']);
+                    }
                 }
 
                 $cover = Product::getCover($idProduct, $this->context);
