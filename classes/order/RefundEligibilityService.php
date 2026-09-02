@@ -53,7 +53,6 @@ class RefundEligibilityServiceCore
         $cancelableQuantity = $this->cancelEligibility->getOrderProductCancelableQuantity(
             $order,
             $product,
-            CancelEligibilityService::CONTEXT_BACK_OFFICE,
             $orderDetailExtension
         );
 
@@ -186,7 +185,7 @@ class RefundEligibilityServiceCore
                 ->from('order_cancellation', 'oc')
                 ->innerJoin('order_cancellation_detail', 'ocd', 'ocd.`id_order_cancellation` = oc.`id_order_cancellation`')
                 ->where('oc.`id_order` = '.(int)$order->id)
-                ->where('oc.`status` = \''.pSQL(OrderCancellation::STATUS_APPLIED).'\'')
+                ->where('oc.`status` = \''.pSQL(OrderCancellation::STATUS_QUANTITY_CANCELLED).'\'')
                 ->groupBy('oc.`id_order_cancellation`')
                 ->orderBy('oc.`id_order_cancellation` DESC')
         );
@@ -246,7 +245,7 @@ class RefundEligibilityServiceCore
                 ->from('order_cancellation_detail', 'ocd')
                 ->innerJoin('order_cancellation', 'oc', 'oc.`id_order_cancellation` = ocd.`id_order_cancellation`')
                 ->where('oc.`id_order` = '.(int)$order->id)
-                ->where('oc.`status` = \''.pSQL(OrderCancellation::STATUS_APPLIED).'\'')
+                ->where('oc.`status` = \''.pSQL(OrderCancellation::STATUS_QUANTITY_CANCELLED).'\'')
                 ->where($idOrderCancellation ? 'oc.`id_order_cancellation` = '.(int)$idOrderCancellation : '1')
                 ->groupBy('ocd.`id_order_detail`')
         );
@@ -343,7 +342,7 @@ class RefundEligibilityServiceCore
                 ->from('order_cancellation')
                 ->where('`id_order_cancellation` = '.(int)$idOrderCancellation)
                 ->where('`id_order` = '.(int)$order->id)
-                ->where('`status` = \''.pSQL(OrderCancellation::STATUS_APPLIED).'\'')
+                ->where('`status` = \''.pSQL(OrderCancellation::STATUS_QUANTITY_CANCELLED).'\'')
         ) && (bool)$this->getUncreditedCancelledQuantities($order, $idOrderCancellation);
     }
 
@@ -373,7 +372,7 @@ class RefundEligibilityServiceCore
                 ->where('`id_order` = '.(int)$order->id)
         );
 
-        return [
+        $remaining = [
             'tax_excl' => $this->policy->roundPriceAmount(max(
                 0.0,
                 (float)$order->total_shipping_tax_excl - (float)$row['tax_excl']
@@ -383,6 +382,8 @@ class RefundEligibilityServiceCore
                 (float)$order->total_shipping_tax_incl - (float)$row['tax_incl']
             )),
         ];
+
+        return $remaining;
     }
 
     protected function getShippingQuantity(Order $order, array $product, int $orderedQuantity, $orderDetailExtension = null): int

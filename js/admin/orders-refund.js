@@ -56,6 +56,7 @@ $(document).ready(function () {
       $('#credit_fee_adjustment').val(formatCreditInput(0));
       $('#credit_fee_adjustment_rate').val(formatCreditRateInput(0));
     }
+    applySuggestedCancellationFee();
     refreshSuggestedCreditAdjustments();
     updateCreditTotals();
   });
@@ -64,7 +65,7 @@ $(document).ready(function () {
     updatePartialRefundSubmitState();
   });
 
-  $('input[name="partialRefundShippingCost"]').on('change keyup', function () {
+  $('#credit_shipping_adjustment').on('change keyup', function () {
     refreshSuggestedCreditAdjustments();
     updateCreditTotals();
   });
@@ -83,6 +84,8 @@ $(document).ready(function () {
     refreshSuggestedCreditAdjustments(event.type === 'keyup');
     updateCreditTotals(event.type === 'keyup');
   });
+
+  applyCreditUrlPrefill();
 });
 
 function scrollToOrderProductsPanel() {
@@ -107,6 +110,10 @@ function roundCreditAmount(amount) {
   return Math.round(Math.max(0, parseFloat(amount) || 0) * 100) / 100;
 }
 
+function roundCreditSignedAmount(amount) {
+  return Math.round((parseFloat(amount) || 0) * 100) / 100;
+}
+
 function roundCreditRefundTotalAmount(amount) {
   var unit = window.orderCreditSuggestions && window.orderCreditSuggestions.round_unit
     ? parseFloat(window.orderCreditSuggestions.round_unit)
@@ -121,6 +128,10 @@ function roundCreditRefundTotalAmount(amount) {
 
 function formatCreditInput(amount) {
   return roundCreditAmount(amount).toFixed(2);
+}
+
+function formatCreditSignedInput(amount) {
+  return roundCreditSignedAmount(amount).toFixed(2);
 }
 
 function normalizeCreditRate(rate) {
@@ -269,6 +280,16 @@ function updateOriginalPaymentRefundConfirmation(creditTotal) {
 
 function updatePartialRefundSubmitState() {
   var requiresConfirmation = isOriginalPaymentCreditRefundMethod();
+  var $label = $('#partial_refund_submit_label');
+  if ($label.length) {
+    if (requiresConfirmation) {
+      $label.text($label.data('original-payment'));
+    } else if (getCreditRefundMethod() === 'store_credit') {
+      $label.text($label.data('store-credit'));
+    } else {
+      $label.text($label.data('none'));
+    }
+  }
   $('#partial_refund_submit').prop(
     'disabled',
     requiresConfirmation && !$('#confirm_original_payment_refund').is(':checked')
@@ -300,7 +321,7 @@ function resetCreditForm() {
   creditAdjustmentState.fee.source = 'amount';
   $('.credit-product-amount-input').val('').prop('disabled', false).closest('td').removeClass('text-muted');
   $('.credit-product-quantity-input').val('0');
-  $('input[name="partialRefundShippingCost"]').val('0').prop('disabled', false);
+  $('#credit_shipping_adjustment').val('0').prop('disabled', false);
   $('.service-case-credit-status-group').hide().find(':input').prop('disabled', true);
   $('#confirm_original_payment_refund').prop('checked', false);
   setCreditAdjustment('cartRule', 0, 0);
@@ -366,9 +387,13 @@ function applyCreditReasonSuggestion() {
     $('.credit-product-quantity-input[data-id-order-detail="' + idOrderDetail + '"]').val(parseInt(productSuggestion.quantity || 0, 10));
   });
 
-  if (suggestion.shipping && typeof suggestion.shipping.amount !== 'undefined') {
-    $('input[name="partialRefundShippingCost"]').val(formatCreditInput(suggestion.shipping.amount));
-  }
+  var shippingRefund = suggestion.shipping && typeof suggestion.shipping.amount !== 'undefined'
+    ? roundCreditAmount(suggestion.shipping.amount)
+    : 0;
+  var shippingCharge = suggestion.shipping_charge_adjustment && typeof suggestion.shipping_charge_adjustment.amount !== 'undefined'
+    ? roundCreditAmount(suggestion.shipping_charge_adjustment.amount)
+    : 0;
+  $('#credit_shipping_adjustment').val(formatCreditSignedInput(shippingRefund - shippingCharge));
 
   var totals = getCreditEnteredTotals();
   if (suggestion.cart_rule_adjustment && typeof suggestion.cart_rule_adjustment.amount !== 'undefined') {
@@ -379,7 +404,7 @@ function applyCreditReasonSuggestion() {
   }
 
   var cartRuleAdjustment = Math.min(totals.products, roundCreditAmount(getCreditAdjustmentAmount('cartRule')));
-  var feeBase = Math.max(0, totals.products + totals.shipping - cartRuleAdjustment);
+  var feeBase = Math.max(0, totals.products + totals.shippingAdjustment - cartRuleAdjustment);
   if (suggestion.fee_adjustment && typeof suggestion.fee_adjustment.amount !== 'undefined') {
     setCreditAdjustment('fee', suggestion.fee_adjustment.amount, feeBase);
   } else {
@@ -411,7 +436,7 @@ function applyServiceCaseCreditScope(suggestion) {
   });
 
   $('.credit-product-quantity-input').val('0');
-  $('input[name="partialRefundShippingCost"]').val('0').prop('disabled', true);
+  $('#credit_shipping_adjustment').val('0').prop('disabled', true);
   setCreditAdjustment('cartRule', 0, 0);
   setCreditAdjustment('fee', 0, 0);
   updateCreditCartRuleAdjustmentState();
@@ -441,9 +466,9 @@ function getCreditEnteredTotals() {
 
   return {
     products: roundCreditAmount(productsTotal),
-    shipping: $('input[name="partialRefundShippingCost"]').prop('disabled')
+    shippingAdjustment: $('#credit_shipping_adjustment').prop('disabled')
       ? 0
-      : roundCreditAmount(parseCreditNumber($('input[name="partialRefundShippingCost"]').val()))
+      : roundCreditSignedAmount(parseCreditNumber($('#credit_shipping_adjustment').val()))
   };
 }
 
@@ -459,7 +484,9 @@ function refreshSuggestedCreditAdjustments(preserveManualSource) {
   }
 
   if (!creditAdjustmentState.cartRule.manual) {
-    setCreditAdjustment('cartRule', totals.products * normalizeCreditRate(getDefaultCreditCartRuleRate()) / 100, totals.products);
+    if (!applySuggestedCancellationCartRuleAdjustment()) {
+      setCreditAdjustment('cartRule', totals.products * normalizeCreditRate(getDefaultCreditCartRuleRate()) / 100, totals.products);
+    }
   } else if (creditAdjustmentState.cartRule.source === 'rate') {
     setCreditAdjustmentFromRate('cartRule', totals.products, preserveManualSource);
   } else {
@@ -467,14 +494,16 @@ function refreshSuggestedCreditAdjustments(preserveManualSource) {
   }
 
   var cartRuleAdjustment = Math.min(totals.products, roundCreditAmount(getCreditAdjustmentAmount('cartRule')));
-  var subtotalAfterCartRule = Math.max(0, totals.products + totals.shipping - cartRuleAdjustment);
+  var subtotalAfterCartRule = Math.max(0, totals.products + totals.shippingAdjustment - cartRuleAdjustment);
   updateCreditFeeAdjustmentState();
   if (isNoCreditRefundMethod()) {
     return;
   }
 
   if (!creditAdjustmentState.fee.manual) {
-    setCreditAdjustment('fee', subtotalAfterCartRule * normalizeCreditRate(getDefaultCreditFeeRate()) / 100, subtotalAfterCartRule);
+    if (!applySuggestedCancellationFee()) {
+      setCreditAdjustment('fee', subtotalAfterCartRule * normalizeCreditRate(getDefaultCreditFeeRate()) / 100, subtotalAfterCartRule);
+    }
   } else if (creditAdjustmentState.fee.source === 'rate') {
     setCreditAdjustmentFromRate('fee', subtotalAfterCartRule, preserveManualSource);
   } else {
@@ -496,7 +525,7 @@ function updateCreditTotals(preserveManualSource) {
   );
   setCreditAdjustment('cartRule', cartRuleAdjustment, totals.products, preserveManualSource);
 
-  var subtotalAfterCartRule = Math.max(0, totals.products + totals.shipping - cartRuleAdjustment);
+  var subtotalAfterCartRule = Math.max(0, totals.products + totals.shippingAdjustment - cartRuleAdjustment);
   var feeAdjustment = isNoCreditRefundMethod()
     ? 0
     : Math.min(
@@ -511,6 +540,68 @@ function updateCreditTotals(preserveManualSource) {
   $('#credit_subtotal_display').text(formatCreditDisplay(subtotalAfterCartRule));
   $('#credit_total_display').text(formatCreditRefundTotalDisplay(creditTotal));
   updateOriginalPaymentRefundConfirmation(creditTotal);
+}
+
+function getActiveCreditSuggestion() {
+  var reason = $('#reason_entity_type').val();
+  var idEntity = $('#reason_id_entity').val();
+  return window.orderCreditSuggestions && window.orderCreditSuggestions[reason]
+    ? window.orderCreditSuggestions[reason][idEntity] || null
+    : null;
+}
+
+function applySuggestedCancellationCartRuleAdjustment() {
+  var suggestion = getActiveCreditSuggestion();
+  if (
+    $('#reason_entity_type').val() !== 'cancellation'
+    || !suggestion
+    || !suggestion.cart_rule_adjustment
+    || typeof suggestion.cart_rule_adjustment.amount === 'undefined'
+  ) {
+    return false;
+  }
+
+  creditAdjustmentState.cartRule.manual = false;
+  setCreditAdjustment(
+    'cartRule',
+    suggestion.cart_rule_adjustment.amount,
+    getCreditEnteredTotals().products
+  );
+  return true;
+}
+
+function applySuggestedCancellationFee() {
+  var suggestion = getActiveCreditSuggestion();
+  if (!suggestion || !suggestion.fee_adjustments) {
+    return false;
+  }
+  var methodSuggestion = suggestion.fee_adjustments[getCreditRefundMethod()];
+  if (!methodSuggestion || typeof methodSuggestion.amount === 'undefined') {
+    return false;
+  }
+  creditAdjustmentState.fee.manual = false;
+  var totals = getCreditEnteredTotals();
+  var cartRule = Math.min(totals.products, roundCreditAmount(getCreditAdjustmentAmount('cartRule')));
+  var feeBase = Math.max(0, totals.products + totals.shippingAdjustment - cartRule);
+  setCreditAdjustment('fee', methodSuggestion.amount, feeBase);
+  return true;
+}
+
+function applyCreditUrlPrefill() {
+  var prefill = window.orderCreditPrefill || {};
+  if (!prefill.reason || !prefill.entity) {
+    return;
+  }
+  $('#desc-order-partial_refund, .order-credit-button').first().trigger('click');
+  $('#reason_entity_type').val(prefill.reason);
+  updateCreditReasonEntityOptions();
+  $('#reason_id_entity').val(String(prefill.entity));
+  if (prefill.refundMethod) {
+    $('#credit_refund_method').val(prefill.refundMethod);
+  }
+  applyCreditReasonSuggestion();
+  applySuggestedCancellationFee();
+  updateCreditTotals();
 }
 
 function checkPartialRefundProductAmount(it) {

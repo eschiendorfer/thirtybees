@@ -48,6 +48,11 @@ class RefundCreatorCore
             return 0;
         }
 
+        $existingTransaction = StoreCreditTransaction::getRefundCreditTransactionIdForOrderSlip($idOrderSlip);
+        if ($existingTransaction > 0) {
+            return $existingTransaction;
+        }
+
         $idEmployee = 0;
         if (isset($this->context->employee) && Validate::isLoadedObject($this->context->employee)) {
             $idEmployee = (int)$this->context->employee->id;

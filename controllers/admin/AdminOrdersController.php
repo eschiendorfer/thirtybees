@@ -819,6 +819,15 @@ class AdminOrdersControllerCore extends AdminController
                     }
                 }
 
+                if (!count($this->errors)) {
+                    $this->completeCancellationFromCreditRequest(
+                        $order,
+                        $creditSlipRequest,
+                        $idOrderSlip,
+                        $effectiveRefundAmount
+                    );
+                }
+
                 // Redirect if no errors
                 if (!count($this->errors)) {
                     Tools::redirectAdmin(static::$currentIndex.'&id_order='.$order->id.'&vieworder&conf=30&token='.$this->token);
@@ -1700,6 +1709,9 @@ class AdminOrdersControllerCore extends AdminController
             'credit_order_return_options'  => $this->getCreditOrderReturnOptions($order, $products),
             'credit_service_case_options'  => $this->getCreditServiceCaseOptions($order),
             'credit_suggestions_json'      => $this->getCreditSuggestionsJson($order, $products),
+            'credit_prefill_reason'        => (string)Tools::getValue('prefill_credit_reason', ''),
+            'credit_prefill_entity'        => Tools::getIntValue('prefill_credit_entity'),
+            'credit_prefill_refund_method' => (string)Tools::getValue('prefill_refund_method', ''),
             'service_case_type_options'    => $this->getServiceCaseTypeOptions(),
             'service_case_status_options'  => $this->getServiceCaseStatusOptions(),
             'current_id_lang'              => $this->context->language->id,
@@ -2938,7 +2950,7 @@ class AdminOrdersControllerCore extends AdminController
             false
         );
         foreach ($messages as &$message) {
-            $message['message_html'] = CustomerMessage::renderContent((string) $message['message']);
+            $message['message_html'] = CustomerMessage::renderWebContent((string) $message['message']);
         }
         unset($message);
 
@@ -3055,8 +3067,7 @@ class AdminOrdersControllerCore extends AdminController
             return;
         }
 
-        $assignReplyToCurrentEmployee = !$privateMessage
-            && in_array((int) $this->context->employee->id, CustomerThread::CUSTOMER_SERVICE_EMPLOYEE_IDS, true);
+        $assignReplyToCurrentEmployee = !$privateMessage;
         $request = [
             'idCustomer' => (int)$order->id_customer,
             'idEmployee' => (int)$this->context->employee->id,
@@ -3093,7 +3104,7 @@ class AdminOrdersControllerCore extends AdminController
             ];
             $subject = Mail::l('New message regarding your order', (int) $order->id_lang);
             if (Configuration::get('PS_SAV_IMAP_URL') && Configuration::get('PS_SAV_IMAP_USER') && Configuration::get('PS_SAV_IMAP_PWD')) {
-                $subject .= ' #'.$customerThread->id.' #'.$customerThread->token;
+                $subject .= ' #ct'.$customerThread->id.' #tc'.$customerThread->token;
             }
 
             if (!@Mail::Send(
@@ -3103,8 +3114,8 @@ class AdminOrdersControllerCore extends AdminController
                 $varsTpl,
                 $customer->email,
                 $customer->firstname.' '.$customer->lastname,
-                null,
-                null,
+                Tools::convertEmailToIdn(CustomerServiceReplyService::getSenderEmail((int)$order->id_shop)),
+                CustomerServiceReplyService::getSenderName((int)$order->id_shop),
                 CustomerMessageAttachment::buildMailAttachments($pendingAttachments),
                 null,
                 _PS_MAIL_DIR_,
@@ -3118,7 +3129,11 @@ class AdminOrdersControllerCore extends AdminController
 
         $customerThread->status = $threadStatus;
         if ($assignReplyToCurrentEmployee) {
-            $customerThread->id_employee_assigned = $idEmployee;
+            EntityEmployeeAssignment::assign(
+                (int)\CoreExtension\EntityTypeEnum::CUSTOMER_THREAD_VALUE,
+                (int)$customerThread->id,
+                $idEmployee
+            );
         }
         if (!$customerThread->update()) {
             $this->errors[] = Tools::displayError('The message was saved, but the thread settings could not be updated.');
@@ -3142,7 +3157,10 @@ class AdminOrdersControllerCore extends AdminController
 
         if (
             $action === RefundPolicy::ACTION_CANCEL
-            && !$this->getCancelEligibilityService()->canCancelProductsInBackOffice($order)
+            && (
+                !$order->hasBeenPaid()
+                || !$this->getCancelEligibilityService()->canCancelProducts($order)
+            )
         ) {
             $this->errors[] = Tools::displayError('This order cannot be cancelled from the Back Office.');
             return false;
@@ -3290,7 +3308,7 @@ class AdminOrdersControllerCore extends AdminController
             ? (int)$this->context->employee->id
             : 0;
 
-        $orderCancellation = OrderCancellation::createAppliedForOrder($order, $quantitiesByOrderDetail, $idEmployee);
+        $orderCancellation = OrderCancellation::createForOrder($order, $quantitiesByOrderDetail, $idEmployee);
         if (!$orderCancellation) {
             $this->errors[] = Tools::displayError('Cancelled quantities could not be booked.');
             return false;
@@ -3373,7 +3391,7 @@ class AdminOrdersControllerCore extends AdminController
             'reason_id_entity' => (int)Tools::getValue('reason_id_entity', 0),
             'product_amounts' => Tools::getArrayValue('partialRefundProduct', []),
             'product_quantities' => Tools::getArrayValue('partialRefundProductQuantity', []),
-            'shipping_amount' => Tools::getValue('partialRefundShippingCost', '0'),
+            'shipping_adjustment' => Tools::getValue('credit_shipping_adjustment', '0'),
             'cart_rule_adjustment' => Tools::getValue('credit_cart_rule_adjustment', null),
             'fee_adjustment' => Tools::getValue('credit_fee_adjustment', null),
         ]);
@@ -3474,6 +3492,53 @@ class AdminOrdersControllerCore extends AdminController
         $serviceCase->status = $status;
         if (!$serviceCase->update()) {
             $this->errors[] = Tools::displayError('The service case status could not be updated.');
+            return false;
+        }
+
+        return true;
+    }
+
+    protected function completeCancellationFromCreditRequest(
+        Order $order,
+        array $creditSlipRequest,
+        int $idOrderSlip,
+        float $amountTaxIncl
+    ): bool {
+        $metadata = (array)($creditSlipRequest['metadata'] ?? []);
+        if (
+            (int)($metadata['reason_entity_type'] ?? 0) !== RefundPolicy::REASON_CANCELLATION
+            || $idOrderSlip <= 0
+            || $amountTaxIncl <= 0.0
+        ) {
+            return true;
+        }
+
+        $cancellation = new OrderCancellation((int)($metadata['reason_id_entity'] ?? 0));
+        if (
+            !Validate::isLoadedObject($cancellation)
+            || (int)$cancellation->id_order !== (int)$order->id
+            || (string)$cancellation->status === OrderCancellation::STATUS_DONE
+        ) {
+            return true;
+        }
+        if ((string)$cancellation->status !== OrderCancellation::STATUS_QUANTITY_CANCELLED) {
+            return true;
+        }
+
+        $paymentRecorded = (bool)Db::readOnly()->getValue(
+            (new DbQuery())
+                ->select('1')
+                ->from('order_payment')
+                ->where('`id_order_slip` = '.(int)$idOrderSlip)
+                ->where("`status` IN ('done', 'pending', 'manual')")
+        );
+        if (!$paymentRecorded) {
+            return true;
+        }
+
+        $cancellation->status = OrderCancellation::STATUS_DONE;
+        if (!$cancellation->update(true)) {
+            $this->errors[] = Tools::displayError('The refund was recorded, but the linked cancellation could not be completed.');
             return false;
         }
 

@@ -62,6 +62,8 @@ class OrderSlipCore extends ObjectModel
             'adjustment_cart_rule_tax_incl' => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbDefault' => '0.000000'],
             'adjustment_fee_tax_excl'       => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbDefault' => '0.000000'],
             'adjustment_fee_tax_incl'       => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbDefault' => '0.000000'],
+            'adjustment_shipping_charge_tax_excl' => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbDefault' => '0.000000'],
+            'adjustment_shipping_charge_tax_incl' => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbDefault' => '0.000000'],
             'date_add'                => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
             'date_upd'                => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
         ],
@@ -114,6 +116,10 @@ class OrderSlipCore extends ObjectModel
     public $adjustment_fee_tax_excl = 0.0;
     /** @var float */
     public $adjustment_fee_tax_incl = 0.0;
+    /** @var float */
+    public $adjustment_shipping_charge_tax_excl = 0.0;
+    /** @var float */
+    public $adjustment_shipping_charge_tax_incl = 0.0;
 
     /**
      * @var array Webservice parameters
@@ -476,6 +482,8 @@ class OrderSlipCore extends ObjectModel
         $this->adjustment_cart_rule_tax_incl = Tools::roundPrice(max(0.0, (float)($metadata['adjustment_cart_rule_tax_incl'] ?? 0.0)));
         $this->adjustment_fee_tax_excl = Tools::roundPrice(max(0.0, (float)($metadata['adjustment_fee_tax_excl'] ?? 0.0)));
         $this->adjustment_fee_tax_incl = Tools::roundPrice(max(0.0, (float)($metadata['adjustment_fee_tax_incl'] ?? 0.0)));
+        $this->adjustment_shipping_charge_tax_excl = Tools::roundPrice(max(0.0, (float)($metadata['adjustment_shipping_charge_tax_excl'] ?? 0.0)));
+        $this->adjustment_shipping_charge_tax_incl = Tools::roundPrice(max(0.0, (float)($metadata['adjustment_shipping_charge_tax_incl'] ?? 0.0)));
     }
 
     public function getRefundTotalTaxIncl(): float
@@ -485,6 +493,7 @@ class OrderSlipCore extends ObjectModel
             + (float)$this->total_shipping_tax_incl
             - (float)$this->adjustment_cart_rule_tax_incl
             - (float)$this->adjustment_fee_tax_incl
+            - (float)$this->adjustment_shipping_charge_tax_incl
         );
     }
 
@@ -495,6 +504,7 @@ class OrderSlipCore extends ObjectModel
             + (float)$this->total_shipping_tax_excl
             - (float)$this->adjustment_cart_rule_tax_excl
             - (float)$this->adjustment_fee_tax_excl
+            - (float)$this->adjustment_shipping_charge_tax_excl
         );
     }
 

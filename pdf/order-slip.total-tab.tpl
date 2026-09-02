@@ -27,13 +27,15 @@
 	{assign var=cart_rule_adjustment value=($total_cart_rule + $order_slip->adjustment_cart_rule_tax_excl)}
 	{assign var=shipping_total value=$order_slip->total_shipping_tax_excl}
 	{assign var=fee_adjustment value=$order_slip->adjustment_fee_tax_excl}
+	{assign var=shipping_charge_adjustment value=$order_slip->adjustment_shipping_charge_tax_excl}
 {else}
 	{assign var=products_total value=$order_slip->total_products_tax_incl}
 	{assign var=cart_rule_adjustment value=($total_cart_rule + $order_slip->adjustment_cart_rule_tax_incl)}
 	{assign var=shipping_total value=$order_slip->total_shipping_tax_incl}
 	{assign var=fee_adjustment value=$order_slip->adjustment_fee_tax_incl}
+	{assign var=shipping_charge_adjustment value=$order_slip->adjustment_shipping_charge_tax_incl}
 {/if}
-{assign var=subtotal value=($products_total - $cart_rule_adjustment + $shipping_total)}
+{assign var=subtotal value=($products_total - $cart_rule_adjustment + $shipping_total - $shipping_charge_adjustment)}
 {assign var=refund_total value=($subtotal - $fee_adjustment)}
 
 <table id="total-tab" width="100%">
@@ -67,6 +69,15 @@
 			</td>
 			<td class="white" width="30%">
 				- {displayPrice currency=$order->id_currency price=$shipping_total}
+			</td>
+		</tr>
+	{/if}
+
+	{if $shipping_charge_adjustment > 0}
+		<tr>
+			<td class="grey" width="70%">{l s='New shipping costs' pdf='true'}</td>
+			<td class="white" width="30%">
+				+ {displayPrice currency=$order->id_currency price=$shipping_charge_adjustment}
 			</td>
 		</tr>
 	{/if}

@@ -2,46 +2,27 @@
 
 class CancelEligibilityServiceCore
 {
-    public const CONTEXT_BACK_OFFICE = 'backoffice';
-    public const CONTEXT_FRONT_OFFICE = 'frontoffice';
-
-    public const FRONT_OFFICE_OPERATION_DELETE = 'delete';
-    public const FRONT_OFFICE_OPERATION_CANCEL = 'cancel';
-
     public const REASON_ALREADY_SHIPPED = 'already_shipped';
     public const REASON_ALREADY_PICKED = 'already_picked';
     public const REASON_NOTHING_CANCELABLE = 'nothing_cancelable';
 
-    public function canEditProductsInBackOffice(Order $order): bool
+    public function canCancelProducts(Order $order): bool
     {
-        return !$order->hasBeenPaid() && !$order->hasBeenShipped();
-    }
-
-    public function canCancelProductsInBackOffice(Order $order): bool
-    {
-        return $order->hasBeenPaid() && !$order->hasBeenShipped();
-    }
-
-    public function canCancelProductsInFrontOffice(Order $order): bool
-    {
-        return !$order->hasBeenShipped() && !$this->hasPickingRows($order);
-    }
-
-    public function getFrontOfficeCancellationOperation(Order $order): ?string
-    {
-        if (!$this->canCancelProductsInFrontOffice($order)) {
-            return null;
-        }
-
-        return $order->hasBeenPaid()
-            ? self::FRONT_OFFICE_OPERATION_CANCEL
-            : self::FRONT_OFFICE_OPERATION_DELETE;
+        return !in_array(
+            (int)$order->getCurrentState(),
+            [
+                (int)Configuration::get('PS_OS_CANCELED'),
+                (int)Configuration::get('PS_OS_ERROR'),
+                (int)Configuration::get('PS_OS_REFUND'),
+            ],
+            true
+        );
     }
 
     public function getOrderDetailCancelableQuantity(
         Order $order,
         OrderDetail $orderDetail,
-        string $context = self::CONTEXT_BACK_OFFICE
+        $orderDetailExtension = null
     ): int {
         $product = [
             'id_order_detail' => (int)$orderDetail->id,
@@ -51,16 +32,21 @@ class CancelEligibilityServiceCore
             'product_quantity_return' => (int)$orderDetail->product_quantity_return,
         ];
 
-        return $this->getOrderProductCancelableQuantity($order, $product, $context);
+        return $this->getOrderProductCancelableQuantity($order, $product, $orderDetailExtension);
     }
 
     public function getOrderProductCancelableQuantity(
         Order $order,
         array $product,
-        string $context = self::CONTEXT_BACK_OFFICE,
         $orderDetailExtension = null
     ): int {
-        if (!$this->canCancelInContext($order, $context)) {
+        if (!$this->canCancelProducts($order)) {
+            return 0;
+        }
+
+        // Picking and shipping are position-specific. A blocked line must not
+        // affect other outstanding products from the same split/preorder order.
+        if ($this->isOrderDetailInPicking($order, (int)($product['id_order_detail'] ?? 0))) {
             return 0;
         }
 
@@ -79,20 +65,20 @@ class CancelEligibilityServiceCore
     public function getOrderProductBlockReasons(
         Order $order,
         array $product,
-        string $context = self::CONTEXT_BACK_OFFICE,
         $orderDetailExtension = null
     ): array {
         $reasons = [];
 
-        if ($order->hasBeenShipped()) {
+        $orderedQuantity = $this->getOrderedQuantity($product);
+        if ($this->getShippingQuantity($order, $product, $orderedQuantity, $orderDetailExtension) > 0) {
             $reasons[] = self::REASON_ALREADY_SHIPPED;
         }
 
-        if ($context === self::CONTEXT_FRONT_OFFICE && $this->hasPickingRows($order)) {
+        if ($this->isOrderDetailInPicking($order, (int)($product['id_order_detail'] ?? 0))) {
             $reasons[] = self::REASON_ALREADY_PICKED;
         }
 
-        if (!$reasons && $this->getOrderProductCancelableQuantity($order, $product, $context, $orderDetailExtension) <= 0) {
+        if (!$reasons && $this->getOrderProductCancelableQuantity($order, $product, $orderDetailExtension) <= 0) {
             $reasons[] = self::REASON_NOTHING_CANCELABLE;
         }
 
@@ -110,8 +96,10 @@ class CancelEligibilityServiceCore
             }
         }
 
-        $shippingQuantity = $orderDetailExtension === null ? 0 : (int)$orderDetailExtension->shipping_quantity;
-        if ($hasOrderDetailExtension) {
+        $hasLoadedOrderDetailExtension = $orderDetailExtension !== null
+            && Validate::isLoadedObject($orderDetailExtension);
+        $shippingQuantity = $hasLoadedOrderDetailExtension ? (int)$orderDetailExtension->shipping_quantity : 0;
+        if ($hasOrderDetailExtension && $hasLoadedOrderDetailExtension) {
             $shippingQuantity = $shippingQuantity > 0 ? $orderedQuantity : 0;
         } elseif ($order->hasBeenShipped()) {
             $shippingQuantity = $orderedQuantity;
@@ -120,9 +108,9 @@ class CancelEligibilityServiceCore
         return min($orderedQuantity, max(0, $shippingQuantity));
     }
 
-    public function hasPickingRows(Order $order): bool
+    public function isOrderDetailInPicking(Order $order, int $idOrderDetail): bool
     {
-        if ((int)$order->id <= 0) {
+        if ((int)$order->id <= 0 || $idOrderDetail <= 0) {
             return false;
         }
 
@@ -137,19 +125,13 @@ class CancelEligibilityServiceCore
                     ->select('1')
                     ->from($table)
                     ->where('`id_order` = '.(int)$order->id)
+                    ->where('`id_order_detail` = '.$idOrderDetail)
             );
         } catch (Exception $e) {
-            return false;
+            // If the picking state cannot be read, do not expose the position
+            // as cancelable. A retry is safer than canceling stock in motion.
+            return true;
         }
-    }
-
-    protected function canCancelInContext(Order $order, string $context): bool
-    {
-        if ($context === self::CONTEXT_FRONT_OFFICE) {
-            return $this->canCancelProductsInFrontOffice($order);
-        }
-
-        return $this->canCancelProductsInBackOffice($order);
     }
 
     protected function getOrderedQuantity(array $product): int

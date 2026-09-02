@@ -942,6 +942,11 @@
           </div>
           <script type="text/javascript">
             var orderCreditSuggestions = JSON.parse('{$credit_suggestions_json|escape:'javascript':'UTF-8'}');
+            window.orderCreditPrefill = {
+              reason: '{$credit_prefill_reason|escape:'javascript':'UTF-8'}',
+              entity: '{$credit_prefill_entity|intval}',
+              refundMethod: '{$credit_prefill_refund_method|escape:'javascript':'UTF-8'}'
+            };
 
             function selectOrderProductActionMode(action) {
               var submitLabels = {
@@ -1269,11 +1274,17 @@
                         </td>
                       </tr>
                       <tr>
-                        <td>{l s='Shipping'}</td>
+                        <td>
+                          <label class="control-label" for="credit_shipping_adjustment">
+                            <span class="label-tooltip" data-toggle="tooltip" title="{l s='If you want to refund shipping costs the customer has already paid, enter a positive amount (for example 6.50). If shipping costs must be charged after the adjustment, for example because the order value falls below CHF 50, enter a negative amount (for example -6.50).'}">
+                              {l s='Shipping adjustment'}
+                            </span>
+                          </label>
+                        </td>
                         <td class="text-right">
                           <div class="input-group" style="width: 160px; margin-left: auto;">
                             <div class="input-group-addon">{$currency->prefix}{$currency->suffix}</div>
-                            <input type="text" name="partialRefundShippingCost" class="form-control text-right" value="0" disabled="disabled" />
+                            <input type="text" id="credit_shipping_adjustment" name="credit_shipping_adjustment" class="form-control text-right" value="0" disabled="disabled" />
                           </div>
                         </td>
                       </tr>
@@ -1327,7 +1338,11 @@
                     </select>
                   </div>
                   <button type="submit" id="partial_refund_submit" name="partialRefund" class="btn btn-default">
-                    <i class="icon-check"></i> {l s='Create credit slip'}
+                    <i class="icon-check"></i>
+                    <span id="partial_refund_submit_label"
+                          data-none="{l s='Create credit slip'}"
+                          data-store-credit="{l s='Create credit slip and book store credit'}"
+                          data-original-payment="{l s='Refund money now via'} {$original_payment_refund_label|escape:'html':'UTF-8'}">{l s='Create credit slip'}</span>
                   </button>
                 </div>
               </div>

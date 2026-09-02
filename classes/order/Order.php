@@ -379,7 +379,7 @@ class OrderCore extends ObjectModel implements CustomerThreadContextSourceInterf
 
             return $orderDetail->update();
         } elseif ($this->hasBeenPaid()) {
-            return OrderCancellation::createAppliedForOrder($order, [(int)$orderDetail->id => (int)$quantity]) instanceof OrderCancellation;
+            return OrderCancellation::createForOrder($order, [(int)$orderDetail->id => (int)$quantity]) instanceof OrderCancellation;
         }
 
         return $this->_deleteProduct($orderDetail, (int) $quantity);
@@ -1060,7 +1060,7 @@ class OrderCore extends ObjectModel implements CustomerThreadContextSourceInterf
      */
     protected function resolveCanEditProducts(): bool
     {
-        if (!(new CancelEligibilityService())->canEditProductsInBackOffice($this)) {
+        if ($this->hasBeenPaid() || $this->hasBeenShipped()) {
             return false;
         }
         $responses = Hook::getResponses('actionCanEditOrderProducts', ['order' => $this]);

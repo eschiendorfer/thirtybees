@@ -338,6 +338,11 @@ class HTMLTemplateOrderSlipCore extends HTMLTemplate
         );
         $this->applyOrderSlipAdjustment(
             $entries,
+            (float)$this->order_slip->adjustment_shipping_charge_tax_excl,
+            (float)$this->order_slip->adjustment_shipping_charge_tax_incl
+        );
+        $this->applyOrderSlipAdjustment(
+            $entries,
             (float)$this->order_slip->adjustment_fee_tax_excl,
             (float)$this->order_slip->adjustment_fee_tax_incl
         );
@@ -426,6 +431,7 @@ class HTMLTemplateOrderSlipCore extends HTMLTemplate
             (float)$this->order_slip->total_products_tax_incl
             + (float)$this->order_slip->total_shipping_tax_incl
             - (float)$this->order_slip->adjustment_cart_rule_tax_incl
+            - (float)$this->order_slip->adjustment_shipping_charge_tax_incl
         );
 
         if ($feeBase <= 0.0) {
@@ -445,14 +451,16 @@ class HTMLTemplateOrderSlipCore extends HTMLTemplate
             $cartRuleAdjustment = $totalCartRule + (float)$this->order_slip->adjustment_cart_rule_tax_excl;
             $shippingTotal = (float)$this->order_slip->total_shipping_tax_excl;
             $feeAdjustment = (float)$this->order_slip->adjustment_fee_tax_excl;
+            $shippingChargeAdjustment = (float)$this->order_slip->adjustment_shipping_charge_tax_excl;
         } else {
             $productsTotal = (float)$this->order_slip->total_products_tax_incl;
             $cartRuleAdjustment = $totalCartRule + (float)$this->order_slip->adjustment_cart_rule_tax_incl;
             $shippingTotal = (float)$this->order_slip->total_shipping_tax_incl;
             $feeAdjustment = (float)$this->order_slip->adjustment_fee_tax_incl;
+            $shippingChargeAdjustment = (float)$this->order_slip->adjustment_shipping_charge_tax_incl;
         }
 
-        $refundTotal = max(0.0, $productsTotal - $cartRuleAdjustment + $shippingTotal - $feeAdjustment);
+        $refundTotal = max(0.0, $productsTotal - $cartRuleAdjustment + $shippingTotal - $shippingChargeAdjustment - $feeAdjustment);
         $roundingUnit = class_exists('RefundPolicy') ? RefundPolicy::ROUNDING_UNIT : 0.05;
 
         return Tools::roundPrice(round($refundTotal / $roundingUnit) * $roundingUnit);

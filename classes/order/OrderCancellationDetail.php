@@ -11,7 +11,14 @@ class OrderCancellationDetailCore extends ObjectModel
         'fields' => [
             'id_order_cancellation' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true],
             'id_order_detail' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true],
+            'id_product' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '0'],
+            'id_product_attribute' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbDefault' => '0'],
+            'product_reference' => ['type' => self::TYPE_STRING, 'validate' => 'isReference', 'size' => 64, 'dbNullable' => true],
+            'product_name' => ['type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'size' => 255, 'dbNullable' => true],
             'product_quantity' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedInt', 'required' => true, 'dbDefault' => '0'],
+            'quoted_product_amount_tax_incl' => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbNullable' => true],
+            'quoted_fee_tax_incl' => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbNullable' => true],
+            'quoted_fee_policy' => ['type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'size' => 32, 'dbNullable' => true],
         ],
         'keys' => [
             'order_cancellation_detail' => [
@@ -28,7 +35,21 @@ class OrderCancellationDetailCore extends ObjectModel
     /** @var int */
     public $id_order_detail;
     /** @var int */
+    public $id_product = 0;
+    /** @var int */
+    public $id_product_attribute = 0;
+    /** @var string|null */
+    public $product_reference;
+    /** @var string|null */
+    public $product_name;
+    /** @var int */
     public $product_quantity;
+    /** @var float|null */
+    public $quoted_product_amount_tax_incl;
+    /** @var float|null */
+    public $quoted_fee_tax_incl;
+    /** @var string|null */
+    public $quoted_fee_policy;
 
     public function add($autoDate = true, $nullValues = false)
     {
@@ -77,7 +98,19 @@ class OrderCancellationDetailCore extends ObjectModel
                 ->from('order_cancellation_detail', 'ocd')
                 ->innerJoin('order_cancellation', 'oc', 'oc.`id_order_cancellation` = ocd.`id_order_cancellation`')
                 ->where('ocd.`id_order_detail` = ' . (int)$idOrderDetail)
-                ->where('oc.`status` = \'' . pSQL(OrderCancellation::STATUS_APPLIED) . '\'')
+                ->where(
+                    '(oc.`status` IN (\''
+                    .pSQL(OrderCancellation::STATUS_OPEN).'\', \''
+                    .pSQL(OrderCancellation::STATUS_QUANTITY_CANCELLED).'\')'
+                    .' OR (oc.`status` = \''.pSQL(OrderCancellation::STATUS_DONE).'\' AND ('
+                    .'oc.`migrated` = 1'
+                    .' OR EXISTS ('
+                    .'SELECT 1 FROM `'._DB_PREFIX_.'order_slip` osl'
+                    .' WHERE osl.`reason_entity_type` = '.(int)RefundPolicy::REASON_CANCELLATION
+                    .' AND osl.`reason_id_entity` = oc.`id_order_cancellation`'
+                    .')'
+                    .')))'
+                )
         );
 
         // TODO: legacy compatibility cache. Rename this column to product_quantity_cancelled/product_quantity_cancellation or remove it.
@@ -86,6 +119,22 @@ class OrderCancellationDetailCore extends ObjectModel
             ['product_quantity_refunded' => max(0, $quantity)],
             '`id_order_detail` = ' . (int)$idOrderDetail
         );
+    }
+
+    public static function getQuantitiesForCancellation(int $idOrderCancellation): array
+    {
+        $rows = Db::readOnly()->getArray(
+            (new DbQuery())
+                ->select('`id_order_detail`, `product_quantity`')
+                ->from('order_cancellation_detail')
+                ->where('`id_order_cancellation` = '.(int)$idOrderCancellation)
+        );
+        $quantities = [];
+        foreach ($rows as $row) {
+            $quantities[(int)$row['id_order_detail']] = (int)$row['product_quantity'];
+        }
+
+        return $quantities;
     }
 
     private function getStoredOrderDetailId(): int
