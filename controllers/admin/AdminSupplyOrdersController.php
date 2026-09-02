@@ -1273,7 +1273,7 @@ class AdminSupplyOrdersControllerCore extends AdminController
                     // specify global reference currency
                     $_POST['id_ref_currency'] = Currency::getDefaultCurrency()->id;
 
-                    // specify supplier name
+                    // Deprecated compatibility column: supplier names must be resolved via id_supplier when read.
                     $_POST['supplier_name'] = Supplier::getNameById($idSupplier);
                 }
 
@@ -2190,6 +2190,12 @@ class AdminSupplyOrdersControllerCore extends AdminController
             // gets the warehouse where products will be received
             $warehouse = new Warehouse($supplyOrder->id_warehouse);
 
+            // Always use the canonical supplier record. supplier_name on SupplyOrder is deprecated.
+            $supplierName = Supplier::getNameById((int) $supplyOrder->id_supplier);
+            if (!$supplierName) {
+                $supplierName = sprintf($this->l('Supplier #%d'), (int) $supplyOrder->id_supplier);
+            }
+
             // sets toolbar title with order reference
             if (!$supplyOrder->is_template) {
                 $this->toolbar_title = sprintf($this->l('Details on supply order #%s'), $supplyOrder->reference);
@@ -2337,7 +2343,7 @@ class AdminSupplyOrdersControllerCore extends AdminController
                 'supply_order_detail_content'         => $content,
                 'supply_order_warehouse'              => (Validate::isLoadedObject($warehouse) ? $warehouse->name : ''),
                 'supply_order_reference'              => $supplyOrder->reference,
-                'supply_order_supplier_name'          => $supplyOrder->supplier_name,
+                'supply_order_supplier_name'          => $supplierName,
                 'supply_order_creation_date'          => Tools::displayDate($supplyOrder->date_add, null, false),
                 'supply_order_last_update'            => Tools::displayDate($supplyOrder->date_upd, null, false),
                 'supply_order_expected'               => Tools::displayDate($supplyOrder->date_delivery_expected, null, false),

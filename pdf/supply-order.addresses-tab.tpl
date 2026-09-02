@@ -32,7 +32,7 @@
 		</td>
 		<td width="20%">&nbsp;</td>
 		<td width="40%"><span class="bold"> </span><br/><br/>
-			{$supply_order->supplier_name}<br/>
+			{$supplier_name}<br/>
 			{$address_supplier->address1}<br/>
 			{if !empty($address_supplier->address2)}{$address_supplier->address2}<br/>{/if}
 			{$address_supplier->postcode} {$address_supplier->city}<br/>

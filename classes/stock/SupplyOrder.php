@@ -41,6 +41,7 @@ class SupplyOrderCore extends ObjectModel
 
     /**
      * @var string Supplier Name
+     * @deprecated Kept only for database compatibility. Resolve the supplier name via id_supplier.
      */
     public $supplier_name;
 
@@ -132,6 +133,7 @@ class SupplyOrderCore extends ObjectModel
         'primary' => 'id_supply_order',
         'fields'  => [
             'id_supplier'            => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true],
+            // Deprecated: the column is still NOT NULL and therefore remains part of the persistence model.
             'supplier_name'          => ['type' => self::TYPE_STRING, 'validate' => 'isCatalogName', 'size' => 64, 'dbNullable' => false],
             'id_lang'                => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true],
             'id_warehouse'           => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true],

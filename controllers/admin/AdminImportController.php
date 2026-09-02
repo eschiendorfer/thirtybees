@@ -4829,6 +4829,7 @@ class AdminImportControllerCore extends AdminController
         if (empty($error)) {
             // adds parameters
             $info['id_ref_currency'] = (int) Currency::getDefaultCurrency()->id;
+            // Deprecated compatibility column: supplier names must be resolved via id_supplier when read.
             $info['supplier_name'] = pSQL(Supplier::getNameById($idSupplier));
             if ($supplyOrder->id > 0) {
                 $info['id_supply_order_state'] = (int) $supplyOrder->id_supply_order_state;

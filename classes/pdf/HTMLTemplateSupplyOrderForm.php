@@ -102,11 +102,18 @@ class HTMLTemplateSupplyOrderFormCore extends HTMLTemplate
 
         $taxOrderSummary = $this->getTaxOrderSummary();
 
+        // Always use the canonical supplier record. supplier_name on SupplyOrder is deprecated.
+        $supplierName = Supplier::getNameById((int) $this->supply_order->id_supplier);
+        if (!$supplierName) {
+            $supplierName = sprintf(static::l('Supplier #%d'), (int) $this->supply_order->id_supplier);
+        }
+
         $this->smarty->assign(
             [
                 'warehouse'            => $this->warehouse,
                 'address_warehouse'    => $this->address_warehouse,
                 'address_supplier'     => $this->address_supplier,
+                'supplier_name'        => $supplierName,
                 'supply_order'         => $this->supply_order,
                 'supply_order_details' => $supplyOrderDetails,
                 'tax_order_summary'    => $taxOrderSummary,
