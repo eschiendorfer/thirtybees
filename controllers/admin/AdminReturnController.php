@@ -108,6 +108,14 @@ class AdminReturnControllerCore extends AdminController
                         'size'  => 6,
                         'type'  => 'textLang',
                     ],
+                    OrderReturn::CONFIG_RETURN_ADDRESS => [
+                        'title' => $this->l('Return address'),
+                        'desc'  => $this->l('This address is shown to customers in the return instructions and on the return slip.'),
+                        'type'  => 'textarea',
+                        'rows'  => 4,
+                        'cols'  => 50,
+                        'defaultValue' => OrderReturn::DEFAULT_RETURN_ADDRESS,
+                    ],
                 ],
                 'submit' => ['title' => $this->l('Save')],
             ],
@@ -117,6 +125,57 @@ class AdminReturnControllerCore extends AdminController
 
         $this->_where = Shop::addSqlRestriction(false, 'o');
         $this->_use_found_rows = false;
+    }
+
+    public function initPageHeaderToolbar()
+    {
+        parent::initPageHeaderToolbar();
+
+        if (Tools::isSubmit('showReturnSettings')) {
+            $this->page_header_toolbar_btn['back_to_returns'] = [
+                'href' => $this->context->link->getAdminLink('AdminReturn'),
+                'desc' => $this->l('Back to returns'),
+                'icon' => 'process-icon-back',
+            ];
+        } else {
+            if (Tools::getIntValue('id_order_return') > 0 && Tools::isSubmit('updateorder_return')) {
+                $this->page_header_toolbar_btn['back_to_customer_service'] = [
+                    'href' => $this->context->link->getAdminLink('AdminCustomerThreads'),
+                    'desc' => $this->l('Back to customer service'),
+                    'icon' => 'process-icon-back',
+                ];
+            }
+            $this->page_header_toolbar_btn['settings'] = [
+                'href' => $this->context->link->getAdminLink('AdminReturn', true, ['showReturnSettings' => 1]),
+                'desc' => $this->l('Settings'),
+                'icon' => 'process-icon-cogs',
+            ];
+        }
+    }
+
+    public function renderList()
+    {
+        return Tools::isSubmit('showReturnSettings') ? '' : parent::renderList();
+    }
+
+    public function renderOptions()
+    {
+        return Tools::isSubmit('showReturnSettings') ? parent::renderOptions() : '';
+    }
+
+    /**
+     * @throws PrestaShopException
+     */
+    public function setMedia()
+    {
+        parent::setMedia();
+
+        if (Tools::getIntValue('id_order_return') > 0 && Tools::isSubmit('updateorder_return')) {
+            $themeBaseUri = __PS_BASE_URI__.$this->admin_webpath.'/themes/'.$this->bo_theme;
+            $this->addJS(_PS_MODULE_DIR_.'tb_framework/views/js/components/file_upload.js');
+            $this->addCSS($themeBaseUri.'/css/customer_thread_workspace.css');
+            $this->addJS($themeBaseUri.'/js/customer_thread_workspace.js');
+        }
     }
 
     /**
@@ -230,8 +289,26 @@ class AdminReturnControllerCore extends AdminController
         // Prepare customer explanation for display
         $this->object->question = '<span class="normal-text">'.nl2br($this->object->question).'</span>';
 
+        $customer = new Customer((int)$this->object->id_customer);
+        $workspaceProvider = new CustomerThreadWorkspaceDataProvider($this->context);
+        $conversation = $workspaceProvider->getEntityConversation(
+            (int)\CoreExtension\EntityTypeEnum::ORDER_RETURN_VALUE,
+            (int)$this->object->id,
+            Validate::isLoadedObject($customer) ? $customer : null,
+            Validate::isLoadedObject($order) ? $order : null,
+            Validate::isLoadedObject($customer) && (int)$customer->id_lang > 0
+                ? (int)$customer->id_lang
+                : (int)$this->context->language->id,
+            sprintf(
+                $this->l('Up to %1$d files and %2$d MB in total.'),
+                CustomerMessageAttachment::getMaximumAttachmentCount(),
+                CustomerMessageAttachment::getMaximumEmailTotalSizeMb()
+            )
+        );
+        $templateDirectory = rtrim((string)$this->context->smarty->getTemplateDir(0), '/\\').DIRECTORY_SEPARATOR;
+
         $this->tpl_form_vars = [
-            'customer'               => new Customer($this->object->id_customer),
+            'customer'               => $customer,
             'url_customer'           => $this->context->link->getAdminLink('AdminCustomers', true, [
                 'id_customer' => (int)$this->object->id_customer,
                 'viewcustomer' => 1,
@@ -248,6 +325,11 @@ class AdminReturnControllerCore extends AdminController
             'quantityDisplayed'      => $quantityDisplayed,
             'id_order_return'        => $this->object->id,
             'state_order_return'     => $this->object->state,
+            'thread'                 => $conversation['thread'],
+            'messages'               => $conversation['messages'],
+            'first_message'          => $conversation['first_message'],
+            'message_form'           => $conversation['message_form'],
+            'conversation_template'  => $templateDirectory.'controllers'.DIRECTORY_SEPARATOR.'customer_threads'.DIRECTORY_SEPARATOR.'helpers'.DIRECTORY_SEPARATOR.'view'.DIRECTORY_SEPARATOR.'conversation_panel.tpl',
         ];
 
         return parent::renderForm();
@@ -319,39 +401,17 @@ class AdminReturnControllerCore extends AdminController
                 if (($idOrderReturn = Tools::getIntValue('id_order_return')) && Validate::isUnsignedId($idOrderReturn)) {
                     $orderReturn = new OrderReturn($idOrderReturn);
                     $order = new Order($orderReturn->id_order);
-                    $customer = new Customer($orderReturn->id_customer);
                     $newState = Tools::getIntValue('state');
+                    $oldState = (int)$orderReturn->state;
                     $quantityTargets = $this->collectReturnQuantityTargets($orderReturn);
                     if (count($this->errors)) {
                         return;
                     }
 
                     $orderReturn->state = $newState;
-                    if ($orderReturn->save() && $this->applyReturnQuantityTargets($orderReturn, $quantityTargets)) {
-                        $orderReturnState = new OrderReturnState($orderReturn->state);
-
-                        $vars = [
-                            '{lastname}'           => $customer->lastname,
-                            '{firstname}'          => $customer->firstname,
-                            '{id_order_return}'    => $idOrderReturn,
-                            '{state_order_return}' => ($orderReturnState->name[(int)$order->id_lang] ?? $orderReturnState->name[(int)Configuration::get('PS_LANG_DEFAULT')]),
-                        ];
-                        if ((int)$orderReturnState->id === OrderReturn::STATE_RETURN_COMPLETED) {
-                            Mail::Send(
-                                (int) $order->id_lang,
-                                'order_return_state',
-                                Mail::l('Your order return status has changed', $order->id_lang),
-                                $vars,
-                                $customer->email,
-                                $customer->firstname.' '.$customer->lastname,
-                                null,
-                                null,
-                                null,
-                                null,
-                                _PS_MAIL_DIR_,
-                                false,
-                                (int) $order->id_shop
-                            );
+                    if ($this->applyReturnQuantityTargets($orderReturn, $quantityTargets) && $orderReturn->save()) {
+                        if ($oldState !== $newState && !(bool)$orderReturn->migrated) {
+                            $this->notifyReturnStatusChange($orderReturn, $order, $newState);
                         }
 
                         if (Tools::isSubmit('submitAddorder_returnAndStay')) {
@@ -368,6 +428,103 @@ class AdminReturnControllerCore extends AdminController
             }
         }
         parent::postProcess();
+    }
+
+    private function notifyReturnStatusChange(OrderReturn $orderReturn, Order $order, int $newState): void
+    {
+        if ($newState === OrderReturn::STATE_PACKAGE_RECEIVED) {
+            $eventKey = 'order_return_package_received';
+            $message = sprintf(
+                $this->l('Your return for order %s has arrived at our warehouse.'),
+                (string)$order->reference
+            );
+        } elseif ($newState === OrderReturn::STATE_RETURN_COMPLETED) {
+            $eventKey = 'order_return_completed';
+            $message = $this->getReturnCompletedNotificationMessage($orderReturn, $order);
+        } else {
+            return;
+        }
+
+        (new CustomerServiceNotificationService())->notify(
+            (int)$order->id_customer,
+            $eventKey,
+            'order_return:'.(int)$orderReturn->id.':'.$eventKey,
+            $message,
+            (int)\CoreExtension\EntityTypeEnum::ORDER_RETURN_VALUE,
+            (int)$orderReturn->id,
+            $this->context->link->getModuleLink('genzo_crm', 'customer_service', [
+                'view_case' => 1,
+                'case_entity_type' => (int)\CoreExtension\EntityTypeEnum::ORDER_RETURN_VALUE,
+                'case_id' => (int)$orderReturn->id,
+            ])
+        );
+    }
+
+    private function getReturnCompletedNotificationMessage(OrderReturn $orderReturn, Order $order): string
+    {
+        $slipRows = Db::readOnly()->getArray(
+            (new DbQuery())
+                ->select('`id_order_slip`')
+                ->from('order_slip')
+                ->where('`reason_entity_type` = '.(int)RefundPolicy::REASON_ORDER_RETURN)
+                ->where('`reason_id_entity` = '.(int)$orderReturn->id)
+                ->orderBy('`id_order_slip` ASC')
+        );
+        if (!$slipRows) {
+            return sprintf(
+                $this->l('Your return for order %s has been completed.'),
+                (string)$order->reference
+            );
+        }
+
+        $idsOrderSlip = array_map('intval', array_column($slipRows, 'id_order_slip'));
+        $creditTotal = 0.0;
+        foreach ($idsOrderSlip as $idOrderSlip) {
+            $orderSlip = new OrderSlip($idOrderSlip);
+            if (Validate::isLoadedObject($orderSlip)) {
+                $creditTotal += $orderSlip->getRefundTotalTaxIncl();
+            }
+        }
+
+        $paymentRows = Db::readOnly()->getArray(
+            (new DbQuery())
+                ->select('`payment_method`, `amount`')
+                ->from('order_payment')
+                ->where('`id_order_slip` IN ('.implode(',', $idsOrderSlip).')')
+                ->where('`status` = \''.pSQL(OrderPayment::STATUS_DONE).'\'')
+                ->orderBy('`id_order_payment` ASC')
+        );
+        $refundTotal = 0.0;
+        $paymentMethods = [];
+        foreach ($paymentRows ?: [] as $paymentRow) {
+            $refundTotal += abs((float)$paymentRow['amount']);
+            $paymentMethod = trim((string)$paymentRow['payment_method']);
+            if ($paymentMethod !== '') {
+                $paymentMethods[$paymentMethod] = true;
+            }
+        }
+
+        if ($refundTotal > 0.0) {
+            return sprintf(
+                $this->l('Your return for order %1$s has been completed. We refunded %2$s via %3$s.'),
+                (string)$order->reference,
+                Tools::displayPrice(Tools::roundPrice($refundTotal), (int)$order->id_currency),
+                implode(' + ', array_keys($paymentMethods)) ?: (string)$order->payment
+            );
+        }
+
+        if ($creditTotal > 0.0) {
+            return sprintf(
+                $this->l('Your return for order %1$s has been completed. A credit slip of %2$s has been created.'),
+                (string)$order->reference,
+                Tools::displayPrice(Tools::roundPrice($creditTotal), (int)$order->id_currency)
+            );
+        }
+
+        return sprintf(
+            $this->l('Your return for order %s has been completed.'),
+            (string)$order->reference
+        );
     }
 
     protected function collectReturnQuantityTargets(OrderReturn $orderReturn): array

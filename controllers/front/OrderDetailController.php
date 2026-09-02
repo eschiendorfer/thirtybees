@@ -110,18 +110,10 @@ class OrderDetailControllerCore extends FrontController
                 Product::addCustomizationPrice($products, $customizedDatas);
 
                 OrderReturn::addReturnedQuantity($products, $order->id);
-                if (class_exists('\\CrmModule\\CustomerServiceOrderService')) {
-                    $customerServiceOrderService = new \CrmModule\CustomerServiceOrderService($this->context);
+                if (class_exists('\\CrmModule\\OrderDetailExtension')) {
                     foreach ($products as &$product) {
-                        $orderDetail = new OrderDetail((int)$product['id_order_detail']);
-                        $product['returnable_quantity'] = Validate::isLoadedObject($orderDetail)
-                            ? $customerServiceOrderService->getReturnableQuantity($order, $orderDetail)
-                            : 0;
-                        $product['serviceable_quantity'] = Validate::isLoadedObject($orderDetail)
-                            ? $customerServiceOrderService->getServiceableQuantity($order, $orderDetail)
-                            : 0;
                         $orderDetailExtension = new \CrmModule\OrderDetailExtension((int)$product['id_order_detail']);
-                        $product['has_been_shipped'] = (int)$orderDetailExtension->shipping_quantity > 0;
+                        $product['shipping_quantity'] = max(0, (int)$orderDetailExtension->shipping_quantity);
                     }
                     unset($product);
                 }
@@ -139,27 +131,9 @@ class OrderDetailControllerCore extends FrontController
                 if ($orderPaymentMethodsText === '' && (string)$order->payment !== '') {
                     $orderPaymentMethodsText = (string)$order->payment;
                 }
-                $customerMessages = CustomerMessage::getMessagesByEntity(
-                    \CoreExtension\EntityTypeEnum::ORDER_VALUE,
-                    (int)$order->id,
-                    true
-                );
-                foreach ($customerMessages as &$customerMessage) {
-                    $customerMessage['message_html'] = CustomerMessage::renderContent(
-                        (string) $customerMessage['message']
-                    );
-                    foreach ($customerMessage['attachments'] as &$attachment) {
-                        $attachment['download_url'] = $this->context->link->getPageLink(
-                            'contact',
-                            true,
-                            null,
-                            ['downloadCustomerMessageAttachment' => (int) $attachment['id_customer_message_attachment']]
-                        );
-                    }
-                    unset($attachment);
-                }
-                unset($customerMessage);
-
+                $customerServiceItems = class_exists('\\CrmModule\\CustomerServiceOverviewProvider')
+                    ? (new \CrmModule\CustomerServiceOverviewProvider())->getOrderItems((int)$order->id)
+                    : [];
                 $this->context->smarty->assign(
                     [
                         'shop_name'                     => strval(Configuration::get('PS_SHOP_NAME')),
@@ -168,7 +142,8 @@ class OrderDetailControllerCore extends FrontController
                         'currency'                      => new Currency($order->id_currency),
                         'order_state'                   => (int) $idOrderState,
                         'invoiceAllowed'                => (int) Configuration::get('PS_INVOICE'),
-                        'invoice'                       => (OrderState::invoiceAvailable($idOrderState) && count($order->getInvoicesCollection())),
+                        // An existing invoice remains a valid purchase document after later status changes or cancellations.
+                        'invoice'                       => count($order->getInvoicesCollection()) > 0,
                         'logable'                       => (bool) $orderStatus->logable,
                         'order_history'                 => $order->getHistory($this->context->language->id, false, true),
                         'products'                      => $products,
@@ -183,7 +158,6 @@ class OrderDetailControllerCore extends FrontController
                         'deliveryAddressFormatedValues' => $deliveryAddressFormatedValues,
                         'deliveryState'                 => (Validate::isLoadedObject($addressDelivery) && $addressDelivery->id_state) ? new State($addressDelivery->id_state) : false,
                         'is_guest'                      => false,
-                        'messages'                      => $customerMessages,
                         'CUSTOMIZE_FILE'                => Product::CUSTOMIZE_FILE,
                         'CUSTOMIZE_TEXTFIELD'           => Product::CUSTOMIZE_TEXTFIELD,
                         'isRecyclable'                  => Configuration::get('PS_RECYCLABLE_PACK'),
@@ -196,6 +170,7 @@ class OrderDetailControllerCore extends FrontController
                         'store_credit_used_tax_incl'    => $storeCreditUsedTaxIncl,
                         'outstanding_amount_tax_incl'   => $outstandingAmountTaxIncl,
                         'order_payment_methods_text'    => $orderPaymentMethodsText,
+                        'customer_service_items'        => $customerServiceItems,
                     ]
                 );
 
@@ -232,23 +207,4 @@ class OrderDetailControllerCore extends FrontController
         }
     }
 
-    /**
-     * Resolve recipient email address for order contact form
-     *
-     * @return string
-     * @throws PrestaShopDatabaseException
-     * @throws PrestaShopException
-     */
-    protected static function getRecipientEmail()
-    {
-        $contactId = (int)Configuration::get('PS_MAIL_EMAIL_MESSAGE');
-        if ($contactId) {
-            $contact = new Contact($contactId);
-            if (Validate::isLoadedObject($contact)) {
-                return $contact->email;
-            }
-        }
-
-        return Configuration::get('PS_SHOP_EMAIL');
-    }
 }

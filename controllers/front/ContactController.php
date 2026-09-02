@@ -173,10 +173,17 @@ class ContactControllerCore extends FrontController
         $assistantOrders = [];
         $assistantProducts = [];
         $selectedOrder = null;
+        if ($isLogged && $flow === 'order' && $selectedOrderId > 0) {
+            $selectedOrder = (new \CrmModule\CustomerServiceOrderService($this->context))
+                ->getOwnedOrderSummary($selectedOrderId, (int)$this->context->customer->id);
+            if (!$selectedOrder) {
+                $selectedOrderId = 0;
+            }
+        }
         if (
             $isLogged
             && $flow === 'order'
-            && in_array($orderIntent, ['service_case', 'return', 'release_date', 'general'], true)
+            && in_array($orderIntent, ['service_case', 'return', 'release_date', 'cancellation', 'general'], true)
         ) {
             $orderService = new \CrmModule\CustomerServiceOrderService($this->context);
             $idCustomer = (int) $this->context->customer->id;
@@ -191,11 +198,11 @@ class ContactControllerCore extends FrontController
                 case 'release_date':
                     $assistantProducts = $orderService->getReleaseProducts($idCustomer);
                     break;
+                case 'cancellation':
+                    $assistantProducts = $orderService->getCancellationProducts($idCustomer);
+                    break;
                 case 'general':
                     $assistantOrders = $orderService->getRecentOrders($idCustomer);
-                    if ($selectedOrderId > 0) {
-                        $selectedOrder = $orderService->getOwnedOrderSummary($selectedOrderId, $idCustomer);
-                    }
                     break;
             }
         }
@@ -226,7 +233,7 @@ class ContactControllerCore extends FrontController
                 'message',
                 (string)Tools::getValue('message'),
                 (string)Tools::getValue('message_media'),
-                $customerServiceModule->l('Send message', 'customer_threads'),
+                $customerServiceModule->l('Send', 'customer_threads'),
                 'submitMessage'
             );
         }
@@ -238,8 +245,8 @@ class ContactControllerCore extends FrontController
                 'contact',
                 true,
                 null,
-                $selectedOrderId > 0 && $orderIntent === 'general'
-                    ? ['flow' => 'order', 'intent' => $orderIntent]
+                $selectedOrderId > 0
+                    ? ['flow' => 'order', 'id_order' => $selectedOrderId]
                     : ['flow' => 'order']
             );
         } elseif ($flow === 'business' && $businessType !== '') {
@@ -271,36 +278,17 @@ class ContactControllerCore extends FrontController
                 'assistantOrders' => $assistantOrders,
                 'assistantProducts' => $assistantProducts,
                 'selectedOrder' => $selectedOrder,
+                'selectedOrderId' => $selectedOrderId,
                 'isLogged' => $isLogged,
                 'assistantBackUrl' => $assistantBackUrl,
                 'shopPhone' => $shopPhone,
                 'shopPhoneLink' => preg_replace('/[^0-9+]/', '', $shopPhone),
-                'shopEmail' => (string) Configuration::get('PS_SHOP_EMAIL'),
+                'shopEmail' => CustomerServiceReplyService::getSenderEmail((int)$this->context->shop->id),
                 'productWishTypes' => array_map(static function ($label) use ($customerServiceModule) {
                     return $customerServiceModule->l($label, 'customer_threads');
                 }, \CrmModule\ProductWish::getTypeLabels()),
             ]
         );
-
-        if (($idCustomerThread = Tools::getIntValue('id_customer_thread')) && $token = Tools::getValue('token')) {
-            $customerThread = Db::readOnly()->getRow(
-                (new DbQuery())
-                    ->select('cm.*')
-                    ->from('customer_thread', 'cm')
-                    ->where('cm.`id_customer_thread` = '.(int) $idCustomerThread)
-                    ->where('cm.`id_shop` = '.(int) $this->context->shop->id)
-                    ->where('cm.`token` = \''.pSQL($token).'\'')
-            );
-            if ($customerThread) {
-                $order = (int)$customerThread['entity_type'] === \CoreExtension\EntityTypeEnum::ORDER_VALUE
-                    ? new Order((int)$customerThread['id_entity'])
-                    : null;
-                if (Validate::isLoadedObject($order)) {
-                    $customerThread['reference'] = $order->getUniqReference();
-                }
-                $this->context->smarty->assign('customerThread', $customerThread);
-            }
-        }
 
         $this->setTemplate(_PS_THEME_DIR_.'contact-form.tpl');
     }

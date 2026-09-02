@@ -256,3 +256,14 @@
 		{$smarty.block.parent}
 	{/if}
 {/block}
+
+{block name="after"}
+	{if !empty($conversation_template)}
+		<div class="customer-thread-workspace"
+			 data-customer-thread-workspace
+			 data-auto-scroll="0"
+			 data-thread-id="{if $thread}{$thread->id|intval}{else}0{/if}">
+			{include file=$conversation_template}
+		</div>
+	{/if}
+{/block}

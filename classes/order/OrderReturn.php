@@ -34,11 +34,14 @@
  */
 class OrderReturnCore extends ObjectModel implements CustomerThreadContextSourceInterfaceCore
 {
+    public const CONFIG_RETURN_ADDRESS = 'PS_ORDER_RETURN_ADDRESS';
+    public const DEFAULT_RETURN_ADDRESS = "Spielezar AG\nBiberiststrasse 4\n4563 Gerlafingen";
     public const STATE_WAITING_FOR_CONFIRMATION = 1;
     public const STATE_WAITING_FOR_PACKAGE = 2;
     public const STATE_PACKAGE_RECEIVED = 3;
     public const STATE_RETURN_DENIED = 4;
     public const STATE_RETURN_COMPLETED = 5;
+    public const STATE_RETURN_EXPIRED = 6;
 
     /**
      * @var array Object model definition
@@ -78,6 +81,13 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
     public $date_add;
     /** @var string Object last modification date */
     public $date_upd;
+
+    public static function getReturnAddress(): string
+    {
+        $address = trim((string)Configuration::get(self::CONFIG_RETURN_ADDRESS));
+
+        return $address !== '' ? $address : self::DEFAULT_RETURN_ADDRESS;
+    }
 
     /**
      * @return array<string, mixed>
@@ -218,7 +228,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
 
     public static function getWaitingReturnForOrder(int $idOrder): ?self
     {
-        $idOrderReturn = (int)Db::readOnly()->getValue(
+        $idOrderReturn = (int)Db::getInstance()->getValue(
             (new DbQuery())
                 ->select('`id_order_return`')
                 ->from('order_return')

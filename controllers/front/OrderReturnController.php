@@ -80,6 +80,8 @@ class OrderReturnControllerCore extends FrontController
                             'products'               => OrderReturn::getOrdersReturnProducts((int) $orderReturn->id, $order),
                             'returnedCustomizations' => OrderReturn::getReturnedCustomizedProducts((int) $orderReturn->id_order),
                             'customizedDatas'        => Product::getAllCustomizedDatas((int) $order->id_cart),
+                            'return_address'         => OrderReturn::getReturnAddress(),
+                            'saved_order_return'     => Tools::getIntValue('savedOrderReturn') === 1,
                         ]
                     );
                 } else {

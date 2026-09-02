@@ -7,8 +7,6 @@
  */
 class AdminOrderServiceCasesControllerCore extends AdminController
 {
-    private const REASON_ENTITY_TYPE_ORDER_SERVICE_CASE = 73;
-
     /**
      * AdminOrderServiceCasesControllerCore constructor.
      *
@@ -91,8 +89,25 @@ class AdminOrderServiceCasesControllerCore extends AdminController
         parent::__construct();
 
         $this->_where = Shop::addSqlRestriction(false, 'o');
-        $this->addRowAction('edit');
         $this->addRowAction('view');
+    }
+
+    /**
+     * @return void
+     *
+     * @throws PrestaShopException
+     */
+    public function setMedia()
+    {
+        parent::setMedia();
+
+        if (Tools::getIntValue('id_order_service_case') > 0 && Tools::isSubmit('vieworder_service_case')) {
+            $themeBaseUri = __PS_BASE_URI__.$this->admin_webpath.'/themes/'.$this->bo_theme;
+            $this->addJS(_PS_MODULE_DIR_.'tb_framework/views/js/components/file_upload.js');
+            $this->addCSS($themeBaseUri.'/css/customer_thread_workspace.css');
+            $this->addJS($themeBaseUri.'/js/customer_thread_workspace.js');
+            $this->addJS($themeBaseUri.'/js/customer_service_work_items.js');
+        }
     }
 
     /**
@@ -108,99 +123,66 @@ class AdminOrderServiceCasesControllerCore extends AdminController
     }
 
     /**
-     * @return string
-     *
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
-     * @throws SmartyException
      */
-    public function renderForm()
+    public function initPageHeaderToolbar()
     {
-        if (!Validate::isLoadedObject($this->object)) {
-            return '';
+        $idOrderServiceCase = Tools::getIntValue('id_order_service_case');
+        if ($idOrderServiceCase > 0 && Tools::isSubmit('vieworder_service_case')) {
+            $summary = $this->getServiceCaseSummary($idOrderServiceCase);
+            if ($summary) {
+                $title = [];
+                if (!empty($summary['customer'])) {
+                    $title[] = (string)$summary['customer'];
+                }
+                $title[] = $this->l('Service case').' #'.$idOrderServiceCase;
+                if (!empty($summary['reference'])) {
+                    $title[] = $this->l('Order').' '.(string)$summary['reference'];
+                }
+                $this->page_header_toolbar_title = implode(' – ', $title);
+            }
+
+            $this->page_header_toolbar_btn['back_to_customer_service'] = [
+                'href' => $this->context->link->getAdminLink('AdminCustomerThreads'),
+                'desc' => $this->l('Back to customer service'),
+                'icon' => 'process-icon-back',
+            ];
         }
 
-        $this->fields_form = [
-            'legend' => [
-                'title' => $this->l('Order service case'),
-                'icon' => 'icon-wrench',
-            ],
-            'input' => [
-                [
-                    'type' => 'hidden',
-                    'name' => 'id_order_service_case',
-                ],
-                [
-                    'type' => 'select',
-                    'label' => $this->l('Status'),
-                    'name' => 'status',
-                    'required' => true,
-                    'options' => [
-                        'query' => $this->getStatusOptions(),
-                        'id' => 'id',
-                        'name' => 'name',
-                    ],
-                ],
-                [
-                    'type' => 'select',
-                    'label' => $this->l('Case type'),
-                    'name' => 'case_type',
-                    'required' => true,
-                    'options' => [
-                        'query' => $this->getCaseTypeOptions(),
-                        'id' => 'id',
-                        'name' => 'name',
-                    ],
-                ],
-                [
-                    'type' => 'select',
-                    'label' => $this->l('Requested solution'),
-                    'name' => 'requested_solution',
-                    'required' => false,
-                    'options' => [
-                        'query' => $this->getRequestedSolutionOptions(),
-                        'id' => 'id',
-                        'name' => 'name',
-                    ],
-                ],
-                [
-                    'type' => 'text',
-                    'label' => $this->l('Replacement order ID'),
-                    'name' => 'id_replacement_order',
-                    'required' => false,
-                    'class' => 'fixed-width-sm',
-                ],
-            ],
-            'submit' => [
-                'title' => $this->l('Save'),
-            ],
-            'buttons' => [
-                'save-and-stay' => [
-                    'title' => $this->l('Save and stay'),
-                    'name' => 'submitAdd'.$this->table.'AndStay',
-                    'type' => 'submit',
-                    'class' => 'btn btn-default pull-right',
-                    'icon' => 'process-icon-save',
-                ],
-            ],
-        ];
-
-        return parent::renderForm();
+        parent::initPageHeaderToolbar();
+        $this->context->smarty->clearAssign('help_link');
     }
 
     /**
-     * @return void
-     *
-     * @throws PrestaShopException
+     * Update the service-case status from its workspace.
      */
-    public function postProcess()
+    public function ajaxProcessUpdateServiceCaseSetting()
     {
-        if (Tools::isSubmit('submitAdd'.$this->table) || Tools::isSubmit('submitAdd'.$this->table.'AndStay')) {
-            $this->processServiceCaseUpdate();
-            return;
+        if (!$this->hasEditPermission()) {
+            $this->respondServiceCaseSettingJson(false, $this->l('You do not have permission to edit this service case.'));
         }
 
-        parent::postProcess();
+        $serviceCase = new OrderServiceCase(Tools::getIntValue('id_order_service_case'));
+        if (!Validate::isLoadedObject($serviceCase)) {
+            $this->respondServiceCaseSettingJson(false, $this->l('The service case could not be found.'));
+        }
+
+        if ((string)Tools::getValue('field') !== 'status') {
+            $this->respondServiceCaseSettingJson(false, $this->l('The selected setting is invalid.'));
+        }
+
+        $status = (string)Tools::getValue('value');
+        if (!array_key_exists($status, $this->getStatusList())) {
+            $this->respondServiceCaseSettingJson(false, $this->l('The selected status is invalid.'));
+        }
+
+        $serviceCase->status = $status;
+        $updated = $serviceCase->update(true);
+        $this->respondServiceCaseSettingJson(
+            $updated,
+            $updated ? $this->l('The service case has been updated.') : $this->l('The service case could not be updated.')
+        );
     }
 
     /**
@@ -217,33 +199,26 @@ class AdminOrderServiceCasesControllerCore extends AdminController
         }
 
         $summary = $this->getServiceCaseSummary((int)$this->object->id);
+        if (!$summary) {
+            return '';
+        }
+
         $details = $this->getServiceCaseDetails((int)$this->object->id);
         $orderSlips = $this->getServiceCaseOrderSlips((int)$this->object->id);
-        $currency = $this->context->currency;
 
-        if ($summary) {
-            if ((int)$summary['id_currency'] > 0) {
-                $orderCurrency = new Currency((int)$summary['id_currency']);
-                if (Validate::isLoadedObject($orderCurrency)) {
-                    $currency = $orderCurrency;
-                }
-            }
-
-            $summary['order_url'] = $this->context->link->getAdminLink('AdminOrders', true, [
+        $summary['order_url'] = $this->context->link->getAdminLink('AdminOrders', true, [
+            'vieworder' => true,
+            'id_order' => (int)$summary['id_order'],
+        ]);
+        $summary['customer_url'] = $this->context->link->getAdminLink('AdminCustomers', true, [
+            'viewcustomer' => true,
+            'id_customer' => (int)$summary['id_customer'],
+        ]);
+        if ((int)$summary['id_replacement_order'] > 0) {
+            $summary['replacement_order_url'] = $this->context->link->getAdminLink('AdminOrders', true, [
                 'vieworder' => true,
-                'id_order' => (int)$summary['id_order'],
+                'id_order' => (int)$summary['id_replacement_order'],
             ]);
-            $summary['customer_url'] = $this->context->link->getAdminLink('AdminCustomers', true, [
-                'viewcustomer' => true,
-                'id_customer' => (int)$summary['id_customer'],
-            ]);
-
-            if ((int)$summary['id_replacement_order'] > 0) {
-                $summary['replacement_order_url'] = $this->context->link->getAdminLink('AdminOrders', true, [
-                    'vieworder' => true,
-                    'id_order' => (int)$summary['id_replacement_order'],
-                ]);
-            }
         }
 
         foreach ($orderSlips as &$orderSlip) {
@@ -257,16 +232,29 @@ class AdminOrderServiceCasesControllerCore extends AdminController
         unset($orderSlip);
 
         $requestedSolution = (int)$this->object->requested_solution;
+        $conversation = $this->getConversationWorkspace($summary);
+        $entityType = (int)\CoreExtension\EntityTypeEnum::ORDER_SERVICE_CASE_VALUE;
+        $templateDirectory = rtrim((string)$this->context->smarty->getTemplateDir(0), '/\\').DIRECTORY_SEPARATOR;
 
         $this->tpl_view_vars = [
             'order_service_case' => $this->object,
             'summary' => $summary,
             'details' => $details,
             'order_slips' => $orderSlips,
-            'status_label' => $this->getStatusLabel((string)$this->object->status),
+            'status_options' => $this->getStatusList(),
             'case_type_label' => $this->getCaseTypeLabel((int)$this->object->case_type),
             'requested_solution_label' => $this->getRequestedSolutionLabel($requestedSolution > 0 ? $requestedSolution : null),
-            'currency' => $currency,
+            'entity_type' => $entityType,
+            'assigned_employee_id' => EntityEmployeeAssignment::getEmployeeId($entityType, (int)$this->object->id),
+            'assignable_employees' => $this->getAssignableEmployeeOptions(),
+            'assignment_update_url' => $this->context->link->getAdminLink('AdminCustomerThreads'),
+            'service_case_setting_url' => $this->context->link->getAdminLink('AdminOrderServiceCases'),
+            'thread_setting_url' => $this->context->link->getAdminLink('AdminCustomerThreads'),
+            'thread' => $conversation['thread'],
+            'messages' => $conversation['messages'],
+            'first_message' => $conversation['first_message'],
+            'message_form' => $conversation['message_form'],
+            'conversation_template' => $templateDirectory.'controllers'.DIRECTORY_SEPARATOR.'customer_threads'.DIRECTORY_SEPARATOR.'helpers'.DIRECTORY_SEPARATOR.'view'.DIRECTORY_SEPARATOR.'conversation_panel.tpl',
         ];
 
         return parent::renderView();
@@ -331,22 +319,6 @@ class AdminOrderServiceCasesControllerCore extends AdminController
     /**
      * @return array
      */
-    private function getStatusOptions(): array
-    {
-        $options = [];
-        foreach ($this->getStatusList() as $id => $name) {
-            $options[] = [
-                'id' => $id,
-                'name' => $name,
-            ];
-        }
-
-        return $options;
-    }
-
-    /**
-     * @return array
-     */
     private function getCaseTypeList(): array
     {
         $labels = [];
@@ -365,22 +337,6 @@ class AdminOrderServiceCasesControllerCore extends AdminController
     private function getCaseTypeLabel(int $caseType): string
     {
         return $this->getCaseTypeList()[$caseType] ?? $this->l('Unknown');
-    }
-
-    /**
-     * @return array
-     */
-    private function getCaseTypeOptions(): array
-    {
-        $options = [];
-        foreach ($this->getCaseTypeList() as $id => $name) {
-            $options[] = [
-                'id' => $id,
-                'name' => $name,
-            ];
-        }
-
-        return $options;
     }
 
     /**
@@ -410,90 +366,51 @@ class AdminOrderServiceCasesControllerCore extends AdminController
         return $this->getRequestedSolutionList()[$requestedSolution] ?? $this->l('Unknown');
     }
 
-    /**
-     * @return array
-     */
-    private function getRequestedSolutionOptions(): array
+    /** @return array<int, string> */
+    private function getAssignableEmployeeOptions(): array
     {
-        $options = [
-            [
-                'id' => '',
-                'name' => '-',
-            ],
-        ];
-
-        foreach ($this->getRequestedSolutionList() as $id => $name) {
-            $options[] = [
-                'id' => $id,
-                'name' => $name,
-            ];
+        $options = [0 => $this->l('Unassigned')];
+        foreach (Employee::getEmployees(true) as $employee) {
+            $options[(int)$employee['id_employee']] = trim($employee['firstname'].' '.$employee['lastname']);
         }
 
         return $options;
     }
 
     /**
-     * @return void
+     * @param array<string, mixed> $summary
+     *
+     * @return array<string, mixed>
      *
      * @throws PrestaShopException
      */
-    private function processServiceCaseUpdate(): void
+    private function getConversationWorkspace(array $summary): array
     {
-        if (!$this->hasEditPermission()) {
-            $this->errors[] = Tools::displayError('You do not have permission to edit this.');
-            return;
-        }
+        $entityType = (int)\CoreExtension\EntityTypeEnum::ORDER_SERVICE_CASE_VALUE;
+        $idServiceCase = (int)$this->object->id;
+        $customer = new Customer((int)$summary['id_customer']);
+        $order = new Order((int)$summary['id_order']);
+        $provider = new CustomerThreadWorkspaceDataProvider($this->context);
+        $maximumCount = CustomerMessageAttachment::getMaximumAttachmentCount();
+        $maximumEmailSizeMb = CustomerMessageAttachment::getMaximumEmailTotalSizeMb();
 
-        $idOrderServiceCase = Tools::getIntValue('id_order_service_case');
-        $serviceCase = new OrderServiceCase($idOrderServiceCase);
-        if (!Validate::isLoadedObject($serviceCase)) {
-            $this->errors[] = Tools::displayError('The order service case is invalid.');
-            return;
-        }
+        return $provider->getEntityConversation(
+            $entityType,
+            $idServiceCase,
+            Validate::isLoadedObject($customer) ? $customer : null,
+            Validate::isLoadedObject($order) ? $order : null,
+            (int)$summary['id_lang'],
+            sprintf($this->l('Up to %1$d files and %2$d MB in total.'), $maximumCount, $maximumEmailSizeMb)
+        );
+    }
 
-        $status = (string)Tools::getValue('status');
-        if (!array_key_exists($status, $this->getStatusList())) {
-            $this->errors[] = Tools::displayError('The selected status is invalid.');
-            return;
-        }
-
-        $caseType = Tools::getIntValue('case_type');
-        if (!array_key_exists($caseType, $this->getCaseTypeList())) {
-            $this->errors[] = Tools::displayError('The selected case type is invalid.');
-            return;
-        }
-
-        $requestedSolution = (string)Tools::getValue('requested_solution', '');
-        $requestedSolutionId = $requestedSolution !== '' ? (int)$requestedSolution : null;
-        if ($requestedSolutionId !== null && !array_key_exists($requestedSolutionId, $this->getRequestedSolutionList())) {
-            $this->errors[] = Tools::displayError('The selected requested solution is invalid.');
-            return;
-        }
-
-        $idReplacementOrder = Tools::getIntValue('id_replacement_order');
-        if ($idReplacementOrder > 0) {
-            $replacementOrder = new Order($idReplacementOrder);
-            if (!Validate::isLoadedObject($replacementOrder)) {
-                $this->errors[] = Tools::displayError('The replacement order is invalid.');
-                return;
-            }
-        }
-
-        $serviceCase->status = $status;
-        $serviceCase->case_type = $caseType;
-        $serviceCase->requested_solution = $requestedSolutionId;
-        $serviceCase->id_replacement_order = $idReplacementOrder > 0 ? $idReplacementOrder : null;
-
-        if (!$serviceCase->update(true)) {
-            $this->errors[] = Tools::displayError('The order service case could not be updated.');
-            return;
-        }
-
-        if (Tools::isSubmit('submitAdd'.$this->table.'AndStay')) {
-            Tools::redirectAdmin(static::$currentIndex.'&conf=4&token='.$this->token.'&update'.$this->table.'&'.$this->identifier.'='.(int)$serviceCase->id);
-        }
-
-        Tools::redirectAdmin(static::$currentIndex.'&conf=4&token='.$this->token);
+    protected function respondServiceCaseSettingJson(bool $success, string $message)
+    {
+        header('Content-Type: application/json; charset=utf-8');
+        $this->ajaxDie(json_encode([
+            'success' => $success,
+            'text' => $message,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
 
     /**
@@ -508,11 +425,10 @@ class AdminOrderServiceCasesControllerCore extends AdminController
     {
         $row = Db::getInstance()->getRow(
             (new DbQuery())
-                ->select('o.`id_order`, o.`id_currency`, o.`reference`, c.`id_customer`, CONCAT(c.`firstname`, \' \', c.`lastname`) AS `customer`, CONCAT(e.`firstname`, \' \', e.`lastname`) AS `employee`, osc.`id_replacement_order`, ro.`reference` AS `replacement_reference`')
+                ->select('o.`id_order`, o.`id_lang`, o.`reference`, c.`id_customer`, CONCAT(c.`firstname`, \' \', c.`lastname`) AS `customer`, osc.`id_replacement_order`, ro.`reference` AS `replacement_reference`')
                 ->from('order_service_case', 'osc')
                 ->leftJoin('orders', 'o', 'o.`id_order` = osc.`id_order`')
                 ->leftJoin('customer', 'c', 'c.`id_customer` = o.`id_customer`')
-                ->leftJoin('employee', 'e', 'e.`id_employee` = osc.`id_employee`')
                 ->leftJoin('orders', 'ro', 'ro.`id_order` = osc.`id_replacement_order`')
                 ->where('osc.`id_order_service_case` = '.(int)$idOrderServiceCase)
         );
@@ -532,7 +448,7 @@ class AdminOrderServiceCasesControllerCore extends AdminController
     {
         return Db::getInstance()->getArray(
             (new DbQuery())
-                ->select('oscd.`id_order_detail`, od.`product_reference`, od.`product_name`, od.`product_quantity` AS `ordered_quantity`, oscd.`product_quantity` AS `service_case_quantity`')
+                ->select('od.`product_reference`, od.`product_name`, od.`product_quantity` AS `ordered_quantity`, oscd.`product_quantity` AS `service_case_quantity`')
                 ->from('order_service_case_detail', 'oscd')
                 ->leftJoin('order_detail', 'od', 'od.`id_order_detail` = oscd.`id_order_detail`')
                 ->where('oscd.`id_order_service_case` = '.(int)$idOrderServiceCase)
@@ -552,9 +468,9 @@ class AdminOrderServiceCasesControllerCore extends AdminController
     {
         return Db::getInstance()->getArray(
             (new DbQuery())
-                ->select('os.`id_order_slip`, os.`date_add`, os.`total_products_tax_incl`, os.`adjustment_fee_tax_incl`')
+                ->select('os.`id_order_slip`')
                 ->from('order_slip', 'os')
-                ->where('os.`reason_entity_type` = '.self::REASON_ENTITY_TYPE_ORDER_SERVICE_CASE)
+                ->where('os.`reason_entity_type` = '.(int)\CoreExtension\EntityTypeEnum::ORDER_SERVICE_CASE_VALUE)
                 ->where('os.`reason_id_entity` = '.(int)$idOrderServiceCase)
                 ->orderBy('os.`id_order_slip` ASC')
         );
