@@ -240,5 +240,9 @@ function tinySetup(config) {
     }
   };
 
+  tinyMCE.PluginManager.load(
+    'image',
+    final_path + '/js/tiny_mce/plugins/image/plugin.min.js?v=1788443358'
+  );
   tinyMCE.init(config);
 }
