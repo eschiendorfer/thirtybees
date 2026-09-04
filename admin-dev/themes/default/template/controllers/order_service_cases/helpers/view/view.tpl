@@ -44,8 +44,14 @@
 				<tbody>
 					{foreach from=$details item=detail}
 						<tr>
-							<td>{if $detail.product_reference}{$detail.product_reference|escape:'html':'UTF-8'}{else}<span class="text-muted">-</span>{/if}</td>
-							<td>{$detail.product_name|escape:'html':'UTF-8'}</td>
+							<td>
+								{if $detail.product_reference}
+									{if $detail.admin_product_url}<a href="{$detail.admin_product_url|escape:'html':'UTF-8'}">{$detail.product_reference|escape:'html':'UTF-8'}</a>{else}{$detail.product_reference|escape:'html':'UTF-8'}{/if}
+								{else}
+									<span class="text-muted">-</span>
+								{/if}
+							</td>
+							<td>{if $detail.product_url}<a href="{$detail.product_url|escape:'html':'UTF-8'}" target="_blank" rel="noopener noreferrer">{$detail.product_name|escape:'html':'UTF-8'}</a>{else}{$detail.product_name|escape:'html':'UTF-8'}{/if}</td>
 							<td class="text-right">{$detail.ordered_quantity|intval}</td>
 							<td class="text-right"><strong>{$detail.service_case_quantity|intval}</strong></td>
 						</tr>

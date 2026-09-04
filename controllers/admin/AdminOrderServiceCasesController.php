@@ -204,6 +204,19 @@ class AdminOrderServiceCasesControllerCore extends AdminController
         }
 
         $details = $this->getServiceCaseDetails((int)$this->object->id);
+        foreach ($details as &$detail) {
+            $idProduct = (int)$detail['id_product'];
+            $detail['admin_product_url'] = $idProduct > 0
+                ? $this->context->link->getAdminLink('AdminProducts', true, [
+                    'updateproduct' => true,
+                    'id_product' => $idProduct,
+                ])
+                : '';
+            $detail['product_url'] = $idProduct > 0 && !empty($detail['product_active'])
+                ? $this->context->link->getProductLink($idProduct)
+                : '';
+        }
+        unset($detail);
         $orderSlips = $this->getServiceCaseOrderSlips((int)$this->object->id);
 
         $summary['order_url'] = $this->context->link->getAdminLink('AdminOrders', true, [
@@ -448,9 +461,10 @@ class AdminOrderServiceCasesControllerCore extends AdminController
     {
         return Db::getInstance()->getArray(
             (new DbQuery())
-                ->select('od.`product_reference`, od.`product_name`, od.`product_quantity` AS `ordered_quantity`, oscd.`product_quantity` AS `service_case_quantity`')
+                ->select('od.`product_id` AS `id_product`, od.`product_reference`, od.`product_name`, od.`product_quantity` AS `ordered_quantity`, oscd.`product_quantity` AS `service_case_quantity`, IFNULL(ps.`active`, 0) AS `product_active`')
                 ->from('order_service_case_detail', 'oscd')
                 ->leftJoin('order_detail', 'od', 'od.`id_order_detail` = oscd.`id_order_detail`')
+                ->leftJoin('product_shop', 'ps', 'ps.`id_product` = od.`product_id` AND ps.`id_shop` = '.(int)$this->context->shop->id)
                 ->where('oscd.`id_order_service_case` = '.(int)$idOrderServiceCase)
                 ->orderBy('oscd.`id_order_service_case_detail` ASC')
         );
