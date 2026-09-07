@@ -47,20 +47,12 @@
 					<td>{$supply_order_last_update}</td>
 				</tr>
 				<tr>
-					<td>{l s='Delivery expected:'}</td>
-					<td>{$supply_order_expected}</td>
-				</tr>
-				<tr>
 					<td>{l s='Warehouse:'}</td>
 					<td>{$supply_order_warehouse}</td>
 				</tr>
 				<tr>
 					<td>{l s='Currency:'}</td>
 					<td>{$supply_order_currency->name}</td>
-				</tr>
-				<tr>
-					<td>{l s='Global discount rate:'}</td>
-					<td>{$supply_order_discount_rate} %</td>
 				</tr>
 			</table>
 		</div>
@@ -82,14 +74,6 @@
 					<tr>
 						<td>{l s='Total (tax excl.)'}</td>
 						<td>{$supply_order_total_te}</td>
-					</tr>
-					<tr>
-						<td>{l s='Discount'}</td>
-						<td>{$supply_order_discount_value_te}</td>
-					</tr>
-					<tr>
-						<td>{l s='Total with discount (tax excl.)'}</td>
-						<td>{$supply_order_total_with_discount_te}</td>
 					</tr>
 					<tr>
 						<td>{l s='Total Tax'}</td>

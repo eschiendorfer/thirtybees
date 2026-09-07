@@ -546,7 +546,6 @@ class AdminImportControllerCore extends AdminController
                     'id_supplier',
                     'id_warehouse',
                     'reference',
-                    'date_delivery_expected',
                 ];
                 // available fields
                 $this->available_fields = [
@@ -557,15 +556,12 @@ class AdminImportControllerCore extends AdminController
                     'id_warehouse'           => ['label' => $this->l('Warehouse ID *')],
                     'id_currency'            => ['label' => $this->l('Currency ID *')],
                     'reference'              => ['label' => $this->l('Supply Order Reference *')],
-                    'date_delivery_expected' => ['label' => $this->l('Delivery Date (Y-M-D)*')],
-                    'discount_rate'          => ['label' => $this->l('Discount rate')],
                     'is_template'            => ['label' => $this->l('Template')],
                 ];
                 // default values
                 static::$defaultValues = [
                     'id_lang'       => (int) Configuration::get('PS_LANG_DEFAULT'),
                     'id_currency'   => Currency::getDefaultCurrency()->id,
-                    'discount_rate' => '0',
                     'is_template'   => '0',
                 ];
                 break;
@@ -4792,8 +4788,6 @@ class AdminImportControllerCore extends AdminController
         $idWarehouse = (int) $info['id_warehouse'];
         $idCurrency = (int) $info['id_currency'];
         $reference = pSQL($info['reference']);
-        $dateDeliveryExpected = pSQL($info['date_delivery_expected']);
-        $discountRate = (float) $info['discount_rate'];
 
         $error = '';
         // checks parameters
@@ -4815,12 +4809,6 @@ class AdminImportControllerCore extends AdminController
         if (!empty($supplyOrder->reference) && ($supplyOrder->reference != $reference && SupplyOrder::exists($reference))) {
             $error = sprintf($this->l('Reference (%s) already exists (at line %d).'), $reference, $currentLine + 1);
         }
-        if (!Validate::isDateFormat($dateDeliveryExpected)) {
-            $error = sprintf($this->l('Date format (%s) is not valid (at line %d). It should be: %s.'), $dateDeliveryExpected, $currentLine + 1, $this->l('YYYY-MM-DD'));
-        }
-        if ($discountRate < 0 || $discountRate > 100) {
-            $error = sprintf($this->l('Discount rate (%d) is not valid (at line %d). %s.'), $discountRate, $currentLine + 1, $this->l('Format: Between 0 and 100'));
-        }
         if ($supplyOrder->id > 0 && !$supplyOrder->isEditable()) {
             $error = sprintf($this->l('Supply Order (%d) is not editable (at line %d).'), $supplyOrder->id, $currentLine + 1);
         }
@@ -4829,6 +4817,7 @@ class AdminImportControllerCore extends AdminController
         if (empty($error)) {
             // adds parameters
             $info['id_ref_currency'] = (int) Currency::getDefaultCurrency()->id;
+            $info['date_delivery_expected'] = null;
             // Deprecated compatibility column: supplier names must be resolved via id_supplier when read.
             $info['supplier_name'] = pSQL(Supplier::getNameById($idSupplier));
             if ($supplyOrder->id > 0) {

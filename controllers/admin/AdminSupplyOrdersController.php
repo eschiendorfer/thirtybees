@@ -118,13 +118,6 @@ class AdminSupplyOrdersControllerCore extends AdminController
                 'havingFilter' => true,
                 'filter_key'   => 'a!date_upd',
             ],
-            'date_delivery_expected' => [
-                'title'        => $this->l('Delivery (expected)'),
-                'align'        => 'left',
-                'type'         => 'date',
-                'havingFilter' => true,
-                'filter_key'   => 'a!date_delivery_expected',
-            ],
             'id_export'              => [
                 'title'    => $this->l('Export'),
                 'callback' => 'printExportIcons',
@@ -340,13 +333,6 @@ class AdminSupplyOrdersControllerCore extends AdminController
                     ],
                     [
                         'type'     => 'text',
-                        'label'    => $this->l('Global discount percentage'),
-                        'name'     => 'discount_rate',
-                        'required' => false,
-                        'hint'     => $this->l('This is the global discount percentage for the order.'),
-                    ],
-                    [
-                        'type'     => 'text',
                         'label'    => $this->l('Automatically load products'),
                         'name'     => 'load_products',
                         'required' => false,
@@ -384,14 +370,9 @@ class AdminSupplyOrdersControllerCore extends AdminController
                     'type'     => 'date',
                     'label'    => $this->l('Expected delivery date'),
                     'name'     => 'date_delivery_expected',
-                    'required' => true,
+                    'required' => false,
                     'desc'     => $this->l('The expected delivery date for this order is...'),
                 ];
-            }
-
-            //specific discount display
-            if (isset($this->object->discount_rate)) {
-                $this->object->discount_rate = round($this->object->discount_rate, 4);
             }
 
             //specific date display
@@ -518,7 +499,6 @@ class AdminSupplyOrdersControllerCore extends AdminController
             $this->fields_list['state'],
             $this->fields_list['date_upd'],
             $this->fields_list['id_pdf'],
-            $this->fields_list['date_delivery_expected'],
             $this->fields_list['id_export']
         );
 
@@ -644,8 +624,7 @@ class AdminSupplyOrdersControllerCore extends AdminController
             $keys = [
                 'id_product', 'id_product_attribute', 'reference', 'supplier_reference', 'ean13', 'upc', 'name',
                 'unit_price_te', 'quantity_expected', 'quantity_received', 'price_te', 'discount_rate', 'discount_value_te',
-                'price_with_discount_te', 'tax_rate', 'tax_value', 'price_ti', 'tax_value_with_order_discount',
-                'price_with_order_discount_te', 'id_supply_order',
+                'price_with_discount_te', 'tax_rate', 'tax_value', 'price_ti', 'id_supply_order',
             ];
             echo sprintf("%s\n", implode(';', array_map(['CSVCore', 'wrap'], $keys)));
 
@@ -654,9 +633,7 @@ class AdminSupplyOrdersControllerCore extends AdminController
                 'sod.id_product', 'sod.id_product_attribute', 'sod.reference', 'sod.supplier_reference', 'sod.ean13', 'sod.upc', 'sod.name',
                 'sod.unit_price_te', 'sod.quantity_expected',
                 'sod.quantity_received', 'sod.price_te', 'sod.discount_rate', 'sod.discount_value_te', 'sod.price_with_discount_te',
-                'sod.tax_rate', 'sod.tax_value', 'sod.price_ti',
-                'sod.tax_value_with_order_discount',
-                'sod.price_with_order_discount_te', 'sod.id_supply_order',
+                'sod.tax_rate', 'sod.tax_value', 'sod.price_ti', 'sod.id_supply_order',
             ];
             foreach ($ids as $id) {
                 $query = new DbQuery();
@@ -1242,7 +1219,8 @@ class AdminSupplyOrdersControllerCore extends AdminController
             }
 
             // get delivery date
-            if (Tools::getValue('mod') != 'template' && strtotime(Tools::getValue('date_delivery_expected')) <= strtotime('-1 day')) {
+            $dateDeliveryExpected = trim((string) Tools::getValue('date_delivery_expected'));
+            if (Tools::getValue('mod') != 'template' && $dateDeliveryExpected !== '' && strtotime($dateDeliveryExpected) <= strtotime('-1 day')) {
                 $this->errors[] = Tools::displayError('The specified date cannot be in the past.');
             }
 
@@ -1256,16 +1234,11 @@ class AdminSupplyOrdersControllerCore extends AdminController
             }
 
             if (!count($this->errors)) {
-                // forces date for templates
-                if (Tools::isSubmit('is_template') && !Tools::getValue('date_delivery_expected')) {
-                    $_POST['date_delivery_expected'] = date('Y-m-d H:i:s');
-                }
-
                 // specify initial state
 
                 // Todo: Genzo this was a quick fix. In general all this bullshit with $_POST and also is_editing_order should be rewritten
                 // Note: This $_POST Values did override existing id_supply_order_state (when editing)
-                // strangely this wasn't executed too often as there was often an $this->errors due to date_delivery_expected in the past
+                // This must only initialize new supply orders; existing states must not be overwritten while editing.
                 if (!Tools::getIntValue('id_supply_order')) {
 
                     $_POST['id_supply_order_state'] = 1; //defaut creation state
@@ -1277,8 +1250,6 @@ class AdminSupplyOrdersControllerCore extends AdminController
                     $_POST['supplier_name'] = Supplier::getNameById($idSupplier);
                 }
 
-                //specific discount check
-                $_POST['discount_rate'] = Tools::getNumberValue('discount_rate');
             }
 
             // manage each associated product
@@ -2346,11 +2317,7 @@ class AdminSupplyOrdersControllerCore extends AdminController
                 'supply_order_supplier_name'          => $supplierName,
                 'supply_order_creation_date'          => Tools::displayDate($supplyOrder->date_add, null, false),
                 'supply_order_last_update'            => Tools::displayDate($supplyOrder->date_upd, null, false),
-                'supply_order_expected'               => Tools::displayDate($supplyOrder->date_delivery_expected, null, false),
-                'supply_order_discount_rate'          => Tools::ps_round($supplyOrder->discount_rate, 2),
                 'supply_order_total_te'               => Tools::displayPrice($supplyOrder->total_te, $currency),
-                'supply_order_discount_value_te'      => Tools::displayPrice($supplyOrder->discount_value_te, $currency),
-                'supply_order_total_with_discount_te' => Tools::displayPrice($supplyOrder->total_with_discount_te, $currency),
                 'supply_order_total_tax'              => Tools::displayPrice($supplyOrder->total_tax, $currency),
                 'supply_order_total_ti'               => Tools::displayPrice($supplyOrder->total_ti, $currency),
                 'supply_order_currency'               => $currency,

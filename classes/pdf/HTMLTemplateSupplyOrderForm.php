@@ -180,9 +180,9 @@ class HTMLTemplateSupplyOrderFormCore extends HTMLTemplate
     protected function getTaxOrderSummary()
     {
         $query = new DbQuery();
-        $query->select('SUM(`price_with_order_discount_te`) AS `base_te`');
+        $query->select('SUM(`price_with_discount_te`) AS `base_te`');
         $query->select('`tax_rate`');
-        $query->select('SUM(`tax_value_with_order_discount`) AS `total_tax_value`');
+        $query->select('SUM(`tax_value`) AS `total_tax_value`');
         $query->from('supply_order_detail');
         $query->where('`id_supply_order` = '.(int) $this->supply_order->id);
         $query->groupBy('`tax_rate`');
@@ -316,14 +316,6 @@ class HTMLTemplateSupplyOrderFormCore extends HTMLTemplate
         $decimals = $this->currency->getDisplayPrecision();
         $supplyOrder->total_te = Tools::ps_round(
             $supplyOrder->total_te,
-            $decimals
-        );
-        $supplyOrder->discount_value_te = Tools::ps_round(
-            $supplyOrder->discount_value_te,
-            $decimals
-        );
-        $supplyOrder->total_with_discount_te = Tools::ps_round(
-            $supplyOrder->total_with_discount_te,
             $decimals
         );
         $supplyOrder->total_tax = Tools::ps_round(

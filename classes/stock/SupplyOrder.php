@@ -96,11 +96,6 @@ class SupplyOrderCore extends ObjectModel
     public $total_te = 0;
 
     /**
-     * @var float Total price after discount, without tax
-     */
-    public $total_with_discount_te = 0;
-
-    /**
      * @var float Total price with tax
      */
     public $total_ti = 0;
@@ -109,16 +104,6 @@ class SupplyOrderCore extends ObjectModel
      * @var float Total tax value
      */
     public $total_tax = 0;
-
-    /**
-     * @var float Supplier discount rate (for the whole order)
-     */
-    public $discount_rate = 0;
-
-    /**
-     * @var float Supplier discount value without tax (for the whole order)
-     */
-    public $discount_value_te = 0;
 
     /**
      * @var bool Tells if this order is a template
@@ -143,13 +128,11 @@ class SupplyOrderCore extends ObjectModel
             'reference'              => ['type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'required' => true, 'size' => 64],
             'date_add'               => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
             'date_upd'               => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
-            'date_delivery_expected' => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'required' => true, 'dbNullable' => true],
+            // Deprecated as supply-order-wide source of truth. Expected receipt dates belong to supply order details.
+            'date_delivery_expected' => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'required' => false, 'dbNullable' => true],
             'total_te'               => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbDefault' => '0.000000', 'dbNullable' => true],
-            'total_with_discount_te' => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbDefault' => '0.000000', 'dbNullable' => true],
             'total_tax'              => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbDefault' => '0.000000', 'dbNullable' => true],
             'total_ti'               => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbDefault' => '0.000000', 'dbNullable' => true],
-            'discount_rate'          => ['type' => self::TYPE_FLOAT, 'validate' => 'isFloat', 'required' => false, 'dbDefault' => '0.000000', 'dbNullable' => true],
-            'discount_value_te'      => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbDefault' => '0.000000', 'dbNullable' => true],
             'is_template'            => ['type' => self::TYPE_BOOL, 'validate' => 'isBool', 'dbType' => 'tinyint(1)', 'dbDefault' => '0', 'dbNullable' => true],
         ],
         'keys' => [
@@ -174,6 +157,7 @@ class SupplyOrderCore extends ObjectModel
         ],
         'hidden_fields' => [
             'id_ref_currency',
+            'date_delivery_expected',
         ],
         'associations'  => [
             'supply_order_details' => [
@@ -222,44 +206,26 @@ class SupplyOrderCore extends ObjectModel
     }
 
     /**
-     * Checks all products in this order and calculate prices
-     * Applies the global discount if necessary
+     * Checks all products in this order and calculates prices
      *
      * @throws PrestaShopException
      */
     protected function calculatePrices()
     {
         $this->total_te = 0;
-        $this->total_with_discount_te = 0;
         $this->total_tax = 0;
         $this->total_ti = 0;
-        $isDiscount = false;
-
-        if (is_numeric($this->discount_rate) && $this->discount_rate >= 0) {
-            $isDiscount = true;
-        }
 
         // gets all product entries in this order
         $entries = $this->getEntriesCollection();
 
         foreach ($entries as $entry) {
             /** @var SupplyOrderDetail $entry */
-            // applys global discount rate on each product if possible
-            if ($isDiscount) {
-                $entry->applyGlobalDiscount((float) $this->discount_rate);
-            }
-
-            // adds new prices to the total
             $this->total_te += $entry->price_with_discount_te;
-            $this->total_with_discount_te += $entry->price_with_order_discount_te;
-            $this->total_tax += $entry->tax_value_with_order_discount;
-            $this->total_ti = $this->total_tax + $this->total_with_discount_te;
+            $this->total_tax += $entry->tax_value;
         }
 
-        // applies global discount rate if possible
-        if ($isDiscount) {
-            $this->discount_value_te = $this->total_te - $this->total_with_discount_te;
-        }
+        $this->total_ti = $this->total_te + $this->total_tax;
     }
 
     /**

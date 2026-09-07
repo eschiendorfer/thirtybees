@@ -136,17 +136,6 @@ class SupplyOrderDetailCore extends ObjectModel
     public $price_ti = 0;
 
     /**
-     * @var float Tax value of the given product after applying the global order discount (i.e. if SupplyOrder::discount_rate is set)
-     */
-    public $tax_value_with_order_discount = 0;
-
-    /**
-     * @var float This is like $price_with_discount_te, considering the global order discount.
-     * (i.e. if SupplyOrder::discount_rate is set)
-     */
-    public $price_with_order_discount_te = 0;
-
-    /**
      * @var array Object model definition
      */
     public static $definition = [
@@ -173,8 +162,6 @@ class SupplyOrderDetailCore extends ObjectModel
             'tax_rate'                      => ['type' => self::TYPE_FLOAT,  'validate' => 'isPercentage',  'required' => true, 'dbDefault' => '0.000000', 'dbNullable' => true],
             'tax_value'                     => ['type' => self::TYPE_PRICE,  'validate' => 'isPrice',       'required' => true, 'dbDefault' => '0.000000', 'dbNullable' => true],
             'price_ti'                      => ['type' => self::TYPE_PRICE,  'validate' => 'isPrice',       'required' => true, 'dbDefault' => '0.000000', 'dbNullable' => true],
-            'tax_value_with_order_discount' => ['type' => self::TYPE_PRICE,  'validate' => 'isPrice',       'required' => true, 'dbDefault' => '0.000000', 'dbNullable' => true],
-            'price_with_order_discount_te'  => ['type' => self::TYPE_PRICE,  'validate' => 'isPrice',       'required' => true, 'dbDefault' => '0.000000', 'dbNullable' => true],
         ],
         'keys' => [
             'supply_order_detail' => [
@@ -259,37 +246,6 @@ class SupplyOrderDetailCore extends ObjectModel
         );
         $this->price_ti = $this->price_with_discount_te + $this->tax_value;
 
-        // defines default values for order discount fields
-        $this->tax_value_with_order_discount = $this->tax_value;
-        $this->price_with_order_discount_te = $this->price_with_discount_te;
-    }
-
-    /**
-     * Applies a global order discount rate, for the current product (i.e detail)
-     * Calls ObjectModel::update()
-     *
-     * @param float|int $discountRate The discount rate in percent (Ex. 5 for 5 percents)
-     *
-     * @throws PrestaShopException
-     */
-    public function applyGlobalDiscount($discountRate)
-    {
-        if ($discountRate != null && is_numeric($discountRate) && (float) $discountRate > 0) {
-            // calculates new price, with global order discount, tax ecluded
-            $this->price_with_order_discount_te = round(
-                $this->price_with_discount_te
-                - $this->price_with_discount_te * $discountRate / 100,
-                _TB_PRICE_DATABASE_PRECISION_
-            );
-
-            // calculates new tax value, with global order discount
-            $this->tax_value_with_order_discount = round(
-                $this->price_with_order_discount_te * $this->tax_rate / 100,
-                _TB_PRICE_DATABASE_PRECISION_
-            );
-
-            parent::update();
-        }
     }
 
 
