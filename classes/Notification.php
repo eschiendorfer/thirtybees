@@ -42,6 +42,11 @@ class NotificationCore
     protected $types;
 
     /**
+     * @var array
+     */
+    protected $groups;
+
+    /**
      * @var int
      */
     protected $employeeId;
@@ -75,6 +80,15 @@ class NotificationCore
         }
 
         $this->types = [];
+        $this->groups = [
+            'customer_service' => [
+                'icon' => 'icon-envelope',
+                'header' => 'Kundenservice',
+                'emptyMessage' => 'Kein neuer Kundenservice eingegangen.',
+                'showAll' => 'Kundenservice öffnen',
+                'controller' => 'AdminCustomerThreads',
+            ],
+        ];
 
         // register build in notification types
         if (Configuration::get('PS_SHOW_NEW_ORDERS')) {
@@ -121,6 +135,7 @@ class NotificationCore
                 'header' => $this->l('Latest Messages'),
                 'emptyMessage' => $this->l('No new messages have been posted on your shop.'),
                 'showAll' => $this->l('Show all messages'),
+                'group' => 'customer_service',
             ]);
         }
 
@@ -193,8 +208,18 @@ class NotificationCore
     public function getTypes()
     {
         $ret = [];
+        $registeredGroups = [];
         $link = Context::getContext()->link;
         foreach ($this->types as $type => $description) {
+            $group = $description['group'] ?? null;
+            if ($group && isset($this->groups[$group])) {
+                if (isset($registeredGroups[$group])) {
+                    continue;
+                }
+                $registeredGroups[$group] = true;
+                $type = $group;
+                $description = $this->groups[$group];
+            }
             $ret[] = [
                 'type' => $type,
                 'icon' => $description['icon'],
@@ -216,7 +241,7 @@ class NotificationCore
      */
     public function initialize()
     {
-        foreach ($this->getNotifications() as $notification) {
+        foreach ($this->getRawNotifications(null, 1) as $notification) {
             $type = $notification['type'];
             $lastId = (int)$notification['lastId'];
             $this->markAsRead($type, $lastId);
@@ -271,6 +296,64 @@ class NotificationCore
     public function getNotifications($typeFilter = null)
     {
         $notifications = [];
+        $groupedNotifications = [];
+        foreach ($this->getRawNotifications($typeFilter, 5) as $notification) {
+            $type = $notification['type'];
+            $description = $this->types[$type];
+            $group = $description['group'] ?? null;
+            if (!$group || !isset($this->groups[$group])) {
+                $notification['lastIds'] = [$type => (int)$notification['lastId']];
+                $notifications[] = $notification;
+                continue;
+            }
+
+            if (!isset($groupedNotifications[$group])) {
+                $groupedNotifications[$group] = [
+                    'type' => $group,
+                    'renderer' => '',
+                    'rendererData' => [],
+                    'total' => 0,
+                    'lastId' => 0,
+                    'lastIds' => [],
+                    'results' => [],
+                ];
+            }
+
+            $groupedNotifications[$group]['total'] += (int)$notification['total'];
+            $groupedNotifications[$group]['lastId'] = max(
+                $groupedNotifications[$group]['lastId'],
+                (int)$notification['lastId']
+            );
+            $groupedNotifications[$group]['lastIds'][$type] = (int)$notification['lastId'];
+            foreach ($notification['results'] as $result) {
+                $result['renderer'] = $notification['renderer'];
+                $result['rendererData'] = $notification['rendererData'];
+                $groupedNotifications[$group]['results'][] = $result;
+            }
+        }
+
+        foreach ($groupedNotifications as $notification) {
+            usort($notification['results'], function ($first, $second) {
+                return (int)$second['ts'] <=> (int)$first['ts'];
+            });
+            $notification['results'] = array_slice($notification['results'], 0, 5);
+            $notifications[] = $notification;
+        }
+
+        return $notifications;
+    }
+
+    /**
+     * Returns unread notifications without display grouping.
+     *
+     * @param array|null $typeFilter
+     * @param int $limit
+     * @return array
+     * @throws PrestaShopException
+     */
+    protected function getRawNotifications($typeFilter, $limit)
+    {
+        $notifications = [];
         foreach ($this->types as $type => $description) {
             if (! is_null($typeFilter)) {
                 if (! in_array($type, $typeFilter)) {
@@ -285,11 +368,34 @@ class NotificationCore
                         'renderer' => $description['renderer'],
                         'rendererData' => $description['rendererData'],
                     ],
-                    $callable($this->getLastSeenId($type), 5)
+                    $callable($this->getLastSeenId($type), $limit)
                 );
             }
         }
         return $notifications;
+    }
+
+    /**
+     * Marks multiple notification types as read.
+     *
+     * @param array $lastIds type => last id
+     * @return bool
+     * @throws PrestaShopException
+     */
+    public function markAsReadBatch(array $lastIds)
+    {
+        $success = true;
+        $marked = false;
+        foreach ($lastIds as $type => $lastId) {
+            $lastId = (int)$lastId;
+            if (!isset($this->types[$type]) || $lastId <= 0) {
+                continue;
+            }
+            $marked = true;
+            $success = $this->markAsRead($type, $lastId) && $success;
+        }
+
+        return $marked && $success;
     }
 
     /**

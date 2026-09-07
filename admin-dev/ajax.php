@@ -121,9 +121,15 @@ if (Tools::isSubmit('markNotificationsRead')) {
         header('Content-Type: application/json');
     }
     $notification = $context->employee->getNotification();
-    $type = Tools::getValue('type');
-    $lastId = Tools::getIntValue('lastId');
-    die(json_encode(['success' => $notification->markAsRead($type, $lastId)]));
+    $lastIds = Tools::getValue('lastIds');
+    if (is_array($lastIds)) {
+        $success = $notification->markAsReadBatch($lastIds);
+    } else {
+        $type = Tools::getValue('type');
+        $lastId = Tools::getIntValue('lastId');
+        $success = $notification->markAsRead($type, $lastId);
+    }
+    die(json_encode(['success' => $success]));
 }
 
 if (Tools::isSubmit('searchCategory')) {

@@ -2599,7 +2599,7 @@ class AdminControllerCore extends Controller
             $boColor = empty($this->context->employee->bo_color) ? '#FFFFFF' : $this->context->employee->bo_color;
             $this->context->smarty->assign(
                 [
-                    'autorefresh_notifications' => false,
+                    'autorefresh_notifications' => true,
                     'notificationTypes'         => $notification->getTypes(),
                     'help_box'                  => Configuration::get('PS_HELPBOX'),
                     'round_mode'                => Configuration::get('PS_PRICE_ROUND_MODE'),

@@ -30,25 +30,19 @@
 
 /* global window, $, moment, autorefresh_notifications, full_language_code */
 
+var notificationLastIds = {};
+
 $(document).ready(function () {
   // set up notification click handler
-  $('.notifs').click(function () {
-    var parent = $(this).parent();
-    var idWrapper = parent.attr('id');
-    $.post(
-      'ajax.php',
-      {
-        markNotificationsRead: 1,
-        type: parent.data('type'),
-        lastId: parent.data('lastId'),
-      },
-      function (data) {
-        if (data) {
-          $('#' + idWrapper + '_value').html(0);
-          $('#' + idWrapper + '_number_wrapper').hide();
-        }
-      }
-    );
+  $('.notifs').on('click', function () {
+    markNotificationTypeRead($(this).parent().data('type'));
+  });
+
+  // The responsive modal shows the complete notification area at once.
+  $('#notificationsModal').on('shown.bs.modal', function () {
+    $('#notificationsModalContent [data-type]').each(function () {
+      markNotificationTypeRead($(this).data('type'));
+    });
   });
 
   // update notifications once, as soon as possible
@@ -59,6 +53,30 @@ $(document).ready(function () {
     setInterval(updateNotifications, 120000);
   }
 });
+
+function markNotificationTypeRead(type) {
+  var lastIds = notificationLastIds[type];
+  if (!lastIds || Object.keys(lastIds).length === 0) {
+    return;
+  }
+
+  $.post(
+    'ajax.php',
+    {
+      markNotificationsRead: 1,
+      lastIds: lastIds
+    },
+    function (data) {
+      if (data && data.success) {
+        $('[id="' + type + '_notif_value"]').html(0);
+        $('[id="' + type + '_notif_number_wrapper"]').addClass('hide').hide();
+        notificationLastIds[type] = {};
+        updateResponsiveNotificationBadge();
+      }
+    },
+    'json'
+  );
+}
 
 function updateNotifications() {
   $.ajax({
@@ -79,24 +97,24 @@ function updateNotifications() {
         for (var i = 0; i < json.length; i++) {
           var record = json[i];
           var type = record.type;
-          var total = record.total
-          var lastId = record.lastId;
-          $('#'+type+'_notif').data('lastId', lastId);
+          var total = record.total;
+          notificationLastIds[type] = total > 0 ? (record.lastIds || {}) : {};
           if (total > 0) {
             var defaultRenderer = record.renderer;
             var results = record.results;
             var html = '';
             for (var j = 0; j < results.length; j++) {
               var renderer = results[j].renderer || defaultRenderer;
-              html += executeFunctionByName(renderer, [results[j], record.rendererData]);
+              html += executeFunctionByName(renderer, [results[j], results[j].rendererData || record.rendererData]);
             }
-            $('#'+type+'_notif_list').empty().append(html);
-            $('#'+type+'_notif_value').text(total);
-            $('#'+type+'_notif_number_wrapper').removeClass('hide');
+            $('[id="'+type+'_notif_list"]').empty().append(html);
+            $('[id="'+type+'_notif_value"]').text(total);
+            $('[id="'+type+'_notif_number_wrapper"]').removeClass('hide').show();
           } else {
-            $('#'+type+'_notif_number_wrapper').addClass('hide');
+            $('[id="'+type+'_notif_number_wrapper"]').addClass('hide').hide();
           }
         }
+        updateResponsiveNotificationBadge();
       }
     }
   });
@@ -133,6 +151,21 @@ function renderCustomerMessageNotification(notification, translations) {
   return html;
 }
 
+function renderCustomerServiceNotification(notification) {
+  var title = $('<div>').text(notification.title || '').html();
+  var customer = $('<div>').text(notification.customer || '').html();
+  var reference = $('<div>').text(notification.reference || '').html();
+  var html = '';
+  html += "<a href='"+notification.link+"'>";
+  html += '<p><strong>' + title + '</strong>' + (reference ? '&nbsp;<span class="text-muted">' + reference + '</span>' : '') + '</p>';
+  if (customer) {
+    html += '<p>' + customer + '</p>';
+  }
+  html += "<small class='text-muted'><i class='icon-time'></i>&nbsp;" + moment(notification.ts * 1000).fromNow() + '</small>';
+  html += '</a>';
+  return html;
+}
+
 function renderSystemNotification(notification, translations) {
   var html = '';
   console.log(notification);
@@ -141,4 +174,14 @@ function renderSystemNotification(notification, translations) {
   html += "<small class='text-muted'><i class='icon-time'></i>&nbsp;" + moment(notification.ts * 1000).fromNow() + "</small>";
   html += "</a>";
   return html;
+}
+
+function updateResponsiveNotificationBadge() {
+  var hasNotifications = false;
+  $('#header_notifs_icon_wrapper > li > .notifs .notifs_badge:not(.hide) span').each(function () {
+    if (parseInt($(this).text(), 10) > 0) {
+      hasNotifications = true;
+    }
+  });
+  $('.notifications-icon .notifs_badge').toggle(hasNotifications);
 }
