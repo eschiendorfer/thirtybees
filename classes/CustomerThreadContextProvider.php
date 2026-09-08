@@ -182,10 +182,9 @@ class CustomerThreadContextProviderCore
                         'id_product'    => $idProduct,
                         'updateproduct' => true,
                     ]);
-                    $product['real_stock'] = Product::getRealQuantity(
+                    $product['real_stock'] = StockAvailable::getQuantityAvailableByProduct(
                         $idProduct,
                         (int) ($product['id_product_attribute'] ?? 0),
-                        0,
                         (int) $this->context->shop->id
                     );
                 } else {
