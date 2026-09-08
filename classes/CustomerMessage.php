@@ -92,7 +92,7 @@ class CustomerMessageCore extends ObjectModel
             'id_employee'        => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId'],
             // An attachment is real message content on its own. The persistence service
             // therefore accepts an empty text only when at least one attachment exists.
-            'message'            => ['type' => self::TYPE_HTML, 'validate' => 'isCleanHtml', 'required' => false, 'size' => ObjectModel::SIZE_MEDIUM_TEXT],
+            'message'            => ['type' => self::TYPE_HTML, 'validate' => 'isCleanHtml', 'required' => false, 'dbNullable' => false, 'size' => ObjectModel::SIZE_MEDIUM_TEXT],
             'ip_address'         => ['type' => self::TYPE_STRING, 'validate' => 'isIp2Long', 'size' => 16],
             'user_agent'         => ['type' => self::TYPE_STRING, 'size' => 250],
             'date_add'           => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
