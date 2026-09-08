@@ -1,6 +1,7 @@
 {
     "require": {
         "php": "^8.3",
+        "mcp/sdk": "0.8.1",
         "guzzlehttp/guzzle": "^7.5",
         "tecnickcom/tcpdf": "~6.2",
         "ezyang/htmlpurifier": "^4.8",

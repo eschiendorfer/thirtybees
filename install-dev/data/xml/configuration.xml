@@ -726,5 +726,11 @@
     <configuration id="TB_IMAGE_CONVERSION" name="TB_IMAGE_CONVERSION">
       <value>0</value>
     </configuration>
+    <configuration id="TB_MCP_ENABLED" name="TB_MCP_ENABLED">
+      <value>0</value>
+    </configuration>
+    <configuration id="TB_MCP_AUDIT_RETENTION_DAYS" name="TB_MCP_AUDIT_RETENTION_DAYS">
+      <value>90</value>
+    </configuration>
   </entities>
 </entity_configuration>

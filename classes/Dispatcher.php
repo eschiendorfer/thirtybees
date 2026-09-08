@@ -52,6 +52,12 @@ class DispatcherCore
      * @var array List of default routes
      */
     public $default_routes = [
+        'mcp_rule' => [
+            'controller' => 'mcp',
+            'rule' => 'mcp',
+            'keywords' => [],
+            'params' => [],
+        ],
         'category_rule' => [
             'controller' => 'category',
             'rule' => '{categories:/}{rewrite}',

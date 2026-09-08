@@ -267,6 +267,9 @@
     <tab id="Webservice" id_parent="Advanced_Parameters" active="1">
       <class_name>AdminWebservice</class_name>
     </tab>
+    <tab id="MCP" id_parent="Advanced_Parameters" active="1">
+      <class_name>AdminMcp</class_name>
+    </tab>
     <tab id="Preferences_1" id_parent="Administration" active="1">
       <class_name>AdminAdminPreferences</class_name>
     </tab>
