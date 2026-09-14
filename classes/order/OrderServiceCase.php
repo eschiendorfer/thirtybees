@@ -3,13 +3,14 @@
 /**
  * Class OrderServiceCaseCore
  */
-class OrderServiceCaseCore extends ObjectModel implements CustomerThreadContextSourceInterfaceCore
+class OrderServiceCaseCore extends ObjectModel implements CustomerThreadContextSourceInterfaceCore, CustomerServiceStatusSourceInterfaceCore
 {
     public const CONFIG_PERIOD_DAYS = 'PS_CUSTOMER_SERVICE_CASE_PERIOD_DAYS';
     public const DEFAULT_PERIOD_DAYS = 730;
 
     public const STATUS_OPEN = 'open';
     public const STATUS_WAITING = 'waiting';
+    public const STATUS_WAITING_CUSTOMER = 'waiting_customer';
     public const STATUS_RESOLVED = 'resolved';
     public const STATUS_REJECTED = 'rejected';
     public const STATUS_EXPIRED = 'expired';
@@ -66,6 +67,23 @@ class OrderServiceCaseCore extends ObjectModel implements CustomerThreadContextS
     public $date_add;
     /** @var string */
     public $date_upd;
+
+    public function getCustomerServiceStatusField(): string
+    {
+        return 'status';
+    }
+
+    public function getCustomerServiceStatusLabels(): array
+    {
+        return [
+            self::STATUS_OPEN => 'Open',
+            self::STATUS_WAITING => 'In inquiry',
+            self::STATUS_WAITING_CUSTOMER => 'Waiting for customer',
+            self::STATUS_RESOLVED => 'Resolved',
+            self::STATUS_REJECTED => 'Rejected',
+            self::STATUS_EXPIRED => 'Expired',
+        ];
+    }
 
     public static function getValidCaseTypes(): array
     {
@@ -170,7 +188,7 @@ class OrderServiceCaseCore extends ObjectModel implements CustomerThreadContextS
         $labels = [
             self::SOLUTION_REPLACEMENT       => 'Replacement',
             self::SOLUTION_ALTERNATE_PRODUCT => 'Alternate product',
-            self::SOLUTION_VOUCHER           => 'Voucher',
+            self::SOLUTION_VOUCHER           => 'Store credit',
         ];
 
         return $labels[$requestedSolution] ?? 'Unknown';
@@ -216,7 +234,7 @@ class OrderServiceCaseCore extends ObjectModel implements CustomerThreadContextS
             $serviceCase->status = self::STATUS_OPEN;
 
             if (!$serviceCase->add(true, true)) {
-                throw new PrestaShopException('Order service case could not be saved.');
+                throw new PrestaShopException(Tools::displayError('Order service case could not be saved.'));
             }
 
             $detail = new OrderServiceCaseDetail();
@@ -225,12 +243,12 @@ class OrderServiceCaseCore extends ObjectModel implements CustomerThreadContextS
             $detail->product_quantity = $quantity;
 
             if (!$detail->add()) {
-                throw new PrestaShopException('Order service case detail could not be saved.');
+                throw new PrestaShopException(Tools::displayError('Order service case detail could not be saved.'));
             }
 
             if (!$withinTransaction) {
                 if (!$db->execute('COMMIT')) {
-                    throw new PrestaShopException('Order service case transaction could not be committed.');
+                    throw new PrestaShopException(Tools::displayError('Order service case transaction could not be committed.'));
                 }
             }
             return $serviceCase;
@@ -266,7 +284,7 @@ class OrderServiceCaseCore extends ObjectModel implements CustomerThreadContextS
             max(0, (int)($capabilities['returnable_quantity'] ?? 0))
         );
 
-        return max(0, $shippedAndAvailable - static::getOpenServiceCaseQuantity((int)$orderDetail->id));
+        return $shippedAndAvailable;
     }
 
     public static function getPeriodDays(): int
@@ -274,22 +292,6 @@ class OrderServiceCaseCore extends ObjectModel implements CustomerThreadContextS
         $value = Configuration::get(static::CONFIG_PERIOD_DAYS);
 
         return $value === false ? static::DEFAULT_PERIOD_DAYS : max(0, (int)$value);
-    }
-
-    private static function getOpenServiceCaseQuantity(int $idOrderDetail): int
-    {
-        return (int)Db::getInstance()->getValue(
-            (new DbQuery())
-                ->select('COALESCE(SUM(oscd.`product_quantity`), 0)')
-                ->from('order_service_case_detail', 'oscd')
-                ->innerJoin(
-                    'order_service_case',
-                    'osc',
-                    'osc.`id_order_service_case` = oscd.`id_order_service_case`'
-                )
-                ->where('oscd.`id_order_detail` = '.(int)$idOrderDetail)
-                ->where("osc.`status` IN ('".static::STATUS_OPEN."', '".static::STATUS_WAITING."')")
-        );
     }
 
     private static function isShippingTriggerProduct(int $idProduct): bool

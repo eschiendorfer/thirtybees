@@ -56,7 +56,9 @@ $(document).ready(function () {
       $('#credit_fee_adjustment').val(formatCreditInput(0));
       $('#credit_fee_adjustment_rate').val(formatCreditRateInput(0));
     }
-    applySuggestedCancellationFee();
+    if (!creditAdjustmentState.fee.manual) {
+      applySuggestedCancellationFee();
+    }
     refreshSuggestedCreditAdjustments();
     updateCreditTotals();
   });
@@ -186,7 +188,7 @@ function getCreditAdjustmentRate(type) {
 
 function setCreditAdjustment(type, amount, base, preserveManualSource) {
   var selectors = getCreditAdjustmentSelectors(type);
-  var normalizedAmount = Math.min(roundCreditAmount(amount), roundCreditAmount(base));
+  var normalizedAmount = roundCreditAmount(amount);
   var rate = base > 0 ? normalizedAmount / base * 100 : 0;
   var preserveAmount = preserveManualSource && creditAdjustmentState[type].manual && creditAdjustmentState[type].source === 'amount';
   var preserveRate = preserveManualSource && creditAdjustmentState[type].manual && creditAdjustmentState[type].source === 'rate';
@@ -297,21 +299,17 @@ function updatePartialRefundSubmitState() {
 }
 
 function updateCreditFeeAdjustmentState() {
-  var disableFee = isNoCreditRefundMethod() || isServiceCaseCreditReason();
+  var disableFee = isNoCreditRefundMethod();
   if (disableFee) {
     creditAdjustmentState.fee.manual = false;
     setCreditAdjustment('fee', 0, 0);
   }
-  $('#credit_fee_adjustment, #credit_fee_adjustment_rate').prop('disabled', disableFee);
+  // Readonly values are submitted; disabled values are omitted by the browser.
+  $('#credit_fee_adjustment, #credit_fee_adjustment_rate').prop('disabled', false).prop('readonly', disableFee);
 }
 
 function updateCreditCartRuleAdjustmentState() {
-  var disableCartRule = isServiceCaseCreditReason();
-  if (disableCartRule) {
-    creditAdjustmentState.cartRule.manual = false;
-    setCreditAdjustment('cartRule', 0, 0);
-  }
-  $('#credit_cart_rule_adjustment, #credit_cart_rule_adjustment_rate').prop('disabled', disableCartRule);
+  $('#credit_cart_rule_adjustment, #credit_cart_rule_adjustment_rate').prop('disabled', false);
 }
 
 function resetCreditForm() {
@@ -322,7 +320,6 @@ function resetCreditForm() {
   $('.credit-product-amount-input').val('').prop('disabled', false).closest('td').removeClass('text-muted');
   $('.credit-product-quantity-input').val('0');
   $('#credit_shipping_adjustment').val('0').prop('disabled', false);
-  $('.service-case-credit-status-group').hide().find(':input').prop('disabled', true);
   $('#confirm_original_payment_refund').prop('checked', false);
   setCreditAdjustment('cartRule', 0, 0);
   setCreditAdjustment('fee', 0, 0);
@@ -418,11 +415,6 @@ function applyServiceCaseCreditScope(suggestion) {
   var products = suggestion && suggestion.products ? suggestion.products : {};
   var hasSuggestion = !!suggestion;
 
-  $('.service-case-credit-status-group').toggle(hasSuggestion);
-  $('#service_case_status').prop('disabled', !hasSuggestion);
-  if (hasSuggestion && suggestion.status) {
-    $('#service_case_status').val(suggestion.status);
-  }
 
   $('.credit-product-amount-input').each(function () {
     var $input = $(this);
@@ -436,7 +428,7 @@ function applyServiceCaseCreditScope(suggestion) {
   });
 
   $('.credit-product-quantity-input').val('0');
-  $('#credit_shipping_adjustment').val('0').prop('disabled', true);
+  $('#credit_shipping_adjustment').val('0').prop('disabled', false);
   setCreditAdjustment('cartRule', 0, 0);
   setCreditAdjustment('fee', 0, 0);
   updateCreditCartRuleAdjustmentState();
@@ -456,10 +448,7 @@ function getCreditEnteredTotals() {
     var amount = roundCreditAmount(parseCreditNumber($input.val()));
     var max = parseCreditNumber($input.data('credit-max'));
 
-    if (max > 0 && amount > max) {
-      amount = max;
-      $input.val(formatCreditInput(amount));
-    }
+    this.setCustomValidity(amount > max ? 'Der Betrag übersteigt den noch erstattbaren Produktbetrag.' : '');
 
     productsTotal += amount;
   });
@@ -476,16 +465,16 @@ function refreshSuggestedCreditAdjustments(preserveManualSource) {
   var totals = getCreditEnteredTotals();
   updateCreditCartRuleAdjustmentState();
 
-  if (isServiceCaseCreditReason()) {
-    setCreditAdjustment('cartRule', 0, 0);
-    setCreditAdjustment('fee', 0, 0);
-    updateCreditFeeAdjustmentState();
-    return;
-  }
-
   if (!creditAdjustmentState.cartRule.manual) {
     if (!applySuggestedCancellationCartRuleAdjustment()) {
-      setCreditAdjustment('cartRule', totals.products * normalizeCreditRate(getDefaultCreditCartRuleRate()) / 100, totals.products);
+      var discount = 0;
+      var rates = (window.orderCreditSuggestions || {}).product_discount_rates || {};
+      $('.credit-product-amount-input').each(function () {
+        if (!$(this).prop('disabled')) {
+          discount += parseCreditNumber($(this).val()) * parseCreditNumber(rates[$(this).data('id-order-detail')]) / 100;
+        }
+      });
+      setCreditAdjustment('cartRule', discount, totals.products);
     }
   } else if (creditAdjustmentState.cartRule.source === 'rate') {
     setCreditAdjustmentFromRate('cartRule', totals.products, preserveManualSource);
@@ -514,31 +503,37 @@ function refreshSuggestedCreditAdjustments(preserveManualSource) {
 function updateCreditTotals(preserveManualSource) {
   var totals = getCreditEnteredTotals();
   updateCreditCartRuleAdjustmentState();
-  if (isServiceCaseCreditReason()) {
-    setCreditAdjustment('cartRule', 0, 0);
-    setCreditAdjustment('fee', 0, 0);
-  }
-
-  var cartRuleAdjustment = Math.min(
-    totals.products,
-    roundCreditAmount(getCreditAdjustmentAmount('cartRule'))
-  );
+  var cartRuleAdjustment = roundCreditAmount(getCreditAdjustmentAmount('cartRule'));
   setCreditAdjustment('cartRule', cartRuleAdjustment, totals.products, preserveManualSource);
 
   var subtotalAfterCartRule = Math.max(0, totals.products + totals.shippingAdjustment - cartRuleAdjustment);
   var feeAdjustment = isNoCreditRefundMethod()
     ? 0
-    : Math.min(
-      subtotalAfterCartRule,
-      roundCreditAmount(getCreditAdjustmentAmount('fee'))
-    );
+    : roundCreditAmount(getCreditAdjustmentAmount('fee'));
   var creditTotal = Math.max(0, subtotalAfterCartRule - feeAdjustment);
   setCreditAdjustment('fee', feeAdjustment, subtotalAfterCartRule, preserveManualSource);
   updateCreditFeeAdjustmentState();
+  $('#credit_cart_rule_adjustment').each(function () {
+    this.setCustomValidity(cartRuleAdjustment > totals.products ? 'Der Rabattabzug übersteigt den Produktbetrag.' : '');
+  });
+  $('#credit_fee_adjustment').each(function () {
+    this.setCustomValidity(feeAdjustment > subtotalAfterCartRule ? 'Die Gebühr übersteigt den Gutschriftbetrag.' : '');
+  });
 
   $('#credit_products_total_display').text(formatCreditDisplay(totals.products));
   $('#credit_subtotal_display').text(formatCreditDisplay(subtotalAfterCartRule));
   $('#credit_total_display').text(formatCreditRefundTotalDisplay(creditTotal));
+  var suggestions = window.orderCreditSuggestions || {};
+  var active = getActiveCreditSuggestion() || {};
+  var remaining = typeof active.remaining_paid_tax_incl !== 'undefined'
+    ? active.remaining_paid_tax_incl : suggestions.remaining_paid_tax_incl;
+  if (typeof remaining !== 'undefined') {
+    $('#credit_remaining_paid_display').text(formatCreditDisplay(remaining));
+    $('#credit_shipping_adjustment').each(function () {
+      this.setCustomValidity(suggestions.display_includes_tax && roundCreditRefundTotalAmount(creditTotal) > remaining + 0.000001
+        ? 'Die Gutschrift übersteigt den noch erstattbaren bezahlten Bestellbetrag.' : '');
+    });
+  }
   updateOriginalPaymentRefundConfirmation(creditTotal);
 }
 
@@ -608,10 +603,8 @@ function checkPartialRefundProductAmount(it) {
   var $input = $(it);
   var amount = roundCreditAmount(parseCreditNumber($input.val()));
   var max = parseCreditNumber($input.data('credit-max'));
-  if (max > 0 && amount > max) {
-    amount = max;
-  }
-  $input.val(amount > 0 ? formatCreditInput(amount) : '');
+  // Keep the submitted value; validation reports the limit instead of silently truncating it.
+  $input[0].setCustomValidity(amount > max ? 'Der Betrag übersteigt den noch erstattbaren Produktbetrag.' : '');
   refreshSuggestedCreditAdjustments();
   updateCreditTotals();
 }

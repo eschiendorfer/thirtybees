@@ -47,9 +47,8 @@ class AdminReturnControllerCore extends AdminController
         $this->context = Context::getContext();
         $this->table = 'order_return';
         $this->className = 'OrderReturn';
-        $this->_select = 'ors.color, orsl.`name`, o.`id_shop`, o.`reference`, CONCAT(c.`firstname`, \' \', c.`lastname`) AS `customer`';
-        $this->_join = 'LEFT JOIN '._DB_PREFIX_.'order_return_state ors ON (ors.`id_order_return_state` = a.`state`)';
-        $this->_join .= 'LEFT JOIN '._DB_PREFIX_.'order_return_state_lang orsl ON (orsl.`id_order_return_state` = a.`state` AND orsl.`id_lang` = '.(int) $this->context->language->id.')';
+        $this->_select = 'o.`id_shop`, o.`reference`, CONCAT(c.`firstname`, \' \', c.`lastname`) AS `customer`';
+        $this->_join = '';
         $this->_join .= ' LEFT JOIN '._DB_PREFIX_.'orders o ON (o.`id_order` = a.`id_order`)';
         $this->_join .= ' LEFT JOIN '._DB_PREFIX_.'customer c ON (o.`id_customer` = c.`id_customer`)';
 
@@ -71,9 +70,9 @@ class AdminReturnControllerCore extends AdminController
                 'havingFilter' => true,
                 'callback' => 'getCustomerLink',
             ],
-            'name' => [
+            'processing_status' => [
                 'title' => $this->l('Status'),
-                'color' => 'color',
+                'callback' => 'renderProcessingStatus',
                 'width' => 'auto',
                 'align' => 'left'
             ],
@@ -187,6 +186,12 @@ class AdminReturnControllerCore extends AdminController
      * @throws PrestaShopException
      * @throws SmartyException
      */
+    public function renderProcessingStatus($value): string
+    {
+        $options = CustomerServiceStatus::getOptions(new OrderReturn());
+        return Tools::safeOutput($options[$value]['label'] ?? $value);
+    }
+
     public function renderForm()
     {
         $this->fields_form = [
@@ -225,18 +230,6 @@ class AdminReturnControllerCore extends AdminController
                     'required' => false,
                 ],
                 [
-                    'type'     => 'select',
-                    'label'    => $this->l('Status'),
-                    'name'     => 'state',
-                    'required' => false,
-                    'options'  => [
-                        'query' => OrderReturnState::getOrderReturnStates($this->context->language->id),
-                        'id'    => 'id_order_return_state',
-                        'name'  => 'name',
-                    ],
-                    'desc'     => $this->l('Merchandise return (RMA) status.'),
-                ],
-                [
                     'type'     => 'list_products',
                     'label'    => $this->l('Products'),
                     'name'     => '',
@@ -250,7 +243,6 @@ class AdminReturnControllerCore extends AdminController
                     'name'     => '',
                     'size'     => '',
                     'required' => false,
-                    'desc'     => $this->l('The link is only available after validation and before the parcel gets delivered.'),
                 ],
             ],
             'submit' => [
@@ -281,7 +273,7 @@ class AdminReturnControllerCore extends AdminController
             $orderDetail = new OrderDetail((int)$product['id_order_detail']);
             $product['return_registered_quantity'] = (int)$product['product_quantity'];
             $product['return_quantity_max'] = Validate::isLoadedObject($orderDetail) ? (int)$orderDetail->product_quantity : (int)$product['product_quantity'];
-            $product['return_received_quantity'] = Validate::isLoadedObject($orderDetail) ? (int)$orderDetail->product_quantity_return : 0;
+            $product['return_received_quantity'] = (int)$product['received_quantity'];
             $product['return_reinjected_quantity'] = Validate::isLoadedObject($orderDetail) ? (int)$orderDetail->product_quantity_reinjected : 0;
         }
         unset($product);
@@ -324,7 +316,6 @@ class AdminReturnControllerCore extends AdminController
             'products'               => $products,
             'quantityDisplayed'      => $quantityDisplayed,
             'id_order_return'        => $this->object->id,
-            'state_order_return'     => $this->object->state,
             'thread'                 => $conversation['thread'],
             'messages'               => $conversation['messages'],
             'first_message'          => $conversation['first_message'],
@@ -401,17 +392,19 @@ class AdminReturnControllerCore extends AdminController
                 if (($idOrderReturn = Tools::getIntValue('id_order_return')) && Validate::isUnsignedId($idOrderReturn)) {
                     $orderReturn = new OrderReturn($idOrderReturn);
                     $order = new Order($orderReturn->id_order);
-                    $newState = Tools::getIntValue('state');
-                    $oldState = (int)$orderReturn->state;
+                    $receivedBefore = (int)Db::getInstance()->getValue('SELECT SUM(`received_quantity`) FROM `'._DB_PREFIX_.'order_return_detail` WHERE `id_order_return` = '.(int)$orderReturn->id);
                     $quantityTargets = $this->collectReturnQuantityTargets($orderReturn);
                     if (count($this->errors)) {
                         return;
                     }
 
-                    $orderReturn->state = $newState;
                     if ($this->applyReturnQuantityTargets($orderReturn, $quantityTargets) && $orderReturn->save()) {
-                        if ($oldState !== $newState && !(bool)$orderReturn->migrated) {
-                            $this->notifyReturnStatusChange($orderReturn, $order, $newState);
+                        $receivedAfter = (int)Db::getInstance()->getValue('SELECT SUM(`received_quantity`) FROM `'._DB_PREFIX_.'order_return_detail` WHERE `id_order_return` = '.(int)$orderReturn->id);
+                        if ($receivedAfter > $receivedBefore) {
+                            CustomerServiceStatus::save($orderReturn, 'pending1');
+                            if (!(bool)$orderReturn->migrated) {
+                                $this->notifyPackageReceived($orderReturn, $order);
+                            }
                         }
 
                         if (Tools::isSubmit('submitAddorder_returnAndStay')) {
@@ -430,20 +423,13 @@ class AdminReturnControllerCore extends AdminController
         parent::postProcess();
     }
 
-    private function notifyReturnStatusChange(OrderReturn $orderReturn, Order $order, int $newState): void
+    private function notifyPackageReceived(OrderReturn $orderReturn, Order $order): void
     {
-        if ($newState === OrderReturn::STATE_PACKAGE_RECEIVED) {
-            $eventKey = 'order_return_package_received';
-            $message = sprintf(
-                $this->l('Your return for order %s has arrived at our warehouse.'),
-                (string)$order->reference
-            );
-        } elseif ($newState === OrderReturn::STATE_RETURN_COMPLETED) {
-            $eventKey = 'order_return_completed';
-            $message = $this->getReturnCompletedNotificationMessage($orderReturn, $order);
-        } else {
-            return;
-        }
+        $eventKey = 'order_return_package_received';
+        $message = sprintf(
+            $this->l('Your return for order %s has arrived at our warehouse.'),
+            (string)$order->reference
+        );
 
         (new CustomerServiceNotificationService())->notify(
             (int)$order->id_customer,
@@ -460,73 +446,6 @@ class AdminReturnControllerCore extends AdminController
         );
     }
 
-    private function getReturnCompletedNotificationMessage(OrderReturn $orderReturn, Order $order): string
-    {
-        $slipRows = Db::readOnly()->getArray(
-            (new DbQuery())
-                ->select('`id_order_slip`')
-                ->from('order_slip')
-                ->where('`reason_entity_type` = '.(int)RefundPolicy::REASON_ORDER_RETURN)
-                ->where('`reason_id_entity` = '.(int)$orderReturn->id)
-                ->orderBy('`id_order_slip` ASC')
-        );
-        if (!$slipRows) {
-            return sprintf(
-                $this->l('Your return for order %s has been completed.'),
-                (string)$order->reference
-            );
-        }
-
-        $idsOrderSlip = array_map('intval', array_column($slipRows, 'id_order_slip'));
-        $creditTotal = 0.0;
-        foreach ($idsOrderSlip as $idOrderSlip) {
-            $orderSlip = new OrderSlip($idOrderSlip);
-            if (Validate::isLoadedObject($orderSlip)) {
-                $creditTotal += $orderSlip->getRefundTotalTaxIncl();
-            }
-        }
-
-        $paymentRows = Db::readOnly()->getArray(
-            (new DbQuery())
-                ->select('`payment_method`, `amount`')
-                ->from('order_payment')
-                ->where('`id_order_slip` IN ('.implode(',', $idsOrderSlip).')')
-                ->where('`status` = \''.pSQL(OrderPayment::STATUS_DONE).'\'')
-                ->orderBy('`id_order_payment` ASC')
-        );
-        $refundTotal = 0.0;
-        $paymentMethods = [];
-        foreach ($paymentRows ?: [] as $paymentRow) {
-            $refundTotal += abs((float)$paymentRow['amount']);
-            $paymentMethod = trim((string)$paymentRow['payment_method']);
-            if ($paymentMethod !== '') {
-                $paymentMethods[$paymentMethod] = true;
-            }
-        }
-
-        if ($refundTotal > 0.0) {
-            return sprintf(
-                $this->l('Your return for order %1$s has been completed. We refunded %2$s via %3$s.'),
-                (string)$order->reference,
-                Tools::displayPrice(Tools::roundPrice($refundTotal), (int)$order->id_currency),
-                implode(' + ', array_keys($paymentMethods)) ?: (string)$order->payment
-            );
-        }
-
-        if ($creditTotal > 0.0) {
-            return sprintf(
-                $this->l('Your return for order %1$s has been completed. A credit slip of %2$s has been created.'),
-                (string)$order->reference,
-                Tools::displayPrice(Tools::roundPrice($creditTotal), (int)$order->id_currency)
-            );
-        }
-
-        return sprintf(
-            $this->l('Your return for order %s has been completed.'),
-            (string)$order->reference
-        );
-    }
-
     protected function collectReturnQuantityTargets(OrderReturn $orderReturn): array
     {
         $registeredQuantities = Tools::getValue('return_registered_quantity', []);
@@ -538,7 +457,6 @@ class AdminReturnControllerCore extends AdminController
         }
 
         $targets = [];
-        $hasRegisteredQuantity = false;
         foreach ($registeredQuantities as $idOrderDetail => $rawRegisteredQuantity) {
             $idOrderDetail = (int)$idOrderDetail;
             $orderDetail = new OrderDetail($idOrderDetail);
@@ -550,7 +468,7 @@ class AdminReturnControllerCore extends AdminController
             $registeredQuantity = (int)$rawRegisteredQuantity;
             $receivedQuantity = is_array($receivedQuantities) && array_key_exists($idOrderDetail, $receivedQuantities)
                 ? (int)$receivedQuantities[$idOrderDetail]
-                : (int)$orderDetail->product_quantity_return;
+                : $this->getReceivedQuantity($orderReturn, $idOrderDetail);
             $restockedQuantity = is_array($restockedQuantities) && array_key_exists($idOrderDetail, $restockedQuantities)
                 ? (int)$restockedQuantities[$idOrderDetail]
                 : (int)$orderDetail->product_quantity_reinjected;
@@ -561,18 +479,16 @@ class AdminReturnControllerCore extends AdminController
                 return [];
             }
 
-            if ($registeredQuantity > $orderedQuantity || $receivedQuantity > $orderedQuantity) {
+            $otherReceivedQuantity = (int)$orderDetail->product_quantity_return - $this->getReceivedQuantity($orderReturn, $idOrderDetail);
+            $totalReceivedQuantity = $otherReceivedQuantity + $receivedQuantity;
+            if ($registeredQuantity > $orderedQuantity || $totalReceivedQuantity > $orderedQuantity) {
                 $this->errors[] = Tools::displayError('Returned quantities cannot be greater than the ordered quantity.');
                 return [];
             }
 
-            if ($restockedQuantity > $receivedQuantity) {
+            if ($restockedQuantity > $totalReceivedQuantity) {
                 $this->errors[] = Tools::displayError('Restocked quantity cannot be greater than received quantity.');
                 return [];
-            }
-
-            if ($registeredQuantity > 0) {
-                $hasRegisteredQuantity = true;
             }
 
             $targets[$idOrderDetail] = [
@@ -582,18 +498,20 @@ class AdminReturnControllerCore extends AdminController
             ];
         }
 
-        if ($targets && !$hasRegisteredQuantity) {
-            $this->errors[] = Tools::displayError('You need at least one product.');
-            return [];
-        }
 
         return $targets;
+    }
+
+    private function getReceivedQuantity(OrderReturn $orderReturn, int $idOrderDetail): int
+    {
+        return (int)Db::getInstance()->getValue('SELECT SUM(`received_quantity`) FROM `'._DB_PREFIX_.'order_return_detail`'
+            .' WHERE `id_order_return` = '.(int)$orderReturn->id.' AND `id_order_detail` = '.$idOrderDetail);
     }
 
     protected function applyReturnQuantityTargets(OrderReturn $orderReturn, array $quantityTargets): bool
     {
         foreach ($quantityTargets as $idOrderDetail => $target) {
-            if (!OrderReturn::upsertReturnDetail((int)$orderReturn->id, (int)$idOrderDetail, (int)$target['registered'])) {
+            if (!OrderReturn::upsertReturnDetail((int)$orderReturn->id, (int)$idOrderDetail, (int)$target['registered'], 0, (int)$target['received'])) {
                 $this->errors[] = Tools::displayError('An error occurred while saving the order return details.');
                 return false;
             }
@@ -602,14 +520,6 @@ class AdminReturnControllerCore extends AdminController
             if (!Validate::isLoadedObject($orderDetail)) {
                 $this->errors[] = Tools::displayError('The order return content is invalid.');
                 return false;
-            }
-
-            if ((int)$orderDetail->product_quantity_return !== (int)$target['received']) {
-                $orderDetail->product_quantity_return = (int)$target['received'];
-                if (!$orderDetail->update()) {
-                    $this->errors[] = Tools::displayError('Returned quantities could not be booked.');
-                    return false;
-                }
             }
 
             if (!$this->setRestockedQuantity($orderDetail, (int)$target['restocked'])) {

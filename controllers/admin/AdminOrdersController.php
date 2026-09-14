@@ -775,7 +775,6 @@ class AdminOrdersControllerCore extends AdminController
                 if ($idOrderSlip <= 0) {
                     $this->errors[] = Tools::displayError('You cannot generate a partial credit slip.');
                 } else {
-                    $this->updateServiceCaseStatusFromCreditRequest($order, $creditSlipRequest);
 
                     $customer = new Customer((int) ($order->id_customer));
                     $params['{lastname}'] = $customer->lastname;
@@ -1713,7 +1712,6 @@ class AdminOrdersControllerCore extends AdminController
             'credit_prefill_entity'        => Tools::getIntValue('prefill_credit_entity'),
             'credit_prefill_refund_method' => (string)Tools::getValue('prefill_refund_method', ''),
             'service_case_type_options'    => $this->getServiceCaseTypeOptions(),
-            'service_case_status_options'  => $this->getServiceCaseStatusOptions(),
             'current_id_lang'              => $this->context->language->id,
             'invoices'                     => $this->getOrderInvoices($order),
             'payment_methods'              => $paymentMethods,
@@ -3237,71 +3235,6 @@ class AdminOrdersControllerCore extends AdminController
         return $this->getRefundEligibilityService()->getOrderDetailActionCapabilities($order, $orderDetail);
     }
 
-    protected function bookReturnedQuantitiesForOrderDetails(array $quantitiesByOrderDetail, bool $reinject): bool
-    {
-        foreach ($quantitiesByOrderDetail as $idOrderDetail => $quantity) {
-            $orderDetail = new OrderDetail((int)$idOrderDetail);
-            if (!Validate::isLoadedObject($orderDetail)) {
-                $this->errors[] = Tools::displayError('The selected product line is invalid.');
-                return false;
-            }
-
-            $remaining = max(
-                0,
-                (int)$orderDetail->product_quantity
-                - (int)$orderDetail->product_quantity_return
-                - (int)$orderDetail->product_quantity_refunded
-            );
-            $quantityToBook = min((int)$quantity, $remaining);
-
-            if ($quantityToBook <= 0) {
-                continue;
-            }
-
-            $orderDetail->product_quantity_return += $quantityToBook;
-            if (!$orderDetail->update()) {
-                $this->errors[] = Tools::displayError('Returned quantities could not be booked.');
-                return false;
-            }
-
-            if ($reinject) {
-                $this->reinjectQuantity($orderDetail, $quantityToBook, false, Configuration::get('PS_STOCK_CUSTOMER_RETURN_REASON') ?: Configuration::get('PS_STOCK_CUSTOMER_ORDER_REASON'));
-                if (count($this->errors)) {
-                    return false;
-                }
-            }
-
-            if (Configuration::get('PS_ADVANCED_STOCK_MANAGEMENT')) {
-                StockAvailable::synchronize($orderDetail->product_id);
-            }
-        }
-
-        return true;
-    }
-
-    protected function markOrderDetailsRefunded(array $quantitiesByOrderDetail): bool
-    {
-        $idOrder = 0;
-        foreach (array_keys($quantitiesByOrderDetail) as $idOrderDetail) {
-            $orderDetail = new OrderDetail((int)$idOrderDetail);
-            if (!Validate::isLoadedObject($orderDetail)) {
-                $this->errors[] = Tools::displayError('The selected product line is invalid.');
-                return false;
-            }
-
-            $idOrder = (int)$orderDetail->id_order;
-            break;
-        }
-
-        $order = new Order($idOrder);
-        if (!Validate::isLoadedObject($order)) {
-            $this->errors[] = Tools::displayError('The selected order is invalid.');
-            return false;
-        }
-
-        return $this->createBackOfficeOrderCancellation($order, $quantitiesByOrderDetail);
-    }
-
     protected function createBackOfficeOrderCancellation(Order $order, array $quantitiesByOrderDetail): bool
     {
         $idEmployee = $this->context->employee instanceof Employee
@@ -3383,7 +3316,6 @@ class AdminOrdersControllerCore extends AdminController
 
     protected function buildCreditSlipRequest(Order $order): ?array
     {
-        $serviceCaseStatus = (string)Tools::getValue('service_case_status', '');
         $result = $this->getRefundCalculator()->buildCreditSlipRequest($order, [
             'display_includes_tax' => (int)Tools::getValue('TaxMethod') === 1,
             'refund_method' => (string)Tools::getValue('order_product_refund_method', ''),
@@ -3398,18 +3330,6 @@ class AdminOrdersControllerCore extends AdminController
 
         foreach ($result['errors'] as $error) {
             $this->errors[] = Tools::displayError($error);
-        }
-
-        if (!$result['errors'] && $result['request']) {
-            $reasonEntityType = (int)$result['request']['metadata']['reason_entity_type'];
-            if ($reasonEntityType === RefundPolicy::REASON_SERVICE_CASE) {
-                if (!in_array($serviceCaseStatus, $this->getCreditServiceCaseStatusValues(), true)) {
-                    $this->errors[] = Tools::displayError('The selected service case status is invalid.');
-                    return null;
-                }
-
-                $result['request']['service_case_status'] = $serviceCaseStatus;
-            }
         }
 
         return $result['request'];
@@ -3470,34 +3390,6 @@ class AdminOrdersControllerCore extends AdminController
         return $options;
     }
 
-    protected function updateServiceCaseStatusFromCreditRequest(Order $order, array $creditSlipRequest): bool
-    {
-        $metadata = (array)($creditSlipRequest['metadata'] ?? []);
-        if ((int)($metadata['reason_entity_type'] ?? 0) !== RefundPolicy::REASON_SERVICE_CASE) {
-            return true;
-        }
-
-        $status = (string)($creditSlipRequest['service_case_status'] ?? '');
-        if (!in_array($status, $this->getCreditServiceCaseStatusValues(), true)) {
-            $this->errors[] = Tools::displayError('The selected service case status is invalid.');
-            return false;
-        }
-
-        $serviceCase = new OrderServiceCase((int)($metadata['reason_id_entity'] ?? 0));
-        if (!Validate::isLoadedObject($serviceCase) || (int)$serviceCase->id_order !== (int)$order->id) {
-            $this->errors[] = Tools::displayError('The selected service case is invalid.');
-            return false;
-        }
-
-        $serviceCase->status = $status;
-        if (!$serviceCase->update()) {
-            $this->errors[] = Tools::displayError('The service case status could not be updated.');
-            return false;
-        }
-
-        return true;
-    }
-
     protected function completeCancellationFromCreditRequest(
         Order $order,
         array $creditSlipRequest,
@@ -3537,6 +3429,7 @@ class AdminOrdersControllerCore extends AdminController
         }
 
         $cancellation->status = OrderCancellation::STATUS_DONE;
+        $cancellation->processing_status = 'closed';
         if (!$cancellation->update(true)) {
             $this->errors[] = Tools::displayError('The refund was recorded, but the linked cancellation could not be completed.');
             return false;
@@ -3567,29 +3460,6 @@ class AdminOrdersControllerCore extends AdminController
         ];
     }
 
-    protected function getServiceCaseStatusOptions(): array
-    {
-        return [
-            [
-                'id' => OrderServiceCase::STATUS_OPEN,
-                'label' => $this->l('Open'),
-            ],
-            [
-                'id' => OrderServiceCase::STATUS_WAITING,
-                'label' => $this->l('Waiting'),
-            ],
-            [
-                'id' => OrderServiceCase::STATUS_RESOLVED,
-                'label' => $this->l('Resolved'),
-            ],
-        ];
-    }
-
-    protected function getCreditServiceCaseStatusValues(): array
-    {
-        return array_column($this->getServiceCaseStatusOptions(), 'id');
-    }
-
     protected function getServiceCaseTypeLabel(int $caseType): string
     {
         foreach ($this->getServiceCaseTypeOptions() as $option) {
@@ -3603,13 +3473,8 @@ class AdminOrdersControllerCore extends AdminController
 
     protected function getServiceCaseStatusLabel(string $status): string
     {
-        foreach ($this->getServiceCaseStatusOptions() as $option) {
-            if ((string)$option['id'] === $status) {
-                return (string)$option['label'];
-            }
-        }
-
-        return $status;
+        $options = CustomerServiceStatus::getOptions(new OrderServiceCase());
+        return $options[$status]['label'] ?? $status;
     }
 
     protected function getCreditSuggestionsJson(Order $order, array $products): string

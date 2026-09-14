@@ -3,7 +3,7 @@
 /**
  * Class OrderCancellationCore
  */
-class OrderCancellationCore extends ObjectModel implements CustomerThreadContextSourceInterfaceCore
+class OrderCancellationCore extends ObjectModel implements CustomerThreadContextSourceInterfaceCore, CustomerServiceStatusSourceInterfaceCore
 {
     public const STATUS_OPEN = 'open';
     public const STATUS_QUANTITY_CANCELLED = 'quantity_cancelled';
@@ -19,6 +19,7 @@ class OrderCancellationCore extends ObjectModel implements CustomerThreadContext
             'id_order' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true],
             'id_employee' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'dbNullable' => true],
             'status' => ['type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'size' => 32, 'required' => true, 'dbDefault' => self::STATUS_OPEN],
+            'processing_status' => ['type' => self::TYPE_STRING, 'size' => 32, 'dbDefault' => 'open'],
             'requested_refund_method' => ['type' => self::TYPE_STRING, 'validate' => 'isGenericName', 'size' => 32, 'dbNullable' => true],
             'quoted_refund_total_tax_incl' => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbNullable' => true],
             'quoted_fee_tax_incl' => ['type' => self::TYPE_PRICE, 'validate' => 'isPrice', 'dbNullable' => true],
@@ -44,6 +45,8 @@ class OrderCancellationCore extends ObjectModel implements CustomerThreadContext
     public $id_employee;
     /** @var string */
     public $status = self::STATUS_OPEN;
+    public $processing_status = 'open';
+
     /** @var string|null */
     public $requested_refund_method;
     /** @var float|null */
@@ -58,6 +61,16 @@ class OrderCancellationCore extends ObjectModel implements CustomerThreadContext
     public $date_add;
     /** @var string */
     public $date_upd;
+
+    public function getCustomerServiceStatusField(): string
+    {
+        return 'processing_status';
+    }
+
+    public function getCustomerServiceStatusLabels(): array
+    {
+        return CustomerServiceStatus::getStandardLabels();
+    }
 
     public static function createForOrder(
         Order $order,
@@ -102,6 +115,17 @@ class OrderCancellationCore extends ObjectModel implements CustomerThreadContext
         }
 
         try {
+            if (!$migrated && $quote && $order->hasBeenPaid()) {
+                $db->getArray('SELECT id_order FROM `'._DB_PREFIX_.'orders` WHERE id_order = '.(int)$order->id.' FOR UPDATE');
+                $checked = (new CancellationQuoteService())->buildQuote(
+                    new Order((int)$order->id), $quantitiesByOrderDetail, $quote['refund_method'] ?? null
+                );
+                if ($checked['errors'] || !$checked['quote']
+                    || abs((float)$checked['quote']['refund_total_tax_incl'] - (float)$quote['refund_total_tax_incl']) > 0.000001
+                    || $checked['quote']['details'] != $quote['details']) {
+                    throw new PrestaShopException(Tools::displayError('The cancellation quote changed. Please review it again.'));
+                }
+            }
             $orderCancellation = new self();
             $orderCancellation->id_order = (int)$order->id;
             $orderCancellation->id_employee = $idEmployee > 0 ? $idEmployee : null;
@@ -123,7 +147,7 @@ class OrderCancellationCore extends ObjectModel implements CustomerThreadContext
                 : null;
 
             if (!$orderCancellation->add(true, true)) {
-                throw new PrestaShopException('Order cancellation could not be saved.');
+                throw new PrestaShopException(Tools::displayError('Order cancellation could not be saved.'));
             }
 
             foreach ($rows as $idOrderDetail => $row) {
@@ -147,7 +171,7 @@ class OrderCancellationCore extends ObjectModel implements CustomerThreadContext
                     : null;
 
                 if (!$detail->add()) {
-                    throw new PrestaShopException('Order cancellation detail could not be saved.');
+                    throw new PrestaShopException(Tools::displayError('Order cancellation detail could not be saved.'));
                 }
             }
 

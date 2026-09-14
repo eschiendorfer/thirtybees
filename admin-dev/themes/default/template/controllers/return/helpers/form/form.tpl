@@ -40,7 +40,7 @@
 		</p>
 	{elseif $input.type == 'pdf_order_return'}
 		<p>
-			{if $state_order_return == 2}
+			{if $id_order_return > 0}
 				<a class="btn" href="{$link->getPageLink('pdf-order-return', true, NULL, "id_order_return={$id_order_return|intval}&adtoken={Tools::getAdminTokenLite('AdminReturn')}&id_employee={$employee->id|intval}")|escape:'html':'UTF-8'}">
 					<i class="icon-file-text"></i> {l s='Print out'}
 				</a>
@@ -192,7 +192,6 @@
 		</table>
 		<script type="text/javascript">
 			(function () {
-				var packageReceivedState = 3;
 
 				function asQuantity(value) {
 					var quantity = parseInt(value, 10);
@@ -234,22 +233,6 @@
 					}
 				});
 
-				$('select[name="state"]').on('change', function () {
-					if (asQuantity($(this).val()) !== packageReceivedState) {
-						return;
-					}
-
-					$('.return-registered-quantity').each(function () {
-						var idOrderDetail = $(this).data('order-detail');
-						var registered = asQuantity($(this).val());
-						var $received = $('.return-received-quantity[data-order-detail="' + idOrderDetail + '"]');
-
-						if (!$received.data('changed') && asQuantity($received.val()) < registered) {
-							$received.val(registered);
-							syncRestockedLimit(idOrderDetail);
-						}
-					});
-				});
 			}());
 		</script>
 	{else}

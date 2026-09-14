@@ -74,7 +74,8 @@ class CustomerThreadWorkspaceDataProviderCore
         string $submitName,
         array $hiddenFields,
         array $uploadData,
-        ?string $currentStatus = null
+        ?string $currentStatus = null,
+        ?ObjectModel $statusOwner = null
     ): array {
         $defaultMessage = str_replace(
             '\\r\\n',
@@ -82,7 +83,10 @@ class CustomerThreadWorkspaceDataProviderCore
             Configuration::get('PS_CUSTOMER_SERVICE_SIGNATURE', $idLang)
         );
 
-        $statusOptions = $this->getCommunicationStatusOptions();
+        $statusOptions = CustomerServiceStatus::getOptions($statusOwner ?? new CustomerThread());
+        if ($statusOwner) {
+            $currentStatus = CustomerServiceStatus::get($statusOwner);
+        }
         $message = (string)Tools::getValue('reply_message', $defaultMessage);
         if ($currentStatus === null || !isset($statusOptions[$currentStatus])) {
             $currentStatus = null;
@@ -93,10 +97,10 @@ class CustomerThreadWorkspaceDataProviderCore
             || $hasAttachments;
         $selectedStatus = (string)Tools::getValue(
             'thread_status',
-            $hasReplyContent || $currentStatus === null ? CustomerThread::STATUS_CLOSED : $currentStatus
+            $currentStatus ?? CustomerThread::STATUS_OPEN
         );
         if (!isset($statusOptions[$selectedStatus])) {
-            $selectedStatus = CustomerThread::STATUS_CLOSED;
+            $selectedStatus = $currentStatus ?? CustomerThread::STATUS_OPEN;
         }
 
         return [
@@ -112,33 +116,6 @@ class CustomerThreadWorkspaceDataProviderCore
             'can_save_status' => $currentStatus !== null,
             'current_status' => $currentStatus,
             'has_reply_content' => $hasReplyContent,
-        ];
-    }
-
-    /** @return array<string, array{label: string, button_class: string, badge_class: string}> */
-    private function getCommunicationStatusOptions(): array
-    {
-        return [
-            CustomerThread::STATUS_OPEN => [
-                'label' => Translate::getAdminTranslation('Open', 'AdminCustomerThreads'),
-                'button_class' => 'btn-danger',
-                'badge_class' => 'badge-danger',
-            ],
-            CustomerThread::STATUS_IN_PROGRESS => [
-                'label' => Translate::getAdminTranslation('In inquiry', 'AdminCustomerThreads'),
-                'button_class' => 'btn-warning',
-                'badge_class' => 'badge-warning',
-            ],
-            CustomerThread::STATUS_WAITING_CUSTOMER => [
-                'label' => Translate::getAdminTranslation('Waiting for customer', 'AdminCustomerThreads'),
-                'button_class' => 'btn-info',
-                'badge_class' => 'badge-info',
-            ],
-            CustomerThread::STATUS_CLOSED => [
-                'label' => Translate::getAdminTranslation('Completed', 'AdminCustomerThreads'),
-                'button_class' => 'btn-success',
-                'badge_class' => 'badge-success',
-            ],
         ];
     }
 
@@ -197,7 +174,8 @@ class CustomerThreadWorkspaceDataProviderCore
                 $submitName,
                 $hiddenFields,
                 $this->getUploadData([], $uploadHelp),
-                $thread ? (string)$thread->status : null
+                $thread ? (string)$thread->status : null,
+                CustomerServiceStatus::getEntity($entityType, $idEntity)
             ),
         ];
     }

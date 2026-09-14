@@ -37,6 +37,13 @@ class OrderAdjustmentServiceCore
         $remainingGrossTaxExcl = 0.0;
         $remainingPhysicalGrossTaxIncl = 0.0;
         $hasRemainingProducts = false;
+        $remainingDiscountTaxIncl = 0.0;
+        $remainingDiscountTaxExcl = 0.0;
+        try {
+            $discountRates = (new RefundDiscountService())->getProductRates($order, true);
+        } catch (PrestaShopException $exception) {
+            return ['errors' => [$exception->getMessage()], 'adjustment' => null];
+        }
 
         foreach ($order->getProducts() as $product) {
             $idOrderDetail = (int)$product['id_order_detail'];
@@ -64,6 +71,9 @@ class OrderAdjustmentServiceCore
             $cancelledLineTaxExcl = $unitTaxExcl * $selectedQuantity;
             $remainingLineTaxIncl = $unitTaxIncl * $remainingQuantity;
             $remainingLineTaxExcl = $unitTaxExcl * $remainingQuantity;
+            $discountRate = (float)($discountRates[$idOrderDetail] ?? 0.0);
+            $remainingDiscountTaxIncl += $remainingLineTaxIncl * $discountRate / 100;
+            $remainingDiscountTaxExcl += $remainingLineTaxExcl * $discountRate / 100;
 
             if ($selectedQuantity > 0) {
                 $lines[$idOrderDetail] = [
@@ -78,6 +88,8 @@ class OrderAdjustmentServiceCore
                     'remaining_quantity' => $remainingQuantity,
                     'gross_tax_incl' => $this->refundPolicy->roundPriceAmount($cancelledLineTaxIncl),
                     'gross_tax_excl' => $this->refundPolicy->roundPriceAmount($cancelledLineTaxExcl),
+                    'discounted_tax_incl' => $cancelledLineTaxIncl * (1 - $discountRate / 100),
+                    'discounted_tax_excl' => $cancelledLineTaxExcl * (1 - $discountRate / 100),
                     'product_amount_tax_incl' => 0.0,
                     'product_amount_tax_excl' => 0.0,
                 ];
@@ -104,25 +116,22 @@ class OrderAdjustmentServiceCore
             return ['errors' => array_values(array_unique($errors)), 'adjustment' => null];
         }
 
-        $discountRate = $this->getRelevantDiscountRate($order);
         $cancelledProductAmountTaxIncl = $this->refundPolicy->roundAmount(
-            $cancelledGrossTaxIncl * (1 - ($discountRate / 100))
+            array_sum(array_column($lines, 'discounted_tax_incl'))
         );
         $cancelledProductAmountTaxExcl = $this->refundPolicy->roundPriceAmount(
-            $cancelledGrossTaxExcl * (1 - ($discountRate / 100))
+            array_sum(array_column($lines, 'discounted_tax_excl'))
         );
-        $allocatedTaxIncl = $this->allocateRoundedAmount($lines, $cancelledProductAmountTaxIncl, 'gross_tax_incl');
-        $allocatedTaxExcl = $this->allocatePriceAmount($lines, $cancelledProductAmountTaxExcl, 'gross_tax_excl');
+        $allocatedTaxIncl = $this->allocateRoundedAmount($lines, $cancelledProductAmountTaxIncl, 'discounted_tax_incl');
+        $allocatedTaxExcl = $this->allocatePriceAmount($lines, $cancelledProductAmountTaxExcl, 'discounted_tax_excl');
         foreach ($lines as $idOrderDetail => &$line) {
             $line['product_amount_tax_incl'] = (float)($allocatedTaxIncl[$idOrderDetail] ?? 0.0);
             $line['product_amount_tax_excl'] = (float)($allocatedTaxExcl[$idOrderDetail] ?? 0.0);
         }
         unset($line);
 
-        $remainingDiscountTaxIncl = $this->refundPolicy->roundAmount($remainingGrossTaxIncl * $discountRate / 100);
-        $remainingDiscountTaxExcl = $remainingGrossTaxIncl > 0
-            ? $this->refundPolicy->roundPriceAmount($remainingGrossTaxExcl * $remainingDiscountTaxIncl / $remainingGrossTaxIncl)
-            : 0.0;
+        $remainingDiscountTaxIncl = $this->refundPolicy->roundAmount($remainingDiscountTaxIncl);
+        $remainingDiscountTaxExcl = $this->refundPolicy->roundPriceAmount($remainingDiscountTaxExcl);
 
         $shipping = $this->calculateCurrentShipping($order, $remainingProducts, $remainingPhysicalGrossTaxIncl);
         if ($shipping['error'] !== '') {
@@ -179,7 +188,8 @@ class OrderAdjustmentServiceCore
             'errors' => [],
             'adjustment' => [
                 'lines' => $lines,
-                'discount_rate' => $discountRate,
+                'discount_rate' => $cancelledGrossTaxIncl > 0
+                    ? 100 * (1 - $cancelledProductAmountTaxIncl / $cancelledGrossTaxIncl) : 0.0,
                 'product_amount_tax_incl' => $cancelledProductAmountTaxIncl,
                 'product_amount_tax_excl' => $cancelledProductAmountTaxExcl,
                 'shipping_before_tax_incl' => (float)$shippingBefore['tax_incl'],
@@ -235,7 +245,7 @@ class OrderAdjustmentServiceCore
         $quantities = OrderCancellationDetail::getQuantitiesForCancellation((int)$cancellation->id);
         $result = $this->calculate($order, $quantities, true);
         if ($result['errors'] || !$result['adjustment']) {
-            return ['success' => false, 'error' => implode(' ', $result['errors'])];
+            return ['success' => false, 'error' => implode(' ', array_map([Tools::class, 'displayError'], $result['errors']))];
         }
         $adjustment = $result['adjustment'];
         if (!empty($adjustment['requires_manual_review'])) {
@@ -256,6 +266,7 @@ class OrderAdjustmentServiceCore
                 return ['success' => false, 'error' => 'The order could not be marked as cancelled.'];
             }
             $cancellation->status = OrderCancellation::STATUS_DONE;
+            $cancellation->processing_status = 'closed';
             if (!$cancellation->update(true)) {
                 return ['success' => false, 'error' => 'The cancellation could not be completed.'];
             }
@@ -336,6 +347,7 @@ class OrderAdjustmentServiceCore
         }
 
         $cancellation->status = OrderCancellation::STATUS_DONE;
+        $cancellation->processing_status = 'closed';
         if (!$cancellation->update(true)) {
             return ['success' => false, 'error' => 'The cancellation could not be completed.'];
         }
@@ -361,19 +373,6 @@ class OrderAdjustmentServiceCore
         return StockAvailable::updateQuantity($idProduct, $idProductAttribute, $quantity, $idShop);
     }
 
-    private function getRelevantDiscountRate(Order $order): float
-    {
-        foreach ($order->getCartRules() as $orderCartRule) {
-            $cartRule = new CartRule((int)$orderCartRule['id_cart_rule']);
-            if (Validate::isLoadedObject($cartRule) && abs((float)$cartRule->reduction_percent - 10.0) < 0.0001) {
-                return 10.0;
-            }
-        }
-
-        $historicalRate = $this->getOrderPercentCartRuleRate($order);
-        return abs($historicalRate - 10.0) <= 0.1 ? 10.0 : 0.0;
-    }
-
     public function getOrderPercentCartRuleRate(Order $order): float
     {
         $productTotal = (float)$order->total_products_wt;
@@ -385,6 +384,9 @@ class OrderAdjustmentServiceCore
         $shippingDiscountLeft = max(0.0, (float)$order->total_shipping_tax_incl);
 
         foreach ($order->getCartRules() as $orderCartRule) {
+            if ((new RefundDiscountService())->isBoughtVoucher((int)$orderCartRule['id_cart_rule'])) {
+                continue;
+            }
             $discount = max(0.0, (float)$orderCartRule['value']);
 
             if (!empty($orderCartRule['free_shipping']) && $shippingDiscountLeft > 0.0) {
@@ -552,7 +554,7 @@ class OrderAdjustmentServiceCore
         $percentageRules = [];
         foreach ($order->getCartRules() as $row) {
             $cartRule = new CartRule((int)$row['id_cart_rule']);
-            if (Validate::isLoadedObject($cartRule) && abs((float)$cartRule->reduction_percent - 10.0) < 0.0001) {
+            if (Validate::isLoadedObject($cartRule) && (float)$cartRule->reduction_percent > 0.0) {
                 $percentageRules[] = new OrderCartRule((int)$row['id_order_cart_rule']);
             }
         }
@@ -560,9 +562,16 @@ class OrderAdjustmentServiceCore
             return $discountTaxIncl <= 0.0;
         }
 
+        $originalTotal = array_sum(array_map(static function ($rule) { return (float)$rule->value; }, $percentageRules));
+        $remainingIncl = $discountTaxIncl;
+        $remainingExcl = $discountTaxExcl;
         foreach ($percentageRules as $index => $orderCartRule) {
-            $orderCartRule->value = $index === 0 ? $discountTaxIncl : 0.0;
-            $orderCartRule->value_tax_excl = $index === 0 ? $discountTaxExcl : 0.0;
+            $share = $originalTotal > 0 ? (float)$orderCartRule->value / $originalTotal : 0.0;
+            $last = $index === count($percentageRules) - 1;
+            $orderCartRule->value = $last ? $remainingIncl : min($remainingIncl, Tools::roundPrice($discountTaxIncl * $share));
+            $orderCartRule->value_tax_excl = $last ? $remainingExcl : min($remainingExcl, Tools::roundPrice($discountTaxExcl * $share));
+            $remainingIncl -= $orderCartRule->value;
+            $remainingExcl -= $orderCartRule->value_tax_excl;
             if (!$orderCartRule->update()) {
                 return false;
             }

@@ -619,6 +619,25 @@ class CartRuleCore extends ObjectModel
      * @throws PrestaShopDatabaseException
      * @throws PrestaShopException
      */
+    public function getRefundEligibleProductKeys(Order $order): array
+    {
+        if (!$this->product_restriction) {
+            return array_values(array_unique(array_map(static function ($product) {
+                return $product['product_id'].'-'.$product['product_attribute_id'];
+            }, $order->getProducts())));
+        }
+        $context = clone Context::getContext();
+        $context->cart = new Cart((int)$order->id_cart);
+        if (!Validate::isLoadedObject($context->cart)) {
+            throw new PrestaShopException(Tools::displayError('The original cart is missing; review the product-specific discount manually.'));
+        }
+        $keys = $this->checkProductRestrictions($context, true, false, true);
+        if (!is_array($keys) || !$keys) {
+            throw new PrestaShopException(Tools::displayError('The product-specific discount cannot be reconstructed.'));
+        }
+        return $keys;
+    }
+
     protected function checkProductRestrictions(Context $context, $returnProducts = false, $displayError = true, $alreadyInCart = false)
     {
         $selectedProducts = [];

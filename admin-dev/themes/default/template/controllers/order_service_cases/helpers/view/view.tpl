@@ -6,11 +6,7 @@
 	 data-auto-scroll="0"
 	 data-thread-id="{if $thread}{$thread->id|intval}{else}0{/if}"
 	 data-thread-setting-url="{$thread_setting_url|escape:'html':'UTF-8'}"
-	 data-thread-update-error="{l s='The communication status could not be updated.'}"
-	 data-entity-setting-url="{$service_case_setting_url|escape:'html':'UTF-8'}"
-	 data-entity-setting-action="updateServiceCaseSetting"
-	 data-entity-id="{$order_service_case->id|intval}"
-	 data-entity-update-error="{l s='The service case could not be updated.'}">
+	 data-thread-update-error="{l s='The communication status could not be updated.'}">
 	<div class="col-lg-9 customer-thread-main-column">
 		<div class="panel">
 			<div class="panel-heading">
@@ -71,14 +67,6 @@
 		<div class="panel customer-thread-settings-panel">
 			<div class="panel-heading">
 				<i class="icon-tasks"></i> {l s='Processing'}
-			</div>
-			<div class="form-group">
-				<label for="service_case_status">{l s='Case status'}</label>
-				<select class="form-control js-entity-setting" id="service_case_status" data-setting="status">
-					{foreach from=$status_options key=status_value item=status_name}
-						<option value="{$status_value|escape:'html':'UTF-8'}" {if $order_service_case->status == $status_value}selected="selected"{/if}>{$status_name|escape:'html':'UTF-8'}</option>
-					{/foreach}
-				</select>
 			</div>
 
 			<div class="form-group">

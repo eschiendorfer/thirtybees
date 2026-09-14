@@ -60,7 +60,8 @@ class CancellationQuoteServiceCore
             OrderCancellationDetail::getQuantitiesForCancellation((int)$cancellation->id),
             $refundMethod,
             true,
-            (string)$cancellation->date_add
+            (string)$cancellation->date_add,
+            (int)$cancellation->id
         );
     }
 
@@ -69,7 +70,8 @@ class CancellationQuoteServiceCore
         array $quantitiesByOrderDetail,
         ?string $refundMethod,
         bool $selectedAlreadyCancelled,
-        ?string $calculationDate
+        ?string $calculationDate,
+        int $excludeCancellation = 0
     ): array
     {
         $errors = [];
@@ -92,6 +94,30 @@ class CancellationQuoteServiceCore
             return ['errors' => $adjustmentResult['errors'], 'quote' => null];
         }
         $adjustment = $adjustmentResult['adjustment'];
+
+        $eligibility = new RefundEligibilityService();
+        $shipping = (float)$adjustment['shipping_adjustment_tax_incl'];
+        if ($isPaid) {
+            $available = $eligibility->getRemainingOrderCreditAmount($order, $excludeCancellation);
+            $available = floor(($available + 0.000001) / RefundPolicy::ROUNDING_UNIT) * RefundPolicy::ROUNDING_UNIT;
+            $shipping = min($shipping, $available);
+            foreach ($adjustment['lines'] as $id => &$line) {
+                $remainingLine = $eligibility->getOrderDetailRemainingCreditAmounts(new OrderDetail((int)$id));
+                $line['product_amount_tax_incl'] = min($line['product_amount_tax_incl'], $remainingLine['tax_incl']);
+            }
+            unset($line);
+            $productBase = array_sum(array_column($adjustment['lines'], 'product_amount_tax_incl'));
+            $target = min($productBase, max(0.0, $available - $shipping));
+            $left = floor(($target + 0.000001) / RefundPolicy::ROUNDING_UNIT) * RefundPolicy::ROUNDING_UNIT;
+            $ids = array_keys($adjustment['lines']);
+            foreach ($ids as $index => $id) {
+                $amount = $index === count($ids) - 1 ? $left
+                    : ($productBase > 0 ? $this->policy->roundAmount($target * $adjustment['lines'][$id]['product_amount_tax_incl'] / $productBase) : 0.0);
+                $amount = min($left, $amount, $adjustment['lines'][$id]['product_amount_tax_incl']);
+                $adjustment['lines'][$id]['product_amount_tax_incl'] = $amount;
+                $left = max(0.0, $left - $amount);
+            }
+        }
 
         $details = [];
         $productTotal = 0.0;
@@ -144,7 +170,6 @@ class CancellationQuoteServiceCore
         // Positive means previously paid shipping is returned. Negative means
         // the remaining order newly requires shipping and therefore reduces
         // the credit. The customer is never charged an additional amount.
-        $shipping = (float)$adjustment['shipping_adjustment_tax_incl'];
         $refundTotal = $this->policy->roundAmount(max(0.0, $productTotal + $shipping - $feeTotal));
 
         return [

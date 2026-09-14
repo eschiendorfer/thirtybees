@@ -57,21 +57,6 @@
     function updateReplyAction(form) {
       var canSaveStatus = form.getAttribute('data-can-save-status') === '1';
       var hasContent = hasReplyContent(form);
-      var hadContent = form.getAttribute('data-has-reply-content') === '1';
-      var statusWasSelected = form.getAttribute('data-status-explicit') === '1';
-      var control = $(form).find('[data-status-control]').first();
-      var input = control.find('[data-status-input]').first();
-
-      if (!statusWasSelected && hasContent !== hadContent) {
-        var automaticStatus = hasContent
-          ? form.getAttribute('data-default-reply-status')
-          : form.getAttribute('data-current-status');
-        if (automaticStatus) {
-          input.val(automaticStatus);
-          updateStatusControl(control, automaticStatus);
-        }
-      }
-
       var isReply = hasContent || !canSaveStatus;
       $(form).find('[data-reply-action-label]').text(
         form.getAttribute(isReply ? 'data-reply-label' : 'data-status-save-label')
@@ -89,7 +74,6 @@
       var input = control.find('[data-status-input]').first();
       var value = String(option.data('status-value'));
 
-      control.closest('form').attr('data-status-explicit', '1');
       input.val(value);
       updateStatusControl(control, value);
     });

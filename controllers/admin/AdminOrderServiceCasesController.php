@@ -154,44 +154,6 @@ class AdminOrderServiceCasesControllerCore extends AdminController
         $this->context->smarty->clearAssign('help_link');
     }
 
-    /**
-     * Update the service-case status from its workspace.
-     */
-    public function ajaxProcessUpdateServiceCaseSetting()
-    {
-        if (!$this->hasEditPermission()) {
-            $this->respondServiceCaseSettingJson(false, $this->l('You do not have permission to edit this service case.'));
-        }
-
-        $serviceCase = new OrderServiceCase(Tools::getIntValue('id_order_service_case'));
-        if (!Validate::isLoadedObject($serviceCase)) {
-            $this->respondServiceCaseSettingJson(false, $this->l('The service case could not be found.'));
-        }
-
-        if ((string)Tools::getValue('field') !== 'status') {
-            $this->respondServiceCaseSettingJson(false, $this->l('The selected setting is invalid.'));
-        }
-
-        $status = (string)Tools::getValue('value');
-        if (!array_key_exists($status, $this->getStatusList())) {
-            $this->respondServiceCaseSettingJson(false, $this->l('The selected status is invalid.'));
-        }
-
-        $serviceCase->status = $status;
-        $updated = $serviceCase->update(true);
-        $this->respondServiceCaseSettingJson(
-            $updated,
-            $updated ? $this->l('The service case has been updated.') : $this->l('The service case could not be updated.')
-        );
-    }
-
-    /**
-     * @return string
-     *
-     * @throws PrestaShopDatabaseException
-     * @throws PrestaShopException
-     * @throws SmartyException
-     */
     public function renderView()
     {
         if (!Validate::isLoadedObject($this->object)) {
@@ -254,14 +216,12 @@ class AdminOrderServiceCasesControllerCore extends AdminController
             'summary' => $summary,
             'details' => $details,
             'order_slips' => $orderSlips,
-            'status_options' => $this->getStatusList(),
             'case_type_label' => $this->getCaseTypeLabel((int)$this->object->case_type),
             'requested_solution_label' => $this->getRequestedSolutionLabel($requestedSolution > 0 ? $requestedSolution : null),
             'entity_type' => $entityType,
             'assigned_employee_id' => EntityEmployeeAssignment::getEmployeeId($entityType, (int)$this->object->id),
             'assignable_employees' => $this->getAssignableEmployeeOptions(),
             'assignment_update_url' => $this->context->link->getAdminLink('AdminCustomerThreads'),
-            'service_case_setting_url' => $this->context->link->getAdminLink('AdminOrderServiceCases'),
             'thread_setting_url' => $this->context->link->getAdminLink('AdminCustomerThreads'),
             'thread' => $conversation['thread'],
             'messages' => $conversation['messages'],
@@ -310,13 +270,7 @@ class AdminOrderServiceCasesControllerCore extends AdminController
      */
     private function getStatusList(): array
     {
-        return [
-            OrderServiceCase::STATUS_OPEN => $this->l('Open'),
-            OrderServiceCase::STATUS_WAITING => $this->l('Waiting'),
-            OrderServiceCase::STATUS_RESOLVED => $this->l('Resolved'),
-            OrderServiceCase::STATUS_REJECTED => $this->l('Rejected'),
-            OrderServiceCase::STATUS_EXPIRED => $this->l('Expired'),
-        ];
+        return array_map(static fn(array $option): string => $option['label'], CustomerServiceStatus::getOptions(new OrderServiceCase()));
     }
 
     /**

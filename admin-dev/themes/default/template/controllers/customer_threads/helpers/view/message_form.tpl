@@ -5,8 +5,6 @@
       class="form-horizontal customer-thread-reply"
       data-can-save-status="{if $message_form.can_save_status}1{else}0{/if}"
       data-has-reply-content="{if $message_form.has_reply_content}1{else}0{/if}"
-      data-current-status="{$message_form.current_status|escape:'html':'UTF-8'}"
-      data-default-reply-status="closed"
       data-reply-label="{l s='Send reply'}"
       data-status-save-label="{l s='Save status'}">
 	<div class="customer-thread-reply-tools">

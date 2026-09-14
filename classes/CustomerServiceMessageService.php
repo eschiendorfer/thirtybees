@@ -16,13 +16,13 @@ class CustomerServiceMessageServiceCore
     {
         $db = Db::getInstance();
         if (!$db->execute('START TRANSACTION')) {
-            throw new PrestaShopException('The customer-service transaction could not be started.');
+            throw new PrestaShopException(Tools::displayError('The customer-service transaction could not be started.'));
         }
 
         try {
             $result = $this->saveWithinTransaction($request);
             if (!$db->execute('COMMIT')) {
-                throw new PrestaShopException('The customer-service transaction could not be committed.');
+                throw new PrestaShopException(Tools::displayError('The customer-service transaction could not be committed.'));
             }
 
             return $result;
@@ -71,13 +71,22 @@ class CustomerServiceMessageServiceCore
             }
         }
 
-        if ($request['status'] !== null) {
-            $thread->status = $request['status'];
+        $owner = CustomerServiceStatus::getOwner($thread);
+        $status = $request['status'];
+        if ($request['idEmployee'] === 0 && !$request['private'] && (!$threadCreated || $status === null)) {
+            $status = CustomerThread::STATUS_OPEN;
+        }
+        if ($status !== null && !array_key_exists($status, CustomerServiceStatus::getLabels($owner))) {
+            throw new PrestaShopException(Tools::displayError('The selected status is invalid.'));
+        }
+        if ($owner === $thread) {
+            $thread->status = $status ?? ($threadCreated ? CustomerThread::STATUS_OPEN : $thread->status);
         } elseif ($threadCreated) {
-            $thread->status = CustomerThread::STATUS_OPEN;
+            // Linked conversations have no independent work status.
+            $thread->status = CustomerThread::STATUS_CLOSED;
         }
         if (!$thread->save()) {
-            throw new PrestaShopException('The customer-service thread could not be saved.');
+            throw new PrestaShopException(Tools::displayError('The customer-service thread could not be saved.'));
         }
 
         $message = new CustomerMessage();
@@ -91,7 +100,7 @@ class CustomerServiceMessageServiceCore
 
         $hasVisibleMessage = CustomerMessage::hasVisibleContent($message->message);
         if (!$hasVisibleMessage && !$request['attachments']) {
-            throw new PrestaShopException('The customer-service message cannot be blank.');
+            throw new PrestaShopException(Tools::displayError('The customer-service message cannot be blank.'));
         }
         if (!$hasVisibleMessage) {
             $message->message = '';
@@ -101,10 +110,13 @@ class CustomerServiceMessageServiceCore
             throw new PrestaShopException((string)$validation);
         }
         if (!$message->add()) {
-            throw new PrestaShopException('The customer-service message could not be saved.');
+            throw new PrestaShopException(Tools::displayError('The customer-service message could not be saved.'));
         }
         if (!CustomerMessageAttachment::assignToMessage($request['attachments'], (int)$message->id)) {
-            throw new PrestaShopException('The customer-service attachments could not be saved.');
+            throw new PrestaShopException(Tools::displayError('The customer-service attachments could not be saved.'));
+        }
+        if ($owner !== $thread && $status !== null && !CustomerServiceStatus::save($owner, $status)) {
+            throw new PrestaShopException(Tools::displayError('The customer-service status could not be saved.'));
         }
 
         return [
@@ -133,7 +145,7 @@ class CustomerServiceMessageServiceCore
             'token' => '',
             'message' => '',
             'private' => false,
-            'status' => CustomerThread::STATUS_OPEN,
+            'status' => null,
             'threadData' => [],
             'attachments' => [],
         ], $request);
@@ -145,22 +157,22 @@ class CustomerServiceMessageServiceCore
     private function validateRequest(array $request): void
     {
         if ($request['idShop'] <= 0 || $request['idLang'] <= 0 || !Validate::isEmail($request['email'])) {
-            throw new PrestaShopException('The customer-service message context is invalid.');
+            throw new PrestaShopException(Tools::displayError('The customer-service message context is invalid.'));
         }
         if (($request['entityType'] > 0) !== ($request['idEntity'] > 0)) {
-            throw new PrestaShopException('The customer-service entity reference is incomplete.');
+            throw new PrestaShopException(Tools::displayError('The customer-service entity reference is incomplete.'));
         }
         if (
             $request['entityType'] > 0
             && !\CoreExtension\EntityTypeEnum::tryFrom($request['entityType'])
         ) {
-            throw new PrestaShopException('The customer-service entity type is invalid.');
+            throw new PrestaShopException(Tools::displayError('The customer-service entity type is invalid.'));
         }
         if ($request['entityType'] === \CoreExtension\EntityTypeEnum::PRODUCT_VALUE) {
-            throw new PrestaShopException('A product cannot be used as a customer-service entity.');
+            throw new PrestaShopException(Tools::displayError('A product cannot be used as a customer-service entity.'));
         }
         if ($request['entityType'] > 0 && $request['idCustomer'] <= 0 && $request['idEmployee'] <= 0) {
-            throw new PrestaShopException('A customer is required for this customer-service entity.');
+            throw new PrestaShopException(Tools::displayError('A customer is required for this customer-service entity.'));
         }
         if (
             $request['entityType'] > 0
@@ -171,16 +183,10 @@ class CustomerServiceMessageServiceCore
                 $request['idCustomer']
             )
         ) {
-            throw new PrestaShopException('The customer-service entity does not belong to this customer.');
-        }
-        if (
-            $request['status'] !== null
-            && !in_array($request['status'], CustomerThread::$definition['fields']['status']['values'], true)
-        ) {
-            throw new PrestaShopException('The customer-service thread status is invalid.');
+            throw new PrestaShopException(Tools::displayError('The customer-service entity does not belong to this customer.'));
         }
         if ($request['threadData'] && json_encode($request['threadData']) === false) {
-            throw new PrestaShopException('The customer-service thread data is invalid.');
+            throw new PrestaShopException(Tools::displayError('The customer-service thread data is invalid.'));
         }
 
         foreach ($request['attachments'] as $attachment) {
@@ -189,7 +195,7 @@ class CustomerServiceMessageServiceCore
                 || !Validate::isLoadedObject($attachment)
                 || (int)$attachment->id_customer_message !== 0
             ) {
-                throw new PrestaShopException('A customer-service attachment is invalid.');
+                throw new PrestaShopException(Tools::displayError('A customer-service attachment is invalid.'));
             }
 
             $ownedByActor = $request['idEmployee'] > 0
@@ -199,7 +205,7 @@ class CustomerServiceMessageServiceCore
                     : $request['idVisitor'] > 0
                         && (int)$attachment->id_visitor === $request['idVisitor']);
             if (!$ownedByActor) {
-                throw new PrestaShopException('A customer-service attachment does not belong to this actor.');
+                throw new PrestaShopException(Tools::displayError('A customer-service attachment does not belong to this actor.'));
             }
         }
     }
@@ -235,14 +241,14 @@ class CustomerServiceMessageServiceCore
             && hash_equals((string)$thread->token, $request['token']);
         $employeeAccess = $request['idEmployee'] > 0;
         if (!$customerOwnsThread && !$guestOwnsThread && !$employeeAccess) {
-            throw new PrestaShopException('The customer-service thread is not accessible to this actor.');
+            throw new PrestaShopException(Tools::displayError('The customer-service thread is not accessible to this actor.'));
         }
 
         if ($request['entityType'] > 0 && (
             (int)$thread->entity_type !== $request['entityType']
             || (int)$thread->id_entity !== $request['idEntity']
         )) {
-            throw new PrestaShopException('The customer-service thread belongs to a different entity.');
+            throw new PrestaShopException(Tools::displayError('The customer-service thread belongs to a different entity.'));
         }
 
         if (
@@ -255,7 +261,7 @@ class CustomerServiceMessageServiceCore
                 $request['idCustomer']
             )
         ) {
-            throw new PrestaShopException('The customer-service entity does not belong to this customer.');
+            throw new PrestaShopException(Tools::displayError('The customer-service entity does not belong to this customer.'));
         }
     }
 

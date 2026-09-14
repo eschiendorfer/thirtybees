@@ -17,7 +17,7 @@ class CustomerServiceReplyServiceCore
         $idCustomer = (int)($request['idCustomer'] ?? 0);
         $customer = $idCustomer > 0 ? new Customer($idCustomer) : null;
         if ($idCustomer > 0 && !Validate::isLoadedObject($customer)) {
-            throw new PrestaShopException('The customer-service customer could not be loaded.');
+            throw new PrestaShopException(Tools::displayError('The customer-service customer could not be loaded.'));
         }
 
         $result = (new CustomerServiceMessageService())->save($request);

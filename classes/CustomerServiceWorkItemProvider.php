@@ -70,13 +70,11 @@ class CustomerServiceWorkItemProviderCore
 
         if ($this->hasTable('order_cancellation')) {
             $cancellationType = (int)\CoreExtension\EntityTypeEnum::ORDER_CANCELLATION_VALUE;
-            $entityRank = 'CASE'
-                .' WHEN oc.`status` = "'.pSQL(OrderCancellation::STATUS_DONE).'" THEN '.self::RANK_CLOSED
-                .' ELSE '.self::RANK_OPEN.' END';
+            $entityRank = CustomerServiceStatus::rankSql('oc.`processing_status`');
             $unions[] = 'SELECT '.$cancellationType.' AS `entity_type`, oc.`id_order_cancellation` AS `id_entity`,'
                 .' o.`id_shop`, o.`id_customer`, COALESCE(NULLIF(TRIM(CONCAT(c.`firstname`, " ", c.`lastname`)), ""), ta.`thread_email`, "") AS `customer`,'
                 .' COALESCE(NULLIF(c.`email`, ""), ta.`thread_email`, "") AS `email`,'
-                .' '.$entityRank.' AS `entity_status_rank`, COALESCE(ta.`thread_status_rank`, 0) AS `thread_status_rank`,'
+                .' '.$entityRank.' AS `entity_status_rank`, 0 AS `thread_status_rank`,'
                 .' ta.`id_customer_thread`, oc.`date_upd` AS `entity_date_upd`, ta.`thread_date_upd`'
                 .' FROM `'._DB_PREFIX_.'order_cancellation` oc'
                 .' INNER JOIN `'._DB_PREFIX_.'orders` o ON o.`id_order` = oc.`id_order`'
@@ -86,16 +84,11 @@ class CustomerServiceWorkItemProviderCore
 
         if ($this->hasTable('order_return')) {
             $returnType = (int)\CoreExtension\EntityTypeEnum::ORDER_RETURN_VALUE;
-            $entityRank = 'CASE oret.`state`'
-                .' WHEN '.(int)OrderReturn::STATE_WAITING_FOR_PACKAGE.' THEN '.self::RANK_WAITING_CUSTOMER
-                .' WHEN '.(int)OrderReturn::STATE_RETURN_DENIED.' THEN '.self::RANK_CLOSED
-                .' WHEN '.(int)OrderReturn::STATE_RETURN_COMPLETED.' THEN '.self::RANK_CLOSED
-                .' WHEN '.(int)OrderReturn::STATE_RETURN_EXPIRED.' THEN '.self::RANK_CLOSED
-                .' ELSE '.self::RANK_OPEN.' END';
+            $entityRank = CustomerServiceStatus::rankSql('oret.`processing_status`');
             $unions[] = 'SELECT '.$returnType.' AS `entity_type`, oret.`id_order_return` AS `id_entity`,'
                 .' o.`id_shop`, oret.`id_customer`, COALESCE(NULLIF(TRIM(CONCAT(c.`firstname`, " ", c.`lastname`)), ""), ta.`thread_email`, "") AS `customer`,'
                 .' COALESCE(NULLIF(c.`email`, ""), ta.`thread_email`, "") AS `email`,'
-                .' '.$entityRank.' AS `entity_status_rank`, COALESCE(ta.`thread_status_rank`, 0) AS `thread_status_rank`,'
+                .' '.$entityRank.' AS `entity_status_rank`, 0 AS `thread_status_rank`,'
                 .' ta.`id_customer_thread`, oret.`date_upd` AS `entity_date_upd`, ta.`thread_date_upd`'
                 .' FROM `'._DB_PREFIX_.'order_return` oret'
                 .' INNER JOIN `'._DB_PREFIX_.'orders` o ON o.`id_order` = oret.`id_order`'
@@ -105,16 +98,11 @@ class CustomerServiceWorkItemProviderCore
 
         if ($this->hasTable('order_service_case')) {
             $serviceCaseType = (int)\CoreExtension\EntityTypeEnum::ORDER_SERVICE_CASE_VALUE;
-            $entityRank = 'CASE osc.`status`'
-                .' WHEN "'.pSQL(OrderServiceCase::STATUS_WAITING).'" THEN '.self::RANK_INQUIRY
-                .' WHEN "'.pSQL(OrderServiceCase::STATUS_RESOLVED).'" THEN '.self::RANK_CLOSED
-                .' WHEN "'.pSQL(OrderServiceCase::STATUS_REJECTED).'" THEN '.self::RANK_CLOSED
-                .' WHEN "'.pSQL(OrderServiceCase::STATUS_EXPIRED).'" THEN '.self::RANK_CLOSED
-                .' ELSE '.self::RANK_OPEN.' END';
+            $entityRank = CustomerServiceStatus::rankSql('osc.`status`');
             $unions[] = 'SELECT '.$serviceCaseType.' AS `entity_type`, osc.`id_order_service_case` AS `id_entity`,'
                 .' o.`id_shop`, o.`id_customer`, COALESCE(NULLIF(TRIM(CONCAT(c.`firstname`, " ", c.`lastname`)), ""), ta.`thread_email`, "") AS `customer`,'
                 .' COALESCE(NULLIF(c.`email`, ""), ta.`thread_email`, "") AS `email`,'
-                .' '.$entityRank.' AS `entity_status_rank`, COALESCE(ta.`thread_status_rank`, 0) AS `thread_status_rank`,'
+                .' '.$entityRank.' AS `entity_status_rank`, 0 AS `thread_status_rank`,'
                 .' ta.`id_customer_thread`, osc.`date_upd` AS `entity_date_upd`, ta.`thread_date_upd`'
                 .' FROM `'._DB_PREFIX_.'order_service_case` osc'
                 .' INNER JOIN `'._DB_PREFIX_.'orders` o ON o.`id_order` = osc.`id_order`'
@@ -128,8 +116,8 @@ class CustomerServiceWorkItemProviderCore
                 .' COALESCE(c.`id_shop`, '.(int)Context::getContext()->shop->id.') AS `id_shop`, pw.`id_customer`,'
                 .' COALESCE(NULLIF(TRIM(CONCAT(c.`firstname`, " ", c.`lastname`)), ""), ta.`thread_email`, "") AS `customer`,'
                 .' COALESCE(NULLIF(c.`email`, ""), ta.`thread_email`, "") AS `email`,'
-                .' CASE WHEN pw.`result` IS NULL OR pw.`result` = "" THEN '.self::RANK_OPEN.' ELSE '.self::RANK_CLOSED.' END AS `entity_status_rank`,'
-                .' COALESCE(ta.`thread_status_rank`, 0) AS `thread_status_rank`, ta.`id_customer_thread`,'
+                .' '.CustomerServiceStatus::rankSql('pw.`processing_status`').' AS `entity_status_rank`,'
+                .' 0 AS `thread_status_rank`, ta.`id_customer_thread`,'
                 .' pw.`date_upd` AS `entity_date_upd`, ta.`thread_date_upd`'
                 .' FROM `'._DB_PREFIX_.'genzo_crm_product_wish` pw'
                 .' LEFT JOIN `'._DB_PREFIX_.'customer` c ON c.`id_customer` = pw.`id_customer`'
@@ -155,7 +143,7 @@ class CustomerServiceWorkItemProviderCore
 
         $shopIds = array_values(array_filter(array_map('intval', $shopIds)));
         $shopRestriction = $shopIds ? ' WHERE work.`id_shop` IN ('.implode(',', $shopIds).')' : '';
-        $rank = 'GREATEST(work.`entity_status_rank`, work.`thread_status_rank`)';
+        $rank = 'CASE WHEN work.`entity_status_rank` > 0 THEN work.`entity_status_rank` ELSE work.`thread_status_rank` END';
         $normalizedStatus = 'CASE '.$rank
             .' WHEN '.self::RANK_OPEN.' THEN "'.self::STATUS_OPEN.'"'
             .' WHEN '.self::RANK_WAITING_CUSTOMER.' THEN "'.self::STATUS_WAITING_CUSTOMER.'"'
@@ -184,12 +172,9 @@ class CustomerServiceWorkItemProviderCore
 
     private function getThreadAggregateSql(): string
     {
-        $rank = $this->getThreadStatusRankSql('ct.`status`');
-
         return 'SELECT ct.`entity_type`, ct.`id_entity`,'
-            .' CAST(SUBSTRING_INDEX(GROUP_CONCAT(ct.`id_customer_thread` ORDER BY '.$rank.' DESC, ct.`date_upd` DESC), ",", 1) AS UNSIGNED) AS `id_customer_thread`,'
-            .' SUBSTRING_INDEX(GROUP_CONCAT(ct.`email` ORDER BY '.$rank.' DESC, ct.`date_upd` DESC), ",", 1) AS `thread_email`,'
-            .' MAX('.$rank.') AS `thread_status_rank`, MAX(ct.`date_upd`) AS `thread_date_upd`'
+            .' MIN(ct.`id_customer_thread`) AS `id_customer_thread`,'
+            .' MIN(ct.`email`) AS `thread_email`, MAX(ct.`date_upd`) AS `thread_date_upd`'
             .' FROM `'._DB_PREFIX_.'customer_thread` ct'
             .' WHERE ct.`entity_type` IN ('
             .(int)\CoreExtension\EntityTypeEnum::ORDER_CANCELLATION_VALUE.','
@@ -201,11 +186,7 @@ class CustomerServiceWorkItemProviderCore
 
     private function getThreadStatusRankSql(string $field): string
     {
-        return 'CASE '.$field
-            .' WHEN "'.pSQL(CustomerThread::STATUS_OPEN).'" THEN '.self::RANK_OPEN
-            .' WHEN "'.pSQL(CustomerThread::STATUS_WAITING_CUSTOMER).'" THEN '.self::RANK_WAITING_CUSTOMER
-            .' WHEN "'.pSQL(CustomerThread::STATUS_IN_PROGRESS).'" THEN '.self::RANK_INQUIRY
-            .' ELSE '.self::RANK_CLOSED.' END';
+        return CustomerServiceStatus::rankSql($field);
     }
 
     private function getStructuredThreadExclusionSql(string $alias): string

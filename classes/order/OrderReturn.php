@@ -32,7 +32,7 @@
 /**
  * Class OrderReturnCore
  */
-class OrderReturnCore extends ObjectModel implements CustomerThreadContextSourceInterfaceCore
+class OrderReturnCore extends ObjectModel implements CustomerThreadContextSourceInterfaceCore, CustomerServiceStatusSourceInterfaceCore
 {
     public const CONFIG_RETURN_ADDRESS = 'PS_ORDER_RETURN_ADDRESS';
     public const DEFAULT_RETURN_ADDRESS = "Spielezar AG\nBiberiststrasse 4\n4563 Gerlafingen";
@@ -53,6 +53,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
             'id_customer' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true],
             'id_order'    => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true],
             'state'       => ['type' => self::TYPE_INT, 'dbType' => 'tinyint(1) unsigned', 'dbDefault' => '1'],
+            'processing_status' => ['type' => self::TYPE_STRING, 'size' => 32, 'dbDefault' => 'open'],
             'question'    => ['type' => self::TYPE_HTML, 'validate' => 'isCleanHtml', 'size' => ObjectModel::SIZE_TEXT, 'dbNullable' => false],
             'migrated'    => ['type' => self::TYPE_BOOL, 'validate' => 'isBool', 'dbType' => 'tinyint(1) unsigned', 'dbDefault' => '0'],
             'date_add'    => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
@@ -73,6 +74,8 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
     public $id_order;
     /** @var int */
     public $state;
+    public $processing_status = 'open';
+
     /** @var string message content */
     public $question;
     /** @var bool */
@@ -81,6 +84,22 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
     public $date_add;
     /** @var string Object last modification date */
     public $date_upd;
+
+    public function getCustomerServiceStatusField(): string
+    {
+        return 'processing_status';
+    }
+
+    public function getCustomerServiceStatusLabels(): array
+    {
+        return [
+            'open' => 'Review customer message',
+            'pending1' => 'In inquiry',
+            'waiting_customer' => 'Waiting for customer',
+            'waiting_package' => 'Package expected',
+            'closed' => 'Completed',
+        ];
+    }
 
     public static function getReturnAddress(): string
     {
@@ -95,7 +114,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
     public function getCustomerThreadContextData(): array
     {
         $order = new Order((int) $this->id_order);
-        $returnState = new OrderReturnState((int) $this->state, (int) Context::getContext()->language->id);
+        $statusOptions = CustomerServiceStatus::getOptions($this);
         $products = [];
         if (Validate::isLoadedObject($order)) {
             foreach (static::getOrdersReturnProducts((int) $this->id, $order) as $product) {
@@ -131,7 +150,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
                 ],
                 [
                     'label'     => 'Status',
-                    'value'     => Validate::isLoadedObject($returnState) ? (string) $returnState->name : '',
+                    'value'     => $statusOptions[$this->processing_status]['label'] ?? $this->processing_status,
                     'is_status' => true,
                 ],
             ],
@@ -176,17 +195,6 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
         return $returns;
     }
 
-    public function update($nullValues = false)
-    {
-        $idOrderDetails = $this->getOrderDetailIds();
-        $result = parent::update($nullValues);
-        if ($result) {
-            $this->syncOrderDetailIds($idOrderDetails);
-        }
-
-        return $result;
-    }
-
     public function delete()
     {
         $idOrderDetails = $this->getOrderDetailIds();
@@ -218,14 +226,6 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
         return $result;
     }
 
-    public static function isWaitingState(int $state): bool
-    {
-        return in_array($state, [
-            self::STATE_WAITING_FOR_CONFIRMATION,
-            self::STATE_WAITING_FOR_PACKAGE,
-        ], true);
-    }
-
     public static function getWaitingReturnForOrder(int $idOrder): ?self
     {
         $idOrderReturn = (int)Db::getInstance()->getValue(
@@ -233,10 +233,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
                 ->select('`id_order_return`')
                 ->from('order_return')
                 ->where('`id_order` = ' . (int)$idOrder)
-                ->where('`state` IN (' . implode(',', [
-                    self::STATE_WAITING_FOR_CONFIRMATION,
-                    self::STATE_WAITING_FOR_PACKAGE,
-                ]) . ')')
+                ->where('EXISTS (SELECT 1 FROM `'._DB_PREFIX_.'order_return_detail` rd WHERE rd.`id_order_return` = `'._DB_PREFIX_.'order_return`.`id_order_return` AND rd.`product_quantity` > rd.`received_quantity`)')
                 ->orderBy('`date_add` DESC')
         );
 
@@ -254,6 +251,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
 
         if ($orderReturn) {
             $orderReturn->state = $state;
+            $orderReturn->processing_status = $state === self::STATE_WAITING_FOR_PACKAGE ? 'waiting_package' : 'open';
             return $orderReturn->save() ? $orderReturn : null;
         }
 
@@ -261,6 +259,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
         $orderReturn->id_customer = (int)$order->id_customer;
         $orderReturn->id_order = (int)$order->id;
         $orderReturn->state = $state;
+        $orderReturn->processing_status = $state === self::STATE_WAITING_FOR_PACKAGE ? 'waiting_package' : 'open';
         $orderReturn->question = '';
 
         if (!$orderReturn->add()) {
@@ -276,7 +275,8 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
         int $idOrderReturn,
         int $idOrderDetail,
         int $quantity,
-        int $idCustomization = 0
+        int $idCustomization = 0,
+        ?int $receivedQuantity = null
     ): bool {
         $quantity = max(0, $quantity);
         $where = '`id_order_return` = ' . (int)$idOrderReturn
@@ -290,8 +290,13 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
                 ->where($where)
         );
 
+        $values = ['product_quantity' => $quantity];
+        if ($receivedQuantity !== null) {
+            $values['received_quantity'] = max(0, $receivedQuantity);
+        }
         if ($exists) {
-            if ($quantity <= 0) {
+            $received = $receivedQuantity ?? (int)Db::getInstance()->getValue('SELECT `received_quantity` FROM `'._DB_PREFIX_.'order_return_detail` WHERE '.$where);
+            if ($quantity <= 0 && $received <= 0) {
                 $result = (bool)Db::getInstance()->delete('order_return_detail', $where);
                 if ($result) {
                     self::syncReturnedQuantity($idOrderDetail);
@@ -302,7 +307,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
 
             $result = (bool)Db::getInstance()->update(
                 'order_return_detail',
-                ['product_quantity' => (int)$quantity],
+                $values,
                 $where
             );
             if ($result) {
@@ -312,7 +317,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
             return $result;
         }
 
-        if ($quantity <= 0) {
+        if ($quantity <= 0 && ($receivedQuantity ?? 0) <= 0) {
             return true;
         }
 
@@ -322,8 +327,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
                 'id_order_return' => (int)$idOrderReturn,
                 'id_order_detail' => (int)$idOrderDetail,
                 'id_customization' => (int)$idCustomization,
-                'product_quantity' => (int)$quantity,
-            ]
+            ] + $values
         );
         if ($result) {
             self::syncReturnedQuantity($idOrderDetail);
@@ -340,14 +344,9 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
 
         $quantity = (int)Db::getInstance()->getValue(
             (new DbQuery())
-                ->select('COALESCE(SUM(ord.`product_quantity`), 0)')
+                ->select('COALESCE(SUM(ord.`received_quantity`), 0)')
                 ->from('order_return_detail', 'ord')
-                ->innerJoin('order_return', 'orx', 'orx.`id_order_return` = ord.`id_order_return`')
                 ->where('ord.`id_order_detail` = '.(int)$idOrderDetail)
-                ->where('orx.`state` IN ('.implode(',', [
-                    self::STATE_PACKAGE_RECEIVED,
-                    self::STATE_RETURN_COMPLETED,
-                ]).')')
         );
 
         return (bool)Db::getInstance()->update(
@@ -361,14 +360,10 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
     {
         return (int)Db::readOnly()->getValue(
             (new DbQuery())
-                ->select('COALESCE(SUM(ord.`product_quantity`), 0)')
+                ->select('COALESCE(SUM(GREATEST(ord.`product_quantity` - ord.`received_quantity`, 0)), 0)')
                 ->from('order_return_detail', 'ord')
                 ->innerJoin('order_return', 'orx', 'orx.`id_order_return` = ord.`id_order_return`')
                 ->where('ord.`id_order_detail` = ' . (int)$idOrderDetail)
-                ->where('orx.`state` IN (' . implode(',', [
-                    self::STATE_WAITING_FOR_CONFIRMATION,
-                    self::STATE_WAITING_FOR_PACKAGE,
-                ]) . ')')
         );
     }
 
@@ -417,14 +412,17 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
      */
     public static function getProductReturnDetail($idOrderDetail)
     {
-        return Db::readOnly()->getArray(
+        $rows = Db::readOnly()->getArray(
             (new DbQuery())
-                ->select('`product_quantity`, `date_add`, orsl.`name` AS `state`')
+                ->select('ord.`product_quantity`, ord.`received_quantity`, o.`date_add`, o.`id_order_return`, o.`processing_status`')
                 ->from('order_return_detail', 'ord')
                 ->leftJoin('order_return', 'o', 'o.`id_order_return` = ord.`id_order_return`')
-                ->leftJoin('order_return_state_lang', 'orsl', 'orsl.`id_order_return_state` = o.`state` AND orsl.`id_lang` = '.(int) Context::getContext()->language->id)
                 ->where('ord.`id_order_detail` = '.(int) $idOrderDetail)
         );
+        foreach ($rows as &$row) {
+            $row['state'] = CustomerServiceStatus::getOptions(new OrderReturn((int)$row['id_order_return']))[$row['processing_status']]['label'];
+        }
+        return $rows;
     }
 
     /**
@@ -577,8 +575,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
                 ->orderBy('`date_add` DESC')
         );
         foreach ($data as $k => $or) {
-            $state = new OrderReturnState($or['state']);
-            $data[$k]['state_name'] = $state->name[$context->language->id];
+            $data[$k]['state_name'] = CustomerServiceStatus::getOptions(new OrderReturn((int)$or['id_order_return']))[$or['processing_status']]['label'];
             $data[$k]['type'] = 'Return';
             $data[$k]['tracking_number'] = $or['id_order_return'];
             $data[$k]['can_edit'] = false;
@@ -604,6 +601,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
         $tmp = [];
         foreach ($productsRet as $returnDetail) {
             $tmp[$returnDetail['id_order_detail']]['quantity'] = isset($tmp[$returnDetail['id_order_detail']]['quantity']) ? $tmp[$returnDetail['id_order_detail']]['quantity'] + (int) $returnDetail['product_quantity'] : (int) $returnDetail['product_quantity'];
+            $tmp[$returnDetail['id_order_detail']]['received'] = ($tmp[$returnDetail['id_order_detail']]['received'] ?? 0) + (int)$returnDetail['received_quantity'];
             $tmp[$returnDetail['id_order_detail']]['customizations'] = (int) $returnDetail['id_customization'];
         }
         $resTab = [];
@@ -611,6 +609,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
             if (isset($tmp[$product['id_order_detail']])) {
                 $resTab[$key] = $product;
                 $resTab[$key]['product_quantity'] = $tmp[$product['id_order_detail']]['quantity'];
+                $resTab[$key]['received_quantity'] = $tmp[$product['id_order_detail']]['received'];
                 $resTab[$key]['customizations'] = $tmp[$product['id_order_detail']]['customizations'];
             }
         }

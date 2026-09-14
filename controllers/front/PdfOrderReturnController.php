@@ -77,8 +77,6 @@ class PdfOrderReturnControllerCore extends FrontController
             throw new PrestaShopException(Tools::displayError('Order return not found.'));
         } elseif (!$fromAdmin && $this->orderReturn->id_customer != $this->context->customer->id) {
             throw new PrestaShopException(Tools::displayError('Order return not found.'));
-        } elseif ($this->orderReturn->state < 2) {
-            throw new PrestaShopException(Tools::displayError('Order return not confirmed.'));
         }
     }
 

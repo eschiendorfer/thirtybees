@@ -695,6 +695,7 @@ class AdminOrderCancellationsControllerCore extends AdminController
         }
 
         $cancellation->status = OrderCancellation::STATUS_DONE;
+        $cancellation->processing_status = 'closed';
         if (!$cancellation->update(true)) {
             $this->errors[] = Tools::displayError('The refund was recorded, but the cancellation could not be completed. Do not issue a second refund; check the case and report the error.');
             return;

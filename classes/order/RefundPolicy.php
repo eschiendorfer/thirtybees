@@ -143,15 +143,6 @@ class RefundPolicyCore
         return false;
     }
 
-    public function getOpenOrderReturnStates(): array
-    {
-        return [
-            OrderReturn::STATE_WAITING_FOR_CONFIRMATION,
-            OrderReturn::STATE_WAITING_FOR_PACKAGE,
-            OrderReturn::STATE_PACKAGE_RECEIVED,
-        ];
-    }
-
     public function getSuggestedFeeRate($reasonEntityType, string $refundMethod, ?string $action = null): float
     {
         $reasonEntityType = $this->normalizeReasonEntityType($reasonEntityType);

@@ -1314,7 +1314,7 @@
                         </td>
                       </tr>
                       <tr class="success">
-                        <td><strong>{l s='Credit total'}</strong></td>
+                        <td><strong>{l s='Credit total'}</strong><br><small>{l s='Remaining refundable paid amount (tax incl.)'}: <span id="credit_remaining_paid_display"></span></small></td>
                         <td class="text-right"><strong id="credit_total_display">0.00</strong></td>
                       </tr>
                     </tbody>
@@ -1328,14 +1328,6 @@
                       <input type="checkbox" id="confirm_original_payment_refund" name="confirm_original_payment_refund" value="1" disabled="disabled" />
                       <span id="original_payment_refund_confirmation_text"></span>
                     </label>
-                  </div>
-                  <div class="service-case-credit-status-group" style="display:none; margin-bottom: 12px;">
-                    <label class="control-label" for="service_case_status">{l s='Service case status'}</label>
-                    <select id="service_case_status" name="service_case_status" class="form-control fixed-width-xl" disabled="disabled">
-                      {foreach from=$service_case_status_options item=service_case_status}
-                        <option value="{$service_case_status.id|escape:'html':'UTF-8'}">{$service_case_status.label|escape:'html':'UTF-8'}</option>
-                      {/foreach}
-                    </select>
                   </div>
                   <button type="submit" id="partial_refund_submit" name="partialRefund" class="btn btn-default">
                     <i class="icon-check"></i>

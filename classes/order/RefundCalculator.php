@@ -17,6 +17,15 @@ class RefundCalculatorCore
     public function buildCreditSlipRequest(Order $order, array $input): array
     {
         $errors = [];
+        foreach (['cart_rule_adjustment', 'fee_adjustment', 'shipping_adjustment'] as $field) {
+            if (!isset($input[$field]) || trim((string)$input[$field]) === ''
+                || !is_numeric(str_replace(',', '.', trim((string)$input[$field])))
+                || !is_finite((float)str_replace(',', '.', (string)$input[$field]))
+                || ($field !== 'shipping_adjustment' && Tools::parseNumber((string)$input[$field]) < 0)) {
+                $errors[] = 'Please enter valid adjustment amounts (enter 0 for no adjustment).';
+                break;
+            }
+        }
         $displayIncludesTax = !empty($input['display_includes_tax']);
         $refundMethod = (string)($input['refund_method'] ?? '');
         $action = isset($input['action']) ? (string)$input['action'] : null;
@@ -82,6 +91,12 @@ class RefundCalculatorCore
 
         foreach ($refunds as $idOrderDetail => $providedAmount) {
             $idOrderDetail = (int)$idOrderDetail;
+            if (trim((string)$providedAmount) !== '' && (!is_numeric(str_replace(',', '.', trim((string)$providedAmount)))
+                || !is_finite((float)str_replace(',', '.', (string)$providedAmount))
+                || Tools::parseNumber((string)$providedAmount) < 0.0)) {
+                $errors[] = 'Please enter a valid non-negative product credit amount.';
+                continue;
+            }
             $refundAmount = $this->policy->roundPriceAmount(Tools::parseNumber((string)$providedAmount));
             if ($refundAmount <= 0.0) {
                 continue;
@@ -150,9 +165,6 @@ class RefundCalculatorCore
         $shippingChargeAmount = max(0.0, -$shippingAdjustmentAmount);
         $shippingTaxExcl = 0.0;
         $shippingTaxIncl = 0.0;
-        if ($reasonEntityType === RefundPolicy::REASON_SERVICE_CASE && abs($shippingAdjustmentAmount) > 0.000001) {
-            $errors[] = 'Service case credits only support product amounts.';
-        }
         if ($shippingCostAmount > 0.0) {
             $remainingShipping = $this->eligibility->getRemainingShippingCreditAmounts($order);
             $shippingRefundable = $displayIncludesTax ? $remainingShipping['tax_incl'] : $remainingShipping['tax_excl'];
@@ -180,15 +192,15 @@ class RefundCalculatorCore
             ];
         }
 
-        if (
-            $reasonEntityType === RefundPolicy::REASON_SERVICE_CASE
-            && (
-                $this->policy->roundPriceAmount(Tools::parseNumber((string)($input['cart_rule_adjustment'] ?? 0))) > 0.0
-                || $this->policy->roundPriceAmount(Tools::parseNumber((string)($input['fee_adjustment'] ?? 0))) > 0.0
-            )
-        ) {
+        $cartRuleAmount = Tools::parseNumber((string)$input['cart_rule_adjustment']);
+        $feeAmount = Tools::parseNumber((string)$input['fee_adjustment']);
+        $productBase = $displayIncludesTax ? $productTotalTaxIncl : $productTotalTaxExcl;
+        $shippingBase = $displayIncludesTax ? $shippingTaxIncl : $shippingTaxExcl;
+        if ($cartRuleAmount > $productBase + 0.000001
+            || $cartRuleAmount + $shippingChargeAmount + $feeAmount > $productBase + $shippingBase + 0.000001
+            || ($refundMethod === RefundPolicy::REFUND_METHOD_NONE && $feeAmount > 0)) {
             return [
-                'errors' => ['Service case credits only support product amounts.'],
+                'errors' => ['Adjustments exceed the credit amount or are not valid for this refund method.'],
                 'request' => null,
             ];
         }
@@ -220,6 +232,14 @@ class RefundCalculatorCore
             $action
         );
 
+        $effectiveTaxIncl = $this->policy->roundAmount($intermediateTaxIncl - $feeAdjustment['tax_incl']);
+        $remaining = $this->eligibility->getRemainingOrderCreditAmount(
+            $order, $reasonEntityType === RefundPolicy::REASON_CANCELLATION ? $reasonIdEntity : 0
+        );
+        if ($effectiveTaxIncl > $remaining + 0.000001) {
+            return ['errors' => [sprintf(Tools::displayError('The credit exceeds the remaining paid order amount (%.2f).'), $remaining)], 'request' => null];
+        }
+
         return [
             'errors' => [],
             'request' => [
@@ -228,7 +248,7 @@ class RefundCalculatorCore
                 'shipping_cost_amount' => $shippingCostAmount,
                 'add_tax' => !$displayIncludesTax,
                 'effective_tax_excl' => $this->policy->roundAmount($intermediateTaxExcl - $feeAdjustment['tax_excl']),
-                'effective_tax_incl' => $this->policy->roundAmount($intermediateTaxIncl - $feeAdjustment['tax_incl']),
+                'effective_tax_incl' => $effectiveTaxIncl,
                 'metadata' => [
                     'reason_entity_type' => $reasonEntityType,
                     'reason_id_entity' => $reasonIdEntity,
@@ -281,6 +301,9 @@ class RefundCalculatorCore
 
         return [
             'default_cart_rule_rate' => $this->getOrderPercentCartRuleRate($order),
+            'remaining_paid_tax_incl' => $this->eligibility->getRemainingOrderCreditAmount($order),
+            'display_includes_tax' => $displayIncludesTax,
+            'product_discount_rates' => (new RefundDiscountService())->getProductRates($order, false),
             'default_fee_rate' => $this->policy->getSuggestedFeeRate(
                 RefundPolicy::REASON_ORDER_RETURN,
                 RefundPolicy::REFUND_METHOD_NONE
@@ -325,6 +348,17 @@ class RefundCalculatorCore
             ];
         }
         $adjustment = $adjustmentResult['adjustment'];
+        $selectedMethod = (string)$cancellation->requested_refund_method ?: RefundPolicy::REFUND_METHOD_STORE_CREDIT;
+        $selectedQuote = (new CancellationQuoteService())->buildAppliedCancellationQuote($cancellation, $selectedMethod);
+        if ($selectedQuote['errors'] || !$selectedQuote['quote']) {
+            throw new PrestaShopException(implode(' ', array_map([Tools::class, 'displayError'], $selectedQuote['errors'])));
+        }
+        $quote = $selectedQuote['quote'];
+        $originalShippingIncl = (float)$adjustment['shipping_adjustment_tax_incl'];
+        $adjustment['shipping_adjustment_tax_incl'] = (float)$quote['shipping_tax_incl'];
+        if ($originalShippingIncl != 0.0) {
+            $adjustment['shipping_adjustment_tax_excl'] *= $adjustment['shipping_adjustment_tax_incl'] / $originalShippingIncl;
+        }
         $suggestedProducts = [];
 
         foreach ($products as $product) {
@@ -341,6 +375,10 @@ class RefundCalculatorCore
             }
 
             $line = (array)($adjustment['lines'][$idOrderDetail] ?? []);
+            $quotedAmount = (float)($quote['details'][$idOrderDetail]['product_amount_tax_incl'] ?? 0.0);
+            $line['product_amount_tax_excl'] = (float)($line['product_amount_tax_incl'] ?? 0.0) > 0
+                ? (float)$line['product_amount_tax_excl'] * $quotedAmount / (float)$line['product_amount_tax_incl'] : 0.0;
+            $line['product_amount_tax_incl'] = $quotedAmount;
             $amountTaxExcl = $this->policy->roundPriceAmount((float)($line['product_amount_tax_excl'] ?? 0.0));
             $amountTaxIncl = $this->policy->roundPriceAmount((float)($line['product_amount_tax_incl'] ?? 0.0));
 
@@ -404,8 +442,9 @@ class RefundCalculatorCore
             'products' => $suggestedProducts,
             'shipping' => $shipping,
             'shipping_charge_adjustment' => $shippingChargeAdjustment,
-            // Product values already include the relevant 10% order discount.
+            // Product values already include percentage discounts and the remaining paid limit.
             'cart_rule_adjustment' => ['amount' => 0.0],
+            'remaining_paid_tax_incl' => $this->eligibility->getRemainingOrderCreditAmount($order, (int)$idOrderCancellation),
             'fee_adjustment' => $selectedFeeAdjustment,
             'fee_adjustments' => $feeAdjustments,
             'refund_method' => $requestedMethod,
@@ -422,6 +461,8 @@ class RefundCalculatorCore
         $allProductLinesReturned = true;
         $suggestedProducts = [];
         $productsDisplayTotal = 0.0;
+        $discountRates = (new RefundDiscountService())->getProductRates($order, false);
+        $suggestedDiscount = 0.0;
 
         foreach ($products as $product) {
             $idOrderDetail = (int)$product['id_order_detail'];
@@ -457,6 +498,7 @@ class RefundCalculatorCore
             );
             $amount = $displayIncludesTax ? $amountTaxIncl : $amountTaxExcl;
             $productsDisplayTotal += $amount;
+            $suggestedDiscount += $amount * ($discountRates[$idOrderDetail] ?? 0.0) / 100;
 
             $suggestedProducts[$idOrderDetail] = [
                 'quantity' => $returnQuantity,
@@ -479,7 +521,7 @@ class RefundCalculatorCore
 
         $cartRuleAdjustment = min(
             $productsDisplayTotal,
-            $this->policy->roundPriceAmount($productsDisplayTotal * $this->getOrderPercentCartRuleRate($order) / 100)
+            $this->policy->roundPriceAmount($suggestedDiscount)
         );
         $subtotal = max(0.0, $productsDisplayTotal + (float)$shipping['amount'] - $cartRuleAdjustment);
         $feeAdjustment = min(
@@ -529,10 +571,7 @@ class RefundCalculatorCore
         float $productTotalTaxIncl,
         bool $displayIncludesTax
     ): array {
-        $displayBase = $displayIncludesTax ? $productTotalTaxIncl : $productTotalTaxExcl;
-        $displayAmount = $this->isProvidedAmount($providedAmount)
-            ? $this->policy->roundPriceAmount(Tools::parseNumber((string)$providedAmount))
-            : $this->policy->roundPriceAmount($displayBase * $this->getOrderPercentCartRuleRate($order) / 100);
+        $displayAmount = $this->policy->roundPriceAmount(Tools::parseNumber((string)$providedAmount));
 
         return $this->splitDisplayAdjustment(
             $displayAmount,
@@ -558,10 +597,7 @@ class RefundCalculatorCore
             ];
         }
 
-        $displayBase = $displayIncludesTax ? $baseTaxIncl : $baseTaxExcl;
-        $displayAmount = $this->isProvidedAmount($providedAmount)
-            ? $this->policy->roundPriceAmount(Tools::parseNumber((string)$providedAmount))
-            : $this->policy->roundPriceAmount($displayBase * $this->policy->getSuggestedFeeRate($reasonEntityType, $refundMethod, $action) / 100);
+        $displayAmount = $this->policy->roundPriceAmount(Tools::parseNumber((string)$providedAmount));
 
         return $this->splitDisplayAdjustment($displayAmount, $baseTaxExcl, $baseTaxIncl, $displayIncludesTax);
     }

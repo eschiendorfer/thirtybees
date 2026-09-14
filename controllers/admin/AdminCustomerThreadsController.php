@@ -316,13 +316,8 @@ class AdminCustomerThreadsControllerCore extends AdminController
      */
     public function renderProcessSyncImap()
     {
-        // To avoid an error if the IMAP isn't configured, we check the configuration here, like during
-        // the synchronization. All parameters will exists.
-        if (!(Configuration::get('PS_SAV_IMAP_URL')
-            || Configuration::get('PS_SAV_IMAP_PORT')
-            || Configuration::get('PS_SAV_IMAP_USER')
-            || Configuration::get('PS_SAV_IMAP_PWD'))
-        ) {
+        // No server means the mailbox integration is disabled.
+        if (!Configuration::get('PS_SAV_IMAP_URL')) {
             return;
         }
 
@@ -574,18 +569,22 @@ class AdminCustomerThreadsControllerCore extends AdminController
         if ($idCustomerThread = Tools::getIntValue('id_customer_thread')) {
             if (Tools::isSubmit('submitReply')) {
                 $ct = new CustomerThread($idCustomerThread);
-                $replyStatus = (string) Tools::getValue('thread_status', CustomerThread::STATUS_CLOSED);
+                if (!Validate::isLoadedObject($ct) || !$this->hasEditPermission()) {
+                    $this->errors[] = Tools::displayError('The customer-service thread is not accessible.');
+                    return false;
+                }
+                $statusOwner = CustomerServiceStatus::getOwner($ct);
+                $replyStatus = (string) Tools::getValue('thread_status', CustomerServiceStatus::get($statusOwner));
                 $idEmployee = (int) $this->context->employee->id;
                 $pendingAttachments = $this->prepareReplyAttachments($idEmployee);
-                if (!array_key_exists($replyStatus, $this->getCustomerServiceStatuses())) {
+                if (!array_key_exists($replyStatus, CustomerServiceStatus::getLabels($statusOwner))) {
                     $this->errors[] = Tools::displayError('The selected status is invalid.');
                 }
                 $replyMessage = (string)Tools::getValue('reply_message');
                 $hasReplyContent = CustomerMessage::hasVisibleContent(CustomerMessage::sanitizeContent($replyMessage))
                     || !empty($pendingAttachments);
                 if (!$this->errors && !$hasReplyContent) {
-                    $ct->status = $replyStatus;
-                    if (!$ct->update()) {
+                    if (!CustomerServiceStatus::save($statusOwner, $replyStatus)) {
                         $this->errors[] = Tools::displayError('The thread status could not be updated.');
                     } else {
                         Tools::redirectAdmin($this->getReplyReturnUrl($ct));
@@ -941,7 +940,8 @@ class AdminCustomerThreadsControllerCore extends AdminController
                     'id_customer_thread' => (int)$thread->id,
                 ],
                 $this->getBackOfficeUploadData($this->getPendingEmployeeAttachments()),
-                (string)$thread->status
+                (string)$thread->status,
+                CustomerServiceStatus::getOwner($thread)
             ),
         ];
 
@@ -964,12 +964,22 @@ class AdminCustomerThreadsControllerCore extends AdminController
         $idEmployee = (int)$this->context->employee->id;
         $pendingAttachments = $this->prepareReplyAttachments($idEmployee);
         $message = (string)Tools::getValue('reply_message');
-        $replyStatus = (string)Tools::getValue('thread_status', CustomerThread::STATUS_CLOSED);
-        if (!array_key_exists($replyStatus, $this->getCustomerServiceStatuses())) {
+        $statusOwner = CustomerServiceStatus::getEntity((int)$target['entity_type'], (int)$target['id_entity']);
+        if (!$statusOwner) {
+            $this->errors[] = Tools::displayError('The customer-service entity could not be loaded.');
+            return;
+        }
+        $replyStatus = (string)Tools::getValue('thread_status', CustomerServiceStatus::get($statusOwner));
+        if (!array_key_exists($replyStatus, CustomerServiceStatus::getLabels($statusOwner))) {
             $this->errors[] = Tools::displayError('The selected status is invalid.');
         }
         if (!$this->errors && !CustomerMessage::hasVisibleContent(CustomerMessage::sanitizeContent($message)) && !$pendingAttachments) {
-            $this->errors[] = Tools::displayError('The message cannot be blank.');
+            if (!CustomerServiceStatus::save($statusOwner, $replyStatus)) {
+                $this->errors[] = Tools::displayError('The customer-service status could not be saved.');
+                return;
+            }
+            Tools::redirectAdmin($this->getWorkItemEntityUrl((int)$target['entity_type'], (int)$target['id_entity']));
+            return;
         }
         if ($this->errors) {
             return;
@@ -1114,7 +1124,6 @@ class AdminCustomerThreadsControllerCore extends AdminController
                 ->orderBy('`date_upd` DESC')
                 ->limit(3)
         );
-        $statuses = $this->getCustomerServiceStatuses();
         $provider = new CustomerThreadContextProvider($this->context);
 
         foreach ($recentThreads as $row) {
@@ -1127,12 +1136,14 @@ class AdminCustomerThreadsControllerCore extends AdminController
              * instead of loading the complete customer-thread context.
              */
             $recentContext = $provider->getForThread($recentThread);
-            $recentStatus = $recentThread->status;
+            $recentOwner = CustomerServiceStatus::getOwner($recentThread);
+            $recentStatus = CustomerServiceStatus::get($recentOwner);
+            $recentOptions = CustomerServiceStatus::getOptions($recentOwner);
             $overview['recent_threads'][] = [
                 'title'  => $recentContext
                     ? trim((string) $recentContext['title'].' '.(string) ($recentContext['reference'] ?? ''))
                     : $this->l('Customer service').' #'.(int) $recentThread->id,
-                'status' => $statuses[$recentStatus] ?? $recentStatus,
+                'status' => $recentOptions[$recentStatus]['label'] ?? $recentStatus,
                 'date'   => $recentThread->date_upd,
                 'url'    => $this->context->link->getAdminLink('AdminCustomerThreads').'&id_customer_thread='.(int) $recentThread->id.'&viewcustomer_thread',
             ];
@@ -1335,8 +1346,15 @@ class AdminCustomerThreadsControllerCore extends AdminController
      * @param string $value
      * @return string
      */
-    public function renderStatus($value)
+    public function renderStatus($value, array $row = [])
     {
+        $owner = CustomerServiceStatus::getEntity((int)($row['entity_type'] ?? 0), (int)($row['id_entity'] ?? 0));
+        if ($owner) {
+            $option = CustomerServiceStatus::getOptions($owner)[CustomerServiceStatus::get($owner)] ?? null;
+            if ($option) {
+                return '<span class="badge '.$option['badge_class'].'">'.Tools::safeOutput($option['label']).'</span>';
+            }
+        }
         $threadStatusLabels = $this->getCustomerServiceStatuses();
         $workItemStatusLabels = $this->getWorkItemStatuses();
         $statuses = [
