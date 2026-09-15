@@ -5,6 +5,6 @@ interface CustomerServiceStatusSourceInterfaceCore
 {
     public function getCustomerServiceStatusField(): string;
 
-    /** @return array<string, string> Stored values and translatable labels. */
+    /** @return array<int|string, string> Stored values and translatable labels. */
     public function getCustomerServiceStatusLabels(): array;
 }

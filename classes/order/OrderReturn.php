@@ -34,22 +34,15 @@
  */
 class OrderReturnCore extends ObjectModel implements CustomerThreadContextSourceInterfaceCore, CustomerServiceStatusSourceInterfaceCore
 {
-    public const PROCESSING_STATUS_OPEN = 'open';
-    public const PROCESSING_STATUS_INQUIRY = 'pending1';
-    public const PROCESSING_STATUS_WAITING_CUSTOMER = 'waiting_customer';
-    public const PROCESSING_STATUS_WAITING_PACKAGE = 'waiting_package';
-    public const PROCESSING_STATUS_COMPLETED = 'closed';
-    public const PROCESSING_STATUS_REJECTED = 'rejected';
-    public const PROCESSING_STATUS_EXPIRED = 'expired';
-
     public const CONFIG_RETURN_ADDRESS = 'PS_ORDER_RETURN_ADDRESS';
     public const DEFAULT_RETURN_ADDRESS = "Spielezar AG\nBiberiststrasse 4\n4563 Gerlafingen";
-    public const STATE_WAITING_FOR_CONFIRMATION = 1;
+    public const STATE_OPEN = 1;
     public const STATE_WAITING_FOR_PACKAGE = 2;
-    public const STATE_PACKAGE_RECEIVED = 3;
+    public const STATE_INQUIRY = 3;
     public const STATE_RETURN_DENIED = 4;
     public const STATE_RETURN_COMPLETED = 5;
     public const STATE_RETURN_EXPIRED = 6;
+    public const STATE_WAITING_FOR_CUSTOMER = 7;
 
     /**
      * @var array Object model definition
@@ -61,7 +54,6 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
             'id_customer' => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true],
             'id_order'    => ['type' => self::TYPE_INT, 'validate' => 'isUnsignedId', 'required' => true],
             'state'       => ['type' => self::TYPE_INT, 'dbType' => 'tinyint(1) unsigned', 'dbDefault' => '1'],
-            'processing_status' => ['type' => self::TYPE_STRING, 'size' => 32, 'dbDefault' => 'open'],
             'question'    => ['type' => self::TYPE_HTML, 'validate' => 'isCleanHtml', 'size' => ObjectModel::SIZE_TEXT, 'dbNullable' => false],
             'migrated'    => ['type' => self::TYPE_BOOL, 'validate' => 'isBool', 'dbType' => 'tinyint(1) unsigned', 'dbDefault' => '0'],
             'date_add'    => ['type' => self::TYPE_DATE, 'validate' => 'isDate', 'dbNullable' => false],
@@ -81,8 +73,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
     /** @var int */
     public $id_order;
     /** @var int */
-    public $state;
-    public $processing_status = self::PROCESSING_STATUS_OPEN;
+    public $state = self::STATE_OPEN;
 
     /** @var string message content */
     public $question;
@@ -95,36 +86,39 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
 
     public function getCustomerServiceStatusField(): string
     {
-        return 'processing_status';
+        return 'state';
     }
 
     public function getCustomerServiceStatusLabels(): array
     {
         return [
-            self::PROCESSING_STATUS_OPEN => 'Review customer message',
-            self::PROCESSING_STATUS_INQUIRY => 'In inquiry',
-            self::PROCESSING_STATUS_WAITING_CUSTOMER => 'Waiting for customer',
-            self::PROCESSING_STATUS_WAITING_PACKAGE => 'Package expected',
-            self::PROCESSING_STATUS_COMPLETED => 'Completed',
-            self::PROCESSING_STATUS_REJECTED => 'Rejected',
-            self::PROCESSING_STATUS_EXPIRED => 'Expired',
+            self::STATE_OPEN => 'Review customer message',
+            self::STATE_INQUIRY => 'In inquiry',
+            self::STATE_WAITING_FOR_CUSTOMER => 'Waiting for customer reply',
+            self::STATE_WAITING_FOR_PACKAGE => 'Package expected',
+            self::STATE_RETURN_COMPLETED => 'Completed',
+            self::STATE_RETURN_DENIED => 'Rejected',
+            self::STATE_RETURN_EXPIRED => 'Expired',
         ];
     }
 
-    /** @return string[] */
-    public static function getActiveProcessingStatuses(): array
+    /** Translate the stored return states for the shared customer-service overview. */
+    public static function getCustomerServiceStatusMap(): array
     {
         return [
-            self::PROCESSING_STATUS_OPEN,
-            self::PROCESSING_STATUS_INQUIRY,
-            self::PROCESSING_STATUS_WAITING_CUSTOMER,
-            self::PROCESSING_STATUS_WAITING_PACKAGE,
+            self::STATE_OPEN => 'open',
+            self::STATE_INQUIRY => 'pending1',
+            self::STATE_WAITING_FOR_CUSTOMER => 'waiting_customer',
+            self::STATE_WAITING_FOR_PACKAGE => 'waiting_package',
+            self::STATE_RETURN_COMPLETED => 'closed',
+            self::STATE_RETURN_DENIED => 'rejected',
+            self::STATE_RETURN_EXPIRED => 'expired',
         ];
     }
 
-    public static function getActiveProcessingStatusSql(string $field): string
+    public static function getActiveStateSql(string $field): string
     {
-        return $field.' IN ("'.implode('","', array_map('pSQL', self::getActiveProcessingStatuses())).'")';
+        return $field.' IN ('.implode(',', [self::STATE_OPEN, self::STATE_INQUIRY, self::STATE_WAITING_FOR_CUSTOMER, self::STATE_WAITING_FOR_PACKAGE]).')';
     }
 
     public static function getReturnAddress(): string
@@ -176,7 +170,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
                 ],
                 [
                     'label'     => 'Status',
-                    'value'     => $statusOptions[$this->processing_status]['label'] ?? $this->processing_status,
+                    'value'     => $statusOptions[$this->state]['label'] ?? $this->state,
                     'is_status' => true,
                 ],
             ],
@@ -259,7 +253,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
                 ->select('`id_order_return`')
                 ->from('order_return')
                 ->where('`id_order` = ' . (int)$idOrder)
-                ->where(self::getActiveProcessingStatusSql('`processing_status`'))
+                ->where(self::getActiveStateSql('`state`'))
                 ->where('EXISTS (SELECT 1 FROM `'._DB_PREFIX_.'order_return_detail` rd WHERE rd.`id_order_return` = `'._DB_PREFIX_.'order_return`.`id_order_return` AND rd.`product_quantity` > rd.`received_quantity`)')
                 ->orderBy('`date_add` DESC')
         );
@@ -278,7 +272,6 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
 
         if ($orderReturn) {
             $orderReturn->state = self::STATE_WAITING_FOR_PACKAGE;
-            $orderReturn->processing_status = self::PROCESSING_STATUS_WAITING_PACKAGE;
             return $orderReturn->save() ? $orderReturn : null;
         }
 
@@ -286,7 +279,6 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
         $orderReturn->id_customer = (int)$order->id_customer;
         $orderReturn->id_order = (int)$order->id;
         $orderReturn->state = self::STATE_WAITING_FOR_PACKAGE;
-        $orderReturn->processing_status = self::PROCESSING_STATUS_WAITING_PACKAGE;
         $orderReturn->question = '';
 
         if (!$orderReturn->add()) {
@@ -407,7 +399,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
                 ->from('order_return_detail', 'ord')
                 ->innerJoin('order_return', 'orx', 'orx.`id_order_return` = ord.`id_order_return`')
                 ->where('ord.`id_order_detail` IN ('.implode(',', $idOrderDetails).')')
-                ->where(self::getActiveProcessingStatusSql('orx.`processing_status`'))
+                ->where(self::getActiveStateSql('orx.`state`'))
                 ->where('ord.`product_quantity` > ord.`received_quantity`')
                 ->groupBy('ord.`id_order_detail`')
         );
@@ -467,13 +459,13 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
     {
         $rows = Db::readOnly()->getArray(
             (new DbQuery())
-                ->select('ord.`product_quantity`, ord.`received_quantity`, o.`date_add`, o.`id_order_return`, o.`processing_status`')
+                ->select('ord.`product_quantity`, ord.`received_quantity`, o.`date_add`, o.`id_order_return`, o.`state`')
                 ->from('order_return_detail', 'ord')
                 ->leftJoin('order_return', 'o', 'o.`id_order_return` = ord.`id_order_return`')
                 ->where('ord.`id_order_detail` = '.(int) $idOrderDetail)
         );
         foreach ($rows as &$row) {
-            $row['state'] = CustomerServiceStatus::getOptions(new OrderReturn((int)$row['id_order_return']))[$row['processing_status']]['label'];
+            $row['state'] = CustomerServiceStatus::getOptions(new OrderReturn((int)$row['id_order_return']))[$row['state']]['label'];
         }
         return $rows;
     }
@@ -628,7 +620,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
                 ->orderBy('`date_add` DESC')
         );
         foreach ($data as $k => $or) {
-            $data[$k]['state_name'] = CustomerServiceStatus::getOptions(new OrderReturn((int)$or['id_order_return']))[$or['processing_status']]['label'];
+            $data[$k]['state_name'] = CustomerServiceStatus::getOptions(new OrderReturn((int)$or['id_order_return']))[$or['state']]['label'];
             $data[$k]['type'] = 'Return';
             $data[$k]['tracking_number'] = $or['id_order_return'];
             $data[$k]['can_edit'] = false;

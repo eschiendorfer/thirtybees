@@ -71,7 +71,7 @@ class RefundEligibilityServiceCore
     {
         $rows = Db::readOnly()->getArray(
             (new DbQuery())
-                ->select('orx.`id_order_return`, orx.`processing_status`, orx.`date_add`')
+                ->select('orx.`id_order_return`, orx.`state`, orx.`date_add`')
                 ->select('SUM(ord.`received_quantity`) AS `quantity`')
                 ->from('order_return', 'orx')
                 ->innerJoin('order_return_detail', 'ord', 'ord.`id_order_return` = orx.`id_order_return`')
@@ -102,8 +102,7 @@ class RefundEligibilityServiceCore
         $openRows = [];
         foreach ($rows as $row) {
             $idOrderReturn = (int)$row['id_order_return'];
-            $row['state_name'] = CustomerServiceStatus::getOptions(new OrderReturn($idOrderReturn))[$row['processing_status']]['label'];
-            $row['state'] = $row['processing_status'];
+            $row['state_name'] = CustomerServiceStatus::getOptions(new OrderReturn($idOrderReturn))[$row['state']]['label'];
             $row['credited_quantity'] = (int)($creditedQuantities[$idOrderReturn] ?? 0);
             if ((int)$row['quantity'] > (int)$row['credited_quantity']) {
                 $openRows[] = $row;

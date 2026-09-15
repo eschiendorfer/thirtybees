@@ -84,7 +84,7 @@ class CustomerServiceWorkItemProviderCore
 
         if ($this->hasTable('order_return')) {
             $returnType = (int)\CoreExtension\EntityTypeEnum::ORDER_RETURN_VALUE;
-            $entityRank = CustomerServiceStatus::rankSql('oret.`processing_status`');
+            $entityRank = CustomerServiceStatus::rankSql('oret.`state`', OrderReturn::getCustomerServiceStatusMap());
             $unions[] = 'SELECT '.$returnType.' AS `entity_type`, oret.`id_order_return` AS `id_entity`,'
                 .' o.`id_shop`, oret.`id_customer`, COALESCE(NULLIF(TRIM(CONCAT(c.`firstname`, " ", c.`lastname`)), ""), ta.`thread_email`, "") AS `customer`,'
                 .' COALESCE(NULLIF(c.`email`, ""), ta.`thread_email`, "") AS `email`,'

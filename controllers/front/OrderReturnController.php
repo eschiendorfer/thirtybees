@@ -75,7 +75,7 @@ class OrderReturnControllerCore extends FrontController
                             'PS_RETURN_PREFIX' => Configuration::get('PS_RETURN_PREFIX', $this->context->language->id),
                             'orderRet'               => $orderReturn,
                             'order'                  => $order,
-                            'state_name'             => $statusOptions[$orderReturn->processing_status]['label'] ?? $orderReturn->processing_status,
+                            'state_name'             => $statusOptions[$orderReturn->state]['label'] ?? $orderReturn->state,
                             'return_allowed'         => false,
                             'products'               => OrderReturn::getOrdersReturnProducts((int) $orderReturn->id, $order),
                             'returnedCustomizations' => OrderReturn::getReturnedCustomizedProducts((int) $orderReturn->id_order),

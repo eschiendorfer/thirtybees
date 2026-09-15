@@ -29,6 +29,11 @@ class CustomerServiceStatusCore
         return (string)$owner->{static::getField($owner)};
     }
 
+    public static function getOpenStatus(ObjectModel $owner): string
+    {
+        return $owner instanceof OrderReturn ? (string)OrderReturn::STATE_OPEN : 'open';
+    }
+
     public static function save(ObjectModel $owner, string $status): bool
     {
         if (!array_key_exists($status, static::getLabels($owner))) {
@@ -61,8 +66,15 @@ class CustomerServiceStatusCore
     }
 
     /** Same mapping for the shared BO/FO queue, without combining two statuses. */
-    public static function rankSql(string $field): string
+    public static function rankSql(string $field, array $statusMap = []): string
     {
+        if ($statusMap) {
+            $mappedField = 'CASE '.$field;
+            foreach ($statusMap as $state => $status) {
+                $mappedField .= ' WHEN '.(int)$state.' THEN "'.pSQL($status).'"';
+            }
+            $field = '('.$mappedField.' END)';
+        }
         return 'CASE WHEN '.$field.' = "open" THEN 4'
             .' WHEN '.$field.' IN ("waiting_customer", "waiting_package") THEN 3'
             .' WHEN '.$field.' IN ("pending1", "waiting") THEN 2 ELSE 1 END';
@@ -73,7 +85,8 @@ class CustomerServiceStatusCore
         $colors = ['open' => 'danger', 'inquiry' => 'warning', 'waiting_customer' => 'info', 'closed' => 'success'];
         $options = [];
         foreach (static::getLabels($owner) as $value => $label) {
-            $color = $colors[static::normalize($value)];
+            $status = $owner instanceof OrderReturn ? OrderReturn::getCustomerServiceStatusMap()[$value] : $value;
+            $color = $colors[static::normalize($status)];
             $options[$value] = [
                 'label' => Translate::getAdminTranslation($label, 'AdminCustomerThreads'),
                 'button_class' => 'btn-'.$color,

@@ -84,6 +84,7 @@ class CustomerThreadWorkspaceDataProviderCore
         );
 
         $statusOptions = CustomerServiceStatus::getOptions($statusOwner ?? new CustomerThread());
+        $openStatus = CustomerServiceStatus::getOpenStatus($statusOwner ?? new CustomerThread());
         if ($statusOwner) {
             $currentStatus = CustomerServiceStatus::get($statusOwner);
         }
@@ -97,10 +98,10 @@ class CustomerThreadWorkspaceDataProviderCore
             || $hasAttachments;
         $selectedStatus = (string)Tools::getValue(
             'thread_status',
-            $currentStatus ?? CustomerThread::STATUS_OPEN
+            $currentStatus ?? $openStatus
         );
         if (!isset($statusOptions[$selectedStatus])) {
-            $selectedStatus = $currentStatus ?? CustomerThread::STATUS_OPEN;
+            $selectedStatus = $currentStatus ?? $openStatus;
         }
 
         return [

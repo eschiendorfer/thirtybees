@@ -47,13 +47,17 @@ class AdminReturnControllerCore extends AdminController
         $this->context = Context::getContext();
         $this->table = 'order_return';
         $this->className = 'OrderReturn';
-        $this->_select = 'o.`id_shop`, o.`reference`, CONCAT(c.`firstname`, \' \', c.`lastname`) AS `customer`';
-        $this->_join = '';
+        $this->_defaultOrderBy = 'id_order_return';
+        $this->_defaultOrderWay = 'DESC';
+        $this->_select = 'ors.`color`, orsl.`name`, o.`id_shop`, o.`reference`, CONCAT(c.`firstname`, \' \', c.`lastname`) AS `customer`';
+        $this->_join = ' LEFT JOIN '._DB_PREFIX_.'order_return_state ors ON (ors.`id_order_return_state` = a.`state`)';
+        $this->_join .= ' LEFT JOIN '._DB_PREFIX_.'order_return_state_lang orsl ON (orsl.`id_order_return_state` = a.`state` AND orsl.`id_lang` = '.(int)$this->context->language->id.')';
         $this->_join .= ' LEFT JOIN '._DB_PREFIX_.'orders o ON (o.`id_order` = a.`id_order`)';
         $this->_join .= ' LEFT JOIN '._DB_PREFIX_.'customer c ON (o.`id_customer` = c.`id_customer`)';
-        $statusList = array_map(static function (array $option): string {
-            return $option['label'];
-        }, CustomerServiceStatus::getOptions(new OrderReturn()));
+        $statusList = [];
+        foreach (OrderReturnState::getOrderReturnStates((int)$this->context->language->id) as $returnState) {
+            $statusList[(int)$returnState['id_order_return_state']] = (string)$returnState['name'];
+        }
 
         $this->fields_list = [
             'id_order_return' => [
@@ -73,14 +77,14 @@ class AdminReturnControllerCore extends AdminController
                 'havingFilter' => true,
                 'callback' => 'getCustomerLink',
             ],
-            'processing_status' => [
+            'name' => [
                 'title' => $this->l('Status'),
                 'type' => 'select',
                 'list' => $statusList,
-                'filter_key' => 'a!processing_status',
-                'callback' => 'renderProcessingStatus',
+                'filter_key' => 'a!state',
+                'color' => 'color',
                 'width' => 'auto',
-                'align' => 'left'
+                'align' => 'center'
             ],
             'date_add' => [
                 'title' => $this->l('Date issued'),
@@ -192,12 +196,6 @@ class AdminReturnControllerCore extends AdminController
      * @throws PrestaShopException
      * @throws SmartyException
      */
-    public function renderProcessingStatus($value): string
-    {
-        $options = CustomerServiceStatus::getOptions(new OrderReturn());
-        return Tools::safeOutput($options[$value]['label'] ?? $value);
-    }
-
     public function renderForm()
     {
         $this->fields_form = [
@@ -407,7 +405,7 @@ class AdminReturnControllerCore extends AdminController
                     if ($this->applyReturnQuantityTargets($orderReturn, $quantityTargets) && $orderReturn->save()) {
                         $receivedAfter = (int)Db::getInstance()->getValue('SELECT SUM(`received_quantity`) FROM `'._DB_PREFIX_.'order_return_detail` WHERE `id_order_return` = '.(int)$orderReturn->id);
                         if ($receivedAfter > $receivedBefore) {
-                            CustomerServiceStatus::save($orderReturn, OrderReturn::PROCESSING_STATUS_INQUIRY);
+                            CustomerServiceStatus::save($orderReturn, (string)OrderReturn::STATE_INQUIRY);
                             if (!(bool)$orderReturn->migrated) {
                                 $this->notifyPackageReceived($orderReturn, $order);
                             }

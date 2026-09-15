@@ -74,7 +74,7 @@ class CustomerServiceMessageServiceCore
         $owner = CustomerServiceStatus::getOwner($thread);
         $status = $request['status'];
         if ($request['idEmployee'] === 0 && !$request['private'] && (!$threadCreated || $status === null)) {
-            $status = CustomerThread::STATUS_OPEN;
+            $status = CustomerServiceStatus::getOpenStatus($owner);
         }
         if ($status !== null && !array_key_exists($status, CustomerServiceStatus::getLabels($owner))) {
             throw new PrestaShopException(Tools::displayError('The selected status is invalid.'));
