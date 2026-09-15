@@ -34,6 +34,14 @@
  */
 class OrderReturnCore extends ObjectModel implements CustomerThreadContextSourceInterfaceCore, CustomerServiceStatusSourceInterfaceCore
 {
+    public const PROCESSING_STATUS_OPEN = 'open';
+    public const PROCESSING_STATUS_INQUIRY = 'pending1';
+    public const PROCESSING_STATUS_WAITING_CUSTOMER = 'waiting_customer';
+    public const PROCESSING_STATUS_WAITING_PACKAGE = 'waiting_package';
+    public const PROCESSING_STATUS_COMPLETED = 'closed';
+    public const PROCESSING_STATUS_REJECTED = 'rejected';
+    public const PROCESSING_STATUS_EXPIRED = 'expired';
+
     public const CONFIG_RETURN_ADDRESS = 'PS_ORDER_RETURN_ADDRESS';
     public const DEFAULT_RETURN_ADDRESS = "Spielezar AG\nBiberiststrasse 4\n4563 Gerlafingen";
     public const STATE_WAITING_FOR_CONFIRMATION = 1;
@@ -74,7 +82,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
     public $id_order;
     /** @var int */
     public $state;
-    public $processing_status = 'open';
+    public $processing_status = self::PROCESSING_STATUS_OPEN;
 
     /** @var string message content */
     public $question;
@@ -93,12 +101,30 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
     public function getCustomerServiceStatusLabels(): array
     {
         return [
-            'open' => 'Review customer message',
-            'pending1' => 'In inquiry',
-            'waiting_customer' => 'Waiting for customer',
-            'waiting_package' => 'Package expected',
-            'closed' => 'Completed',
+            self::PROCESSING_STATUS_OPEN => 'Review customer message',
+            self::PROCESSING_STATUS_INQUIRY => 'In inquiry',
+            self::PROCESSING_STATUS_WAITING_CUSTOMER => 'Waiting for customer',
+            self::PROCESSING_STATUS_WAITING_PACKAGE => 'Package expected',
+            self::PROCESSING_STATUS_COMPLETED => 'Completed',
+            self::PROCESSING_STATUS_REJECTED => 'Rejected',
+            self::PROCESSING_STATUS_EXPIRED => 'Expired',
         ];
+    }
+
+    /** @return string[] */
+    public static function getActiveProcessingStatuses(): array
+    {
+        return [
+            self::PROCESSING_STATUS_OPEN,
+            self::PROCESSING_STATUS_INQUIRY,
+            self::PROCESSING_STATUS_WAITING_CUSTOMER,
+            self::PROCESSING_STATUS_WAITING_PACKAGE,
+        ];
+    }
+
+    public static function getActiveProcessingStatusSql(string $field): string
+    {
+        return $field.' IN ("'.implode('","', array_map('pSQL', self::getActiveProcessingStatuses())).'")';
     }
 
     public static function getReturnAddress(): string
@@ -233,6 +259,7 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
                 ->select('`id_order_return`')
                 ->from('order_return')
                 ->where('`id_order` = ' . (int)$idOrder)
+                ->where(self::getActiveProcessingStatusSql('`processing_status`'))
                 ->where('EXISTS (SELECT 1 FROM `'._DB_PREFIX_.'order_return_detail` rd WHERE rd.`id_order_return` = `'._DB_PREFIX_.'order_return`.`id_order_return` AND rd.`product_quantity` > rd.`received_quantity`)')
                 ->orderBy('`date_add` DESC')
         );
@@ -245,21 +272,21 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
         return Validate::isLoadedObject($orderReturn) ? $orderReturn : null;
     }
 
-    public static function getOrCreateBackOfficeReturn(Order $order, int $state): ?self
+    public static function getOrCreateBackOfficeReturn(Order $order): ?self
     {
         $orderReturn = self::getWaitingReturnForOrder((int)$order->id);
 
         if ($orderReturn) {
-            $orderReturn->state = $state;
-            $orderReturn->processing_status = $state === self::STATE_WAITING_FOR_PACKAGE ? 'waiting_package' : 'open';
+            $orderReturn->state = self::STATE_WAITING_FOR_PACKAGE;
+            $orderReturn->processing_status = self::PROCESSING_STATUS_WAITING_PACKAGE;
             return $orderReturn->save() ? $orderReturn : null;
         }
 
         $orderReturn = new self();
         $orderReturn->id_customer = (int)$order->id_customer;
         $orderReturn->id_order = (int)$order->id;
-        $orderReturn->state = $state;
-        $orderReturn->processing_status = $state === self::STATE_WAITING_FOR_PACKAGE ? 'waiting_package' : 'open';
+        $orderReturn->state = self::STATE_WAITING_FOR_PACKAGE;
+        $orderReturn->processing_status = self::PROCESSING_STATUS_WAITING_PACKAGE;
         $orderReturn->question = '';
 
         if (!$orderReturn->add()) {
@@ -358,13 +385,39 @@ class OrderReturnCore extends ObjectModel implements CustomerThreadContextSource
 
     public static function getOpenReturnQuantityByOrderDetail(int $idOrderDetail): int
     {
-        return (int)Db::readOnly()->getValue(
+        return self::getOpenReturnQuantitiesByOrderDetails([$idOrderDetail])[$idOrderDetail] ?? 0;
+    }
+
+    /** @return array<int, int> */
+    public static function getOpenReturnQuantitiesByOrderDetails(array $idOrderDetails): array
+    {
+        $idOrderDetails = array_values(array_unique(array_filter(
+            array_map('intval', $idOrderDetails),
+            static function (int $idOrderDetail): bool {
+                return $idOrderDetail > 0;
+            }
+        )));
+        if (!$idOrderDetails) {
+            return [];
+        }
+
+        $rows = Db::readOnly()->getArray(
             (new DbQuery())
-                ->select('COALESCE(SUM(GREATEST(ord.`product_quantity` - ord.`received_quantity`, 0)), 0)')
+                ->select('ord.`id_order_detail`, SUM(GREATEST(ord.`product_quantity` - ord.`received_quantity`, 0)) AS `quantity`')
                 ->from('order_return_detail', 'ord')
                 ->innerJoin('order_return', 'orx', 'orx.`id_order_return` = ord.`id_order_return`')
-                ->where('ord.`id_order_detail` = ' . (int)$idOrderDetail)
+                ->where('ord.`id_order_detail` IN ('.implode(',', $idOrderDetails).')')
+                ->where(self::getActiveProcessingStatusSql('orx.`processing_status`'))
+                ->where('ord.`product_quantity` > ord.`received_quantity`')
+                ->groupBy('ord.`id_order_detail`')
         );
+
+        $quantities = [];
+        foreach ($rows as $row) {
+            $quantities[(int)$row['id_order_detail']] = (int)$row['quantity'];
+        }
+
+        return $quantities;
     }
 
     public function getDetailRows(): array

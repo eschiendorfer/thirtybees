@@ -45,7 +45,7 @@ class RefundEligibilityServiceCore
         $returnedQuantity = (int)$product['product_quantity_return'];
         $shippingQuantity = $this->getShippingQuantity($order, $product, $orderedQuantity, $orderDetailExtension);
         $openReturnQuantity = OrderReturn::getOpenReturnQuantityByOrderDetail((int)$product['id_order_detail']);
-        $blockedQuantity = $refundedQuantity + $returnedQuantity + $openReturnQuantity;
+        $bookedQuantity = $refundedQuantity + $returnedQuantity;
         $refundableQuantity = min(
             max(0, (int)$product['quantity_refundable']),
             max(0, $orderedQuantity - $refundedQuantity)
@@ -58,8 +58,8 @@ class RefundEligibilityServiceCore
 
         return [
             'cancelable_quantity' => $cancelableQuantity,
-            'returnable_quantity' => max(0, $shippingQuantity - $blockedQuantity),
-            'serviceable_quantity' => max(0, $orderedQuantity - $blockedQuantity),
+            'returnable_quantity' => max(0, $shippingQuantity - $bookedQuantity - $openReturnQuantity),
+            'serviceable_quantity' => max(0, $orderedQuantity - $bookedQuantity),
             'open_return_quantity' => $openReturnQuantity,
             'shipping_quantity' => $shippingQuantity,
             'refundable_quantity' => $refundableQuantity,

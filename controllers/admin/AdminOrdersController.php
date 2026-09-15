@@ -3210,7 +3210,7 @@ class AdminOrdersControllerCore extends AdminController
         }
 
         if ($action === RefundPolicy::ACTION_RETURN) {
-            if (!$this->syncBackOfficeOrderReturn($order, $selectedQuantities, OrderReturn::STATE_WAITING_FOR_PACKAGE)) {
+            if (!$this->syncBackOfficeOrderReturn($order, $selectedQuantities)) {
                 return false;
             }
         } elseif ($action === RefundPolicy::ACTION_CANCEL) {
@@ -3583,9 +3583,9 @@ class AdminOrdersControllerCore extends AdminController
         return $idStoreCreditTransaction;
     }
 
-    protected function syncBackOfficeOrderReturn(Order $order, array $quantitiesByOrderDetail, int $state): bool
+    protected function syncBackOfficeOrderReturn(Order $order, array $quantitiesByOrderDetail): bool
     {
-        $orderReturn = OrderReturn::getOrCreateBackOfficeReturn($order, $state);
+        $orderReturn = OrderReturn::getOrCreateBackOfficeReturn($order);
         if (!$orderReturn) {
             $this->errors[] = Tools::displayError('Unable to create or update the order return.');
             return false;

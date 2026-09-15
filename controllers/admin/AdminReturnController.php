@@ -51,6 +51,9 @@ class AdminReturnControllerCore extends AdminController
         $this->_join = '';
         $this->_join .= ' LEFT JOIN '._DB_PREFIX_.'orders o ON (o.`id_order` = a.`id_order`)';
         $this->_join .= ' LEFT JOIN '._DB_PREFIX_.'customer c ON (o.`id_customer` = c.`id_customer`)';
+        $statusList = array_map(static function (array $option): string {
+            return $option['label'];
+        }, CustomerServiceStatus::getOptions(new OrderReturn()));
 
         $this->fields_list = [
             'id_order_return' => [
@@ -72,6 +75,9 @@ class AdminReturnControllerCore extends AdminController
             ],
             'processing_status' => [
                 'title' => $this->l('Status'),
+                'type' => 'select',
+                'list' => $statusList,
+                'filter_key' => 'a!processing_status',
                 'callback' => 'renderProcessingStatus',
                 'width' => 'auto',
                 'align' => 'left'
@@ -401,7 +407,7 @@ class AdminReturnControllerCore extends AdminController
                     if ($this->applyReturnQuantityTargets($orderReturn, $quantityTargets) && $orderReturn->save()) {
                         $receivedAfter = (int)Db::getInstance()->getValue('SELECT SUM(`received_quantity`) FROM `'._DB_PREFIX_.'order_return_detail` WHERE `id_order_return` = '.(int)$orderReturn->id);
                         if ($receivedAfter > $receivedBefore) {
-                            CustomerServiceStatus::save($orderReturn, 'pending1');
+                            CustomerServiceStatus::save($orderReturn, OrderReturn::PROCESSING_STATUS_INQUIRY);
                             if (!(bool)$orderReturn->migrated) {
                                 $this->notifyPackageReceived($orderReturn, $order);
                             }

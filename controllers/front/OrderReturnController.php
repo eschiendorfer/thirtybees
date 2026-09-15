@@ -69,13 +69,13 @@ class OrderReturnControllerCore extends FrontController
             if (Validate::isLoadedObject($orderReturn) && $orderReturn->id_customer == $this->context->cookie->id_customer) {
                 $order = new Order((int) ($orderReturn->id_order));
                 if (Validate::isLoadedObject($order)) {
-                    $state = new OrderReturnState((int) $orderReturn->state);
+                    $statusOptions = CustomerServiceStatus::getOptions($orderReturn);
                     $this->context->smarty->assign(
                         [
                             'PS_RETURN_PREFIX' => Configuration::get('PS_RETURN_PREFIX', $this->context->language->id),
                             'orderRet'               => $orderReturn,
                             'order'                  => $order,
-                            'state_name'             => $state->name[(int) $this->context->language->id],
+                            'state_name'             => $statusOptions[$orderReturn->processing_status]['label'] ?? $orderReturn->processing_status,
                             'return_allowed'         => false,
                             'products'               => OrderReturn::getOrdersReturnProducts((int) $orderReturn->id, $order),
                             'returnedCustomizations' => OrderReturn::getReturnedCustomizedProducts((int) $orderReturn->id_order),

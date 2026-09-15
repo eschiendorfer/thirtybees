@@ -136,24 +136,6 @@ class AdminCustomerThreadsControllerCore extends AdminController
         }
     }
 
-    /**
-     * Statuses available to employees and customers.
-     *
-     * pending1 remains the persisted value for "in progress" so existing threads
-     * keep their meaning without a data migration.
-     *
-     * @return array<string, string>
-     */
-    protected function getCustomerServiceStatuses(): array
-    {
-        return [
-            CustomerThread::STATUS_OPEN             => $this->l('Open'),
-            CustomerThread::STATUS_IN_PROGRESS      => $this->l('In inquiry'),
-            CustomerThread::STATUS_WAITING_CUSTOMER => $this->l('Waiting for customer'),
-            CustomerThread::STATUS_CLOSED           => $this->l('Completed'),
-        ];
-    }
-
     /** @return array<string, string> */
     protected function getWorkItemStatuses(): array
     {
@@ -1348,21 +1330,12 @@ class AdminCustomerThreadsControllerCore extends AdminController
      */
     public function renderStatus($value, array $row = [])
     {
-        $owner = CustomerServiceStatus::getEntity((int)($row['entity_type'] ?? 0), (int)($row['id_entity'] ?? 0));
-        if ($owner) {
-            $option = CustomerServiceStatus::getOptions($owner)[CustomerServiceStatus::get($owner)] ?? null;
-            if ($option) {
-                return '<span class="badge '.$option['badge_class'].'">'.Tools::safeOutput($option['label']).'</span>';
-            }
-        }
-        $threadStatusLabels = $this->getCustomerServiceStatuses();
         $workItemStatusLabels = $this->getWorkItemStatuses();
         $statuses = [
             'unknown'          => ['class' => 'badge', 'text' => $this->l('Unknown')],
             CustomerServiceWorkItemProvider::STATUS_OPEN => ['class' => 'badge badge-danger', 'text' => $workItemStatusLabels[CustomerServiceWorkItemProvider::STATUS_OPEN]],
             CustomerServiceWorkItemProvider::STATUS_CLOSED => ['class' => 'badge badge-success', 'text' => $workItemStatusLabels[CustomerServiceWorkItemProvider::STATUS_CLOSED]],
             CustomerServiceWorkItemProvider::STATUS_INQUIRY => ['class' => 'badge badge-warning', 'text' => $workItemStatusLabels[CustomerServiceWorkItemProvider::STATUS_INQUIRY]],
-            CustomerThread::STATUS_IN_PROGRESS => ['class' => 'badge badge-warning', 'text' => $threadStatusLabels[CustomerThread::STATUS_IN_PROGRESS]],
             CustomerServiceWorkItemProvider::STATUS_WAITING_CUSTOMER => ['class' => 'badge badge-info', 'text' => $workItemStatusLabels[CustomerServiceWorkItemProvider::STATUS_WAITING_CUSTOMER]],
         ];
 
