@@ -736,32 +736,25 @@ class AdminOrderCancellationsControllerCore extends AdminController
         $order = new Order((int)$order->id);
         $isFullCancellation = empty($result['adjustment']['remaining']['has_products']);
         if ($isFullCancellation) {
-            $message = sprintf(
-                $this->l('Your order %s has been fully cancelled.'),
-                (string)$order->reference
-            );
+            $values = ['order_reference' => (string)$order->reference];
             $eventKey = 'cancellation_order_cancelled';
         } else {
             $currency = new Currency((int)$order->id_currency);
-            $message = sprintf(
-                $this->l('Your order %1$s has been adjusted. The new order total is %2$s.'),
-                (string)$order->reference,
-                Tools::displayPrice((float)$order->total_paid_tax_incl, Validate::isLoadedObject($currency) ? $currency : null)
-            );
+            $values = ['order_reference' => (string)$order->reference, 'total' => Tools::displayPrice((float)$order->total_paid_tax_incl, Validate::isLoadedObject($currency) ? $currency : null)];
             $eventKey = 'cancellation_order_adjusted';
         }
-        $this->notifyCancellationCompleted($cancellation, $order, $message, $eventKey);
+        $this->notifyCancellationCompleted($cancellation, $order, $values, $eventKey);
 
         Tools::redirectAdmin(static::$currentIndex.'&view'.$this->table.'&'.$this->identifier.'='.(int)$cancellation->id.'&conf=4&token='.$this->token);
     }
 
-    private function notifyCancellationCompleted(OrderCancellation $cancellation, Order $order, string $message, string $eventKey): void
+    private function notifyCancellationCompleted(OrderCancellation $cancellation, Order $order, array $values, string $eventKey): void
     {
         (new CustomerServiceNotificationService())->notify(
             (int)$order->id_customer,
             $eventKey,
             'order_cancellation:'.(int)$cancellation->id.':'.$eventKey,
-            $message,
+            $values,
             (int)\CoreExtension\EntityTypeEnum::ORDER_CANCELLATION_VALUE,
             (int)$cancellation->id,
             $this->context->link->getModuleLink('genzo_crm', 'customer_service', [
@@ -781,7 +774,7 @@ class AdminOrderCancellationsControllerCore extends AdminController
         $currency = new Currency((int)$order->id_currency);
         $formattedAmount = Tools::displayPrice($amount, Validate::isLoadedObject($currency) ? $currency : null);
         if ((string)$cancellation->requested_refund_method === OrderCancellation::REFUND_METHOD_STORE_CREDIT) {
-            $message = sprintf($this->l('Your store credit of %s has been created.'), $formattedAmount);
+            $values = ['amount' => $formattedAmount];
             $eventKey = 'cancellation_store_credit_created';
         } else {
             if ($paymentLabel === '') {
@@ -791,11 +784,7 @@ class AdminOrderCancellationsControllerCore extends AdminController
                     $paymentLabel = trim((string)$order->payment);
                 }
             }
-            $message = sprintf(
-                $this->l('The refund of %1$s to %2$s has been completed.'),
-                $formattedAmount,
-                $paymentLabel
-            );
+            $values = ['amount' => $formattedAmount, 'payment' => $paymentLabel];
             $eventKey = 'cancellation_refund_completed';
         }
 
@@ -803,7 +792,7 @@ class AdminOrderCancellationsControllerCore extends AdminController
             (int)$order->id_customer,
             $eventKey,
             'order_cancellation:'.(int)$cancellation->id.':refund_completed',
-            $message,
+            $values,
             (int)\CoreExtension\EntityTypeEnum::ORDER_CANCELLATION_VALUE,
             (int)$cancellation->id,
             $this->context->link->getModuleLink('genzo_crm', 'customer_service', [

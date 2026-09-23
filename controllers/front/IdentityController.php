@@ -71,9 +71,20 @@ class IdentityControllerCore extends FrontController
         $originNewsletter = (bool) $this->customer->newsletter;
 
         if (Tools::isSubmit('submitIdentity')) {
+            $mode = Tools::getValue('identity_mode');
+
+            if ($mode === 'profile') {
+                $_POST['email'] = $this->customer->email;
+                unset($_POST['old_passwd'], $_POST['passwd'], $_POST['passwd_confirmation']);
+            } elseif ($mode === 'email') {
+                unset($_POST['passwd'], $_POST['passwd_confirmation']);
+            } elseif ($mode === 'password') {
+                $_POST['email'] = $this->customer->email;
+            }
+
             $email = trim(Tools::getValue('email'));
             $passwd = Tools::getValue('passwd');
-            $passwdConfirmation = Tools::getValue('passwd_confirmation', Tools::getValue('confirmation')); // 'confirmation' is for backward compatibility
+            $passwdConfirmation = Tools::getValue('passwd_confirmation');
 
             if (Tools::getValue('birthday')) {
                 $this->customer->birthday = Tools::getValue('birthday');

@@ -430,16 +430,12 @@ class AdminReturnControllerCore extends AdminController
     private function notifyPackageReceived(OrderReturn $orderReturn, Order $order): void
     {
         $eventKey = 'order_return_package_received';
-        $message = sprintf(
-            $this->l('Your return for order %s has arrived at our warehouse.'),
-            (string)$order->reference
-        );
 
         (new CustomerServiceNotificationService())->notify(
             (int)$order->id_customer,
             $eventKey,
             'order_return:'.(int)$orderReturn->id.':'.$eventKey,
-            $message,
+            ['order_reference' => (string)$order->reference],
             (int)\CoreExtension\EntityTypeEnum::ORDER_RETURN_VALUE,
             (int)$orderReturn->id,
             $this->context->link->getModuleLink('genzo_crm', 'customer_service', [

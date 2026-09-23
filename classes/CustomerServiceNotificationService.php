@@ -10,7 +10,7 @@ class CustomerServiceNotificationServiceCore
         int $idCustomer,
         string $eventKey,
         string $sourceRef,
-        string $message,
+        array $values,
         int $targetEntityType,
         int $targetIdEntity,
         string $url
@@ -19,7 +19,6 @@ class CustomerServiceNotificationServiceCore
             $idCustomer <= 0
             || trim($eventKey) === ''
             || trim($sourceRef) === ''
-            || trim($message) === ''
             || $targetEntityType <= 0
             || $targetIdEntity <= 0
         ) {
@@ -27,14 +26,14 @@ class CustomerServiceNotificationServiceCore
         }
 
         $responses = Hook::exec(
-            'actionCreateCommunityNotification',
+            'actionCreateGenzoNotification',
             [
                 'operation' => 'create',
                 'id_customer_recipient' => $idCustomer,
                 'id_actor_type' => 'company',
                 'id_actor' => 1,
                 'event_key' => $eventKey,
-                'message' => $message,
+                'values' => $values,
                 'source_ref' => $sourceRef,
                 'target_entity_type' => $targetEntityType,
                 'target_id_entity' => $targetIdEntity,
@@ -65,7 +64,7 @@ class CustomerServiceNotificationServiceCore
         }
 
         $responses = Hook::exec(
-            'actionCreateCommunityNotification',
+            'actionCreateGenzoNotification',
             [
                 'operation' => 'delete',
                 'event_key' => $eventKey,

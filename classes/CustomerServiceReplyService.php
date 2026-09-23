@@ -127,10 +127,7 @@ class CustomerServiceReplyServiceCore
             (int)$thread->id_customer,
             'customer_service_reply',
             'customer_message:'.(int)$message->id.':employee_reply',
-            Translate::getAdminTranslation(
-                'You have received a new message from customer service.',
-                'CustomerServiceReply'
-            ),
+            [],
             $entityType,
             $idEntity,
             $this->getCustomerLink($thread, $entityType, $idEntity)
