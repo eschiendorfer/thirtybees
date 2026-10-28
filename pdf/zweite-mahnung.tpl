@@ -26,7 +26,7 @@
 {assign var="rechnung" value="yes"}
 <div style="font-size: 8pt; color: #222">
 <table>
-	<tr><td><br>Biberist, {$smarty.now|date_format:"%d.%m.%Y"}</td></tr>
+	<tr><td><br>Gerlafingen, {$smarty.now|date_format:"%d.%m.%Y"}</td></tr>
 </table>
 
 <!-- ADDRESSES -->
