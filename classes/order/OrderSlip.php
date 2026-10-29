@@ -137,7 +137,9 @@ class OrderSlipCore extends ObjectModel
                 'fields'   => [
                     'id'               => [],
                     'id_order_detail'  => ['required' => true],
-                    // Credit-slip document quantity only; not stock, return-condition, or COGS truth.
+                    // @deprecated Legacy quantity; do not use for new credit or return settlement logic.
+                    // Credits are amounts; received/restocked quantities belong to the return.
+                    // Kept for compatibility with existing cancellation and legacy consumers.
                     'product_quantity' => ['required' => true],
                     'amount_tax_excl'  => ['required' => true],
                     'amount_tax_incl'  => ['required' => true],
