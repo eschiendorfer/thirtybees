@@ -63,6 +63,8 @@ $(document).ready(function () {
     updateCreditTotals();
   });
 
+  $('#credit_refund_amount').on('input change', function () { updateCreditTotals(); });
+
   $('#confirm_original_payment_refund').change(function () {
     updatePartialRefundSubmitState();
   });
@@ -313,6 +315,7 @@ function updateCreditCartRuleAdjustmentState() {
 }
 
 function resetCreditForm() {
+  $('#credit_refund_amount').val('0');
   creditAdjustmentState.cartRule.manual = false;
   creditAdjustmentState.cartRule.source = 'amount';
   creditAdjustmentState.fee.manual = false;
@@ -376,6 +379,7 @@ function applyCreditReasonSuggestion() {
   }
 
   var suggestion = window.orderCreditSuggestions[reason][idEntity];
+  $('#credit_refund_amount').val(formatCreditInput(suggestion.refund_amount_tax_incl || 0));
   $.each(suggestion.products || {}, function (idOrderDetail, productSuggestion) {
     var $input = $('.credit-product-amount-input[data-id-order-detail="' + idOrderDetail + '"]');
     if ($input.length) {
@@ -474,7 +478,10 @@ function refreshSuggestedCreditAdjustments(preserveManualSource) {
           discount += parseCreditNumber($(this).val()) * parseCreditNumber(rates[$(this).data('id-order-detail')]) / 100;
         }
       });
-      setCreditAdjustment('cartRule', discount, totals.products);
+      if ($('#reason_entity_type').val() === 'order_return' && (window.orderCreditSuggestions || {}).display_includes_tax) {
+        discount = Math.max(discount, totals.products + totals.shippingAdjustment - window.orderCreditSuggestions.remaining_credit_tax_incl);
+      }
+      setCreditAdjustment('cartRule', Math.min(totals.products, discount), totals.products);
     }
   } else if (creditAdjustmentState.cartRule.source === 'rate') {
     setCreditAdjustmentFromRate('cartRule', totals.products, preserveManualSource);
@@ -527,14 +534,21 @@ function updateCreditTotals(preserveManualSource) {
   var active = getActiveCreditSuggestion() || {};
   var remaining = typeof active.remaining_paid_tax_incl !== 'undefined'
     ? active.remaining_paid_tax_incl : suggestions.remaining_paid_tax_incl;
+  var isReturn = $('#reason_entity_type').val() === 'order_return';
+  var hasPayout = isReturn && getCreditRefundMethod() !== 'none' && !!getCreditRefundMethod();
+  $('#credit_refund_amount_row').toggle(hasPayout);
+  $('#credit_refund_amount').prop('disabled', !hasPayout);
+  if (getCreditRefundMethod() === 'none' || isReturn) {
+    remaining = suggestions.remaining_credit_tax_incl;
+  }
   if (typeof remaining !== 'undefined') {
     $('#credit_remaining_paid_display').text(formatCreditDisplay(remaining));
     $('#credit_shipping_adjustment').each(function () {
       this.setCustomValidity(suggestions.display_includes_tax && roundCreditRefundTotalAmount(creditTotal) > remaining + 0.000001
-        ? 'Die Gutschrift übersteigt den noch erstattbaren bezahlten Bestellbetrag.' : '');
+        ? 'Die Gutschrift übersteigt den verfuegbaren Betrag fuer die gewaehlte Erstattungsart.' : '');
     });
   }
-  updateOriginalPaymentRefundConfirmation(creditTotal);
+  updateOriginalPaymentRefundConfirmation(hasPayout ? parseCreditNumber($('#credit_refund_amount').val()) : creditTotal);
 }
 
 function getActiveCreditSuggestion() {

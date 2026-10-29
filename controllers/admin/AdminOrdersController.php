@@ -806,16 +806,8 @@ class AdminOrdersControllerCore extends AdminController
                     }
                 }
 
-                if ($this->isStoreCreditSubmitForPartialRefund() && !count($this->errors) && $effectiveRefundAmount > 0) {
-                    $idStoreCreditTransaction = $this->createRefundStoreCredit($order, $idOrderSlip, $effectiveRefundAmount);
-                    if ($idStoreCreditTransaction > 0 && !$this->getRefundCreator()->addStoreCreditRefundPayment(
-                        $order,
-                        $idOrderSlip,
-                        $effectiveRefundAmount,
-                        $idStoreCreditTransaction
-                    )) {
-                        $this->errors[] = Tools::displayError('Refund payment could not be saved.');
-                    }
+                if (!count($this->errors)) {
+                    $this->processCreditSlipPayment($order, $idOrderSlip, $creditSlipRequest);
                 }
 
                 if (!count($this->errors)) {
@@ -3314,11 +3306,33 @@ class AdminOrdersControllerCore extends AdminController
         return $this->getRefundEligibilityService()->getOrderProductActionCapabilities($order, $product, $orderDetailExtension);
     }
 
+    protected function processCreditSlipPayment(Order $order, int $idSlip, array $request): void
+    {
+        $method = $request['refund_method'];
+        $amount = (float)($request['refund_amount_tax_incl'] ?? $request['effective_tax_incl']);
+        if ($method === RefundPolicy::REFUND_METHOD_NONE || $amount <= 0) {
+            return;
+        }
+        try {
+            if ($method === RefundPolicy::REFUND_METHOD_ORIGINAL_PAYMENT && (string)Tools::getValue('confirm_original_payment_refund') !== '1') {
+                throw new PrestaShopException('Bitte die Rückzahlung ausdrücklich bestätigen.');
+            }
+            if ((int)$request['metadata']['reason_entity_type'] === RefundPolicy::REASON_ORDER_RETURN) {
+                (new OrderReturnSettlementService())->payReturn($order, (int)$request['metadata']['reason_id_entity'], $method, $amount);
+            } else {
+                (new RefundPaymentService())->pay($order, $idSlip, $method, $amount);
+            }
+        } catch (Throwable $exception) {
+            $this->errors[] = Tools::displayError('Gutschrift #'.$idSlip.' ist vorhanden. '.$exception->getMessage());
+        }
+    }
+
     protected function buildCreditSlipRequest(Order $order): ?array
     {
         $result = $this->getRefundCalculator()->buildCreditSlipRequest($order, [
             'display_includes_tax' => (int)Tools::getValue('TaxMethod') === 1,
             'refund_method' => (string)Tools::getValue('order_product_refund_method', ''),
+            'refund_amount_tax_incl' => Tools::getValue('credit_refund_amount', null),
             'reason_entity_type' => (string)Tools::getValue('reason_entity_type', ''),
             'reason_id_entity' => (int)Tools::getValue('reason_id_entity', 0),
             'product_amounts' => Tools::getArrayValue('partialRefundProduct', []),
@@ -3338,7 +3352,7 @@ class AdminOrdersControllerCore extends AdminController
     protected function getCreditOrderReturnOptions(Order $order, array $products): array
     {
         $options = [];
-        foreach ($this->getRefundEligibilityService()->getOpenOrderReturnRows($order, (int)$this->context->language->id) as $row) {
+        foreach ($this->getRefundEligibilityService()->getCreditableOrderReturnRows($order, (int)$this->context->language->id) as $row) {
             $options[] = [
                 'id_order_return' => (int)$row['id_order_return'],
                 'label' => sprintf(
@@ -3422,7 +3436,8 @@ class AdminOrdersControllerCore extends AdminController
                 ->select('1')
                 ->from('order_payment')
                 ->where('`id_order_slip` = '.(int)$idOrderSlip)
-                ->where("`status` IN ('done', 'pending', 'manual')")
+                ->where("`status` = 'done'")
+                ->where('`amount` < 0')
         );
         if (!$paymentRecorded) {
             return true;
@@ -3510,7 +3525,7 @@ class AdminOrdersControllerCore extends AdminController
 
     protected function getOpenCreditOrderReturnRows(Order $order): array
     {
-        return $this->getRefundEligibilityService()->getOpenOrderReturnRows(
+        return $this->getRefundEligibilityService()->getCreditableOrderReturnRows(
             $order,
             (int)$this->context->language->id
         );

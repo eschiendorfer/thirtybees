@@ -67,54 +67,29 @@ class RefundEligibilityServiceCore
         ];
     }
 
-    public function getOpenOrderReturnRows(Order $order, int $idLang): array
+    /** Returns with received goods remain selectable for an explicit additional credit. */
+    public function getCreditableOrderReturnRows(Order $order, int $idLang): array
     {
-        $rows = Db::readOnly()->getArray(
+        $rows = Db::getInstance()->getArray(
             (new DbQuery())
                 ->select('orx.`id_order_return`, orx.`state`, orx.`date_add`')
-                ->select('SUM(ord.`received_quantity`) AS `quantity`')
                 ->from('order_return', 'orx')
                 ->innerJoin('order_return_detail', 'ord', 'ord.`id_order_return` = orx.`id_order_return`')
                 ->where('orx.`id_order` = '.(int)$order->id)
+                ->where('ord.`received_quantity` > 0')
                 ->groupBy('orx.`id_order_return`')
                 ->orderBy('orx.`id_order_return` DESC')
         );
-
-        if (!$rows) {
-            return [];
+        foreach ($rows as &$row) {
+            $row['state_name'] = CustomerServiceStatus::getOptions(new OrderReturn((int)$row['id_order_return']))[$row['state']]['label'];
         }
-
-        $creditedRows = Db::readOnly()->getArray(
-            (new DbQuery())
-                ->select('os.`reason_id_entity` AS `id_order_return`, SUM(osd.`product_quantity`) AS `quantity`')
-                ->from('order_slip', 'os')
-                ->innerJoin('order_slip_detail', 'osd', 'osd.`id_order_slip` = os.`id_order_slip`')
-                ->where('os.`id_order` = '.(int)$order->id)
-                ->where('os.`reason_entity_type` = '.(int)RefundPolicy::REASON_ORDER_RETURN)
-                ->groupBy('os.`reason_id_entity`')
-        );
-
-        $creditedQuantities = [];
-        foreach ($creditedRows as $creditedRow) {
-            $creditedQuantities[(int)$creditedRow['id_order_return']] = (int)$creditedRow['quantity'];
-        }
-
-        $openRows = [];
-        foreach ($rows as $row) {
-            $idOrderReturn = (int)$row['id_order_return'];
-            $row['state_name'] = CustomerServiceStatus::getOptions(new OrderReturn($idOrderReturn))[$row['state']]['label'];
-            $row['credited_quantity'] = (int)($creditedQuantities[$idOrderReturn] ?? 0);
-            if ((int)$row['quantity'] > (int)$row['credited_quantity']) {
-                $openRows[] = $row;
-            }
-        }
-
-        return $openRows;
+        unset($row);
+        return $rows;
     }
 
     public function getOrderReturnQuantities(int $idOrderReturn): array
     {
-        $rows = Db::readOnly()->getArray(
+        $rows = Db::getInstance()->getArray(
             (new DbQuery())
                 ->select('`id_order_detail`, SUM(`received_quantity`) AS `quantity`')
                 ->from('order_return_detail')
@@ -130,44 +105,30 @@ class RefundEligibilityServiceCore
         return $quantities;
     }
 
-    public function getUncreditedOrderReturnQuantities(Order $order, ?int $idOrderReturn = null): array
+    public function hasOrderReturnCredit(Order $order, int $idOrderReturn): bool
     {
-        $creditedRows = Db::readOnly()->getArray(
+        return (bool)Db::getInstance()->getValue(
             (new DbQuery())
-                ->select('osd.`id_order_detail`, SUM(osd.`product_quantity`) AS `quantity`')
-                ->from('order_slip_detail', 'osd')
-                ->innerJoin('order_slip', 'os', 'os.`id_order_slip` = osd.`id_order_slip`')
-                ->where('os.`id_order` = '.(int)$order->id)
-                ->where('os.`reason_entity_type` = '.(int)RefundPolicy::REASON_ORDER_RETURN)
-                ->where($idOrderReturn ? 'os.`reason_id_entity` = '.(int)$idOrderReturn : '1')
-                ->groupBy('osd.`id_order_detail`')
+                ->select('1')
+                ->from('order_slip')
+                ->where('`id_order` = '.(int)$order->id)
+                ->where('`reason_entity_type` = '.(int)RefundPolicy::REASON_ORDER_RETURN)
+                ->where('`reason_id_entity` = '.$idOrderReturn)
         );
+    }
 
-        $creditedQuantities = [];
-        foreach ($creditedRows as $row) {
-            $creditedQuantities[(int)$row['id_order_detail']] = (int)$row['quantity'];
+    /** Quantities calculate the first proposal only; credits record monetary decisions. */
+    public function getInitialOrderReturnQuantities(Order $order, int $idOrderReturn): array
+    {
+        $return = new OrderReturn($idOrderReturn);
+        if (!Validate::isLoadedObject($return) || (int)$return->id_order !== (int)$order->id
+            || (bool)$return->migrated
+            || in_array((int)$return->state, [OrderReturn::STATE_RETURN_COMPLETED,
+                OrderReturn::STATE_RETURN_DENIED, OrderReturn::STATE_RETURN_EXPIRED], true)
+            || $this->hasOrderReturnCredit($order, $idOrderReturn)) {
+            return [];
         }
-
-        $rows = Db::readOnly()->getArray(
-            (new DbQuery())
-                ->select('ord.`id_order_detail`, SUM(ord.`received_quantity`) AS `product_quantity_returned`')
-                ->from('order_return_detail', 'ord')
-                ->innerJoin('order_return', 'orx', 'orx.`id_order_return` = ord.`id_order_return`')
-                ->where('orx.`id_order` = '.(int)$order->id)
-                ->where($idOrderReturn ? 'orx.`id_order_return` = '.(int)$idOrderReturn : '1')
-                ->groupBy('ord.`id_order_detail`')
-        );
-
-        $quantities = [];
-        foreach ($rows as $row) {
-            $idOrderDetail = (int)$row['id_order_detail'];
-            $openQuantity = (int)$row['product_quantity_returned'] - (int)($creditedQuantities[$idOrderDetail] ?? 0);
-            if ($openQuantity > 0) {
-                $quantities[$idOrderDetail] = $openQuantity;
-            }
-        }
-
-        return $quantities;
+        return $this->getOrderReturnQuantities($idOrderReturn);
     }
 
     public function getOpenCancellationRows(Order $order): array
@@ -310,7 +271,7 @@ class RefundEligibilityServiceCore
                 ->from('order_return')
                 ->where('`id_order_return` = '.(int)$idOrderReturn)
                 ->where('`id_order` = '.(int)$order->id)
-        ) && (bool)$this->getUncreditedOrderReturnQuantities($order, $idOrderReturn);
+        ) && (bool)array_filter($this->getOrderReturnQuantities($idOrderReturn));
     }
 
     public function isValidCancellationReference(Order $order, int $idOrderCancellation): bool
@@ -343,6 +304,13 @@ class RefundEligibilityServiceCore
                 (float)$orderDetail->total_price_tax_incl - (float)$resume['amount_tax_incl']
             )),
         ];
+    }
+
+    /** Remaining claim that can be reduced, independent of payment receipts. */
+    public function getRemainingInvoiceCreditAmount(Order $order, int $excludeCancellation = 0): float
+    {
+        $balance = (new OrderBalanceService())->calculate($order);
+        return Tools::roundPrice(max(0.0, $balance['claim'] - $this->getReservedCancellationAmount($order, $excludeCancellation)));
     }
 
     /** Credits reserve their amount immediately, including refunds awaiting payment. */

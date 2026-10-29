@@ -2633,52 +2633,7 @@ class OrderCore extends ObjectModel implements CustomerThreadContextSourceInterf
      */
     public function getOutstandingAmountTaxIncl()
     {
-        $idOrder = (int)$this->id;
-        if ($idOrder <= 0) {
-            return 0.0;
-        }
-
-        $totalInvoiceAmount = (float)Db::readOnly()->getValue(
-            (new DbQuery())
-                ->select('SUM(oi.`total_paid_tax_incl`)')
-                ->from('order_invoice', 'oi')
-                ->where('oi.`id_order` = '.$idOrder)
-        );
-
-        if ($totalInvoiceAmount <= 0.0) {
-            $orderTotalTaxIncl = (float)$this->total_paid_tax_incl;
-            $orderPaid = (float)Db::readOnly()->getValue(
-                (new DbQuery())
-                    ->select('SUM(op.`amount`)')
-                    ->from('order_payment', 'op')
-                    ->where('op.`order_reference` = \''.pSQL($this->reference).'\'')
-                    ->where('op.`amount` > 0')
-            );
-
-            return Tools::roundPrice(max(0.0, $orderTotalTaxIncl - $orderPaid));
-        }
-
-        $totalPaidOnInvoices = 0.0;
-        $paymentRows = Db::readOnly()->getArray(
-            (new DbQuery())
-                ->select('op.`id_order_payment`, op.`amount`')
-                ->from('order_invoice_payment', 'oip')
-                ->innerJoin('order_payment', 'op', 'op.`id_order_payment` = oip.`id_order_payment`')
-                ->where('oip.`id_order` = '.$idOrder)
-                ->where('op.`amount` > 0')
-        );
-
-        $seenPayments = [];
-        foreach ($paymentRows as $paymentRow) {
-            $idOrderPayment = (int)$paymentRow['id_order_payment'];
-            if (isset($seenPayments[$idOrderPayment])) {
-                continue;
-            }
-            $seenPayments[$idOrderPayment] = true;
-            $totalPaidOnInvoices += (float)$paymentRow['amount'];
-        }
-
-        return Tools::roundPrice(max(0.0, $totalInvoiceAmount - $totalPaidOnInvoices));
+        return (new OrderBalanceService())->calculate($this)['outstanding'];
     }
 
     /**

@@ -1314,8 +1314,12 @@
                         </td>
                       </tr>
                       <tr class="success">
-                        <td><strong>{l s='Credit total'}</strong><br><small>{l s='Remaining refundable paid amount (tax incl.)'}: <span id="credit_remaining_paid_display"></span></small></td>
+                        <td><strong>{l s='Credit total'}</strong><br><small>Verfügbarer Betrag (inkl. MwSt.): <span id="credit_remaining_paid_display"></span></small></td>
                         <td class="text-right"><strong id="credit_total_display">0.00</strong></td>
+                      </tr>
+                      <tr id="credit_refund_amount_row" style="display:none;">
+                        <td><label for="credit_refund_amount">Rückzahlungsbetrag (inkl. MwSt.)</label></td>
+                        <td><input type="number" min="0" step="0.05" id="credit_refund_amount" name="credit_refund_amount" class="form-control text-right" value="0" disabled="disabled" /></td>
                       </tr>
                     </tbody>
                   </table>

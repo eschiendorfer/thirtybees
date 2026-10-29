@@ -639,58 +639,16 @@ class AdminOrderCancellationsControllerCore extends AdminController
             }
         }
 
-        $refundStatus = OrderPayment::STATUS_DONE;
-        $refundPaymentLabel = '';
-        if ((string)$cancellation->requested_refund_method === OrderCancellation::REFUND_METHOD_STORE_CREDIT) {
-            $idTransaction = $creator->createRefundStoreCredit($order, $idOrderSlip, $expected);
-            if ($idTransaction <= 0 || !$creator->addStoreCreditRefundPayment($order, $idOrderSlip, $expected, $idTransaction)) {
-                $this->errors[] = Tools::displayError(sprintf(
-                    'Gutschrift #%d ist vorhanden, aber die Guthabenbuchung konnte nicht abgeschlossen werden. Kontrolliere den Vorgang und wiederhole ihn mit derselben Gutschrift; lege keine zweite an.',
-                    $idOrderSlip
-                ));
-                return;
-            }
-        } else {
-            $module = Module::getInstanceByName((string)$order->module);
-            if (!Validate::isLoadedObject($module) || !method_exists($module, 'refundOrderSlipPayment')) {
-                $this->errors[] = Tools::displayError('The payment module does not support refunds.');
-                return;
-            }
-            $refund = $module->refundOrderSlipPayment($order, $idOrderSlip, $expected);
-            if (empty($refund['success'])) {
-                $message = (string)($refund['message'] ?? 'The original payment refund could not be processed.');
-                $this->errors[] = Tools::displayError(sprintf(
-                    'Gutschrift #%1$d wurde erstellt, aber die Rückerstattung über Payrexx ist fehlgeschlagen: %2$s Kontrolliere den Vorgang in Payrexx. Wenn der Status unklar ist, führe keine zweite Rückerstattung aus und melde den Fall.',
-                    $idOrderSlip,
-                    $message
-                ));
-                return;
-            }
-            $status = (string)($refund['status'] ?? OrderPayment::STATUS_DONE);
-            if (!in_array($status, [OrderPayment::STATUS_DONE, OrderPayment::STATUS_PENDING, OrderPayment::STATUS_FAILED, OrderPayment::STATUS_MANUAL], true)) {
-                $status = OrderPayment::STATUS_DONE;
-            }
-            if (!OrderPayment::addRefundForOrderSlip(
-                $order,
-                $idOrderSlip,
-                $expected,
-                (string)($refund['payment_method'] ?? $order->payment),
-                (string)($refund['payment_module'] ?? $order->module),
-                $status,
-                !empty($refund['transaction_id']) ? (string)$refund['transaction_id'] : null
-            )) {
-                $this->errors[] = Tools::displayError(sprintf(
-                    'Payrexx hat die Rückerstattung für Gutschrift #%d angenommen, aber sie konnte lokal nicht gespeichert werden. Führe keine zweite Rückerstattung aus. Kontrolliere Payrexx und melde den Fall.',
-                    $idOrderSlip
-                ));
-                return;
-            }
-            $refundStatus = $status;
-            $refundPaymentLabel = trim((string)($refund['payment_method'] ?? $order->payment));
+        try {
+            $payment = (new RefundPaymentService())->pay($order, $idOrderSlip, (string)$cancellation->requested_refund_method, $expected);
+            $refundStatus = $payment->status;
+            $refundPaymentLabel = (string)$payment->payment_method;
+        } catch (Throwable $exception) {
+            $this->errors[] = Tools::displayError('Gutschrift #'.$idOrderSlip.' ist vorhanden. '.$exception->getMessage());
+            return;
         }
-
-        if ($refundStatus === OrderPayment::STATUS_FAILED) {
-            $this->errors[] = Tools::displayError('The refund has not been completed. Check the payment before trying again.');
+        if ($refundStatus !== OrderPayment::STATUS_DONE) {
+            $this->errors[] = Tools::displayError('Die Rückzahlung ist noch nicht bestätigt. Bitte den vorhandenen Vorgang in Payrexx prüfen.');
             return;
         }
 

@@ -25,34 +25,35 @@
 
 {extends file='helpers/form/form.tpl'}
 
+{block name="defaultForm"}
+<div class="row order-return-workspace customer-thread-workspace" data-customer-thread-workspace data-auto-scroll="0" data-thread-id="{if $thread}{$thread->id|intval}{else}0{/if}">
+    <div class="col-lg-9">
+        {$smarty.block.parent}
+        {include file=$return_settlement_template}
+        {if !empty($conversation_template)}{include file=$conversation_template}{/if}
+    </div>
+    <div class="col-lg-3">
+        <div class="panel">
+            <div class="panel-heading"><i class="icon-link"></i> Verknüpfungen</div>
+            <a class="return-link" href="{$url_order|escape:'html':'UTF-8'}"><i class="icon-shopping-cart"></i> Bestellung {$return_order_reference|escape:'html':'UTF-8'}</a>
+            <a class="return-link" href="{$url_customer|escape:'html':'UTF-8'}"><i class="icon-user"></i> {$customer->firstname|escape:'html':'UTF-8'} {$customer->lastname|escape:'html':'UTF-8'}</a>
+            <a class="return-link" href="{$return_slip_url|escape:'html':'UTF-8'}" target="_blank"><i class="icon-file-text"></i> Rücksendeschein</a>
+            {foreach $return_settlement.slips as $slip}
+                <a class="return-link" href="{$slip.url|escape:'html':'UTF-8'}" target="_blank"><i class="icon-file-text"></i> Rechnung + Gutschrift #{$slip.id_order_slip|intval}</a>
+            {/foreach}
+        </div>
+    </div>
+</div>
+{/block}
+
 {block name="input"}
-	{if $input.type == 'text_customer'}
-		<p class="form-control-static" style="padding-top: 7px; margin-bottom: 0;">
-			<a href="{$url_customer|escape:'html':'UTF-8'}">
-				{$customer->firstname|escape:'html':'UTF-8'} {$customer->lastname|escape:'html':'UTF-8'}
-			</a>
-		</p>
-	{elseif $input.type == 'text_order'}
-		<p class="form-control-static" style="padding-top: 7px; margin-bottom: 0;">
-			<a href="{$url_order|escape:'html':'UTF-8'}">
-				{$text_order|escape:'html':'UTF-8'}
-			</a>
-		</p>
-	{elseif $input.type == 'pdf_order_return'}
-		<p>
-			{if $id_order_return > 0}
-				<a class="btn" href="{$link->getPageLink('pdf-order-return', true, NULL, "id_order_return={$id_order_return|intval}&adtoken={Tools::getAdminTokenLite('AdminReturn')}&id_employee={$employee->id|intval}")|escape:'html':'UTF-8'}">
-					<i class="icon-file-text"></i> {l s='Print out'}
-				</a>
-			{else}
-				--
-			{/if}
-		</p>
-	{elseif $input.type == 'list_products'}
-		<table class="table">
+    {if $input.type == 'list_products'}
+        <div class="return-meta"><span class="text-muted">Angemeldet am</span><br>{dateFormat date=$return_created full=true}</div>
+        {if $return_legacy_reason|trim != ''}<p><strong>Kundenbegründung:</strong><br>{$return_legacy_reason|escape:'html':'UTF-8'|nl2br}</p>{/if}
+        <div class="table-responsive">
+		<table class="table return-products">
 			<thead>
 				<tr>
-					<th>{l s='Reference'}</th>
 					<th>{l s='Product name'}</th>
 					<th class="text-left">
 						<span class="title_box">
@@ -75,21 +76,21 @@
 							</span>
 						</span>
 					</th>
-					<th class="text-center">{l s='Action'}</th>
+                    <th class="text-right">{if $return_settlement.breakdown.is_new}Gutzuschreiben{else}Gutgeschrieben{/if}</th>
+                    <th></th>
 				</tr>
 			</thead>
 			<tbody>
 				{foreach $returnedCustomizations as $returnedCustomization}
 					<tr>
-						<td>{$returnedCustomization['reference']}</td>
-						<td>{$returnedCustomization['name']}</td>
+						<td>{$returnedCustomization['name']|escape:'html':'UTF-8'}<small class="text-muted">{$returnedCustomization['reference']|escape:'html':'UTF-8'}</small></td>
 						<td class="text-center">{$returnedCustomization['product_quantity']|intval}</td>
 						<td class="text-center">--</td>
 						<td class="text-center">--</td>
+                        <td class="text-right">—</td>
 						<td class="text-center">
 							<a class="btn btn-default" href="{$current|escape:'html':'UTF-8'}&amp;deleteorder_return_detail&amp;id_order_detail={$returnedCustomization['id_order_detail']}&amp;id_order_return={$id_order_return}&amp;id_customization={$returnedCustomization['id_customization']}&amp;token={$token|escape:'html':'UTF-8'}">
 								<i class="icon-remove"></i>
-								{l s='Delete'}
 							</a>
 						</td>
 					</tr>
@@ -132,10 +133,9 @@
 				{foreach $products as $k => $product}
 					{if !isset($quantityDisplayed[$product['id_order_detail']]) || $product['product_quantity']|intval > $quantityDisplayed[$product['id_order_detail']]|intval}
 						<tr>
-							<td>{$product['product_reference']}</td>
-							<td>{$product['product_name']}</td>
+							<td>{$product['product_name']|escape:'html':'UTF-8'}<small class="text-muted">{$product['product_reference']|escape:'html':'UTF-8'}</small></td>
 							<td class="text-center">
-								<div class="input-group fixed-width-md">
+								<div class="input-group" style="width: 90px;">
 									<input
 										type="number"
 										min="0"
@@ -150,7 +150,7 @@
 								</div>
 							</td>
 							<td class="text-center">
-								<div class="input-group fixed-width-md">
+								<div class="input-group" style="width: 90px;">
 									<input
 										type="number"
 										min="0"
@@ -165,7 +165,7 @@
 								</div>
 							</td>
 							<td class="text-center">
-								<div class="input-group fixed-width-md">
+								<div class="input-group" style="width: 90px;">
 									<input
 										type="number"
 										min="0"
@@ -179,10 +179,13 @@
 									<span class="input-group-addon">/ <span class="return-restocked-max" data-order-detail="{$product['id_order_detail']|intval}">{$product['return_received_quantity']|intval}</span></span>
 								</div>
 							</td>
+                        <td class="text-right return-line-amount">
+                            {displayPrice price=$product.credit_amount currency=$return_currency->id}
+                            {if $product.previous_credit_amount > 0}<small class="text-muted">Bereits gutgeschrieben: {displayPrice price=$product.previous_credit_amount currency=$return_currency->id}</small>{/if}
+                        </td>
 							<td class="text-center">
 								<a class="btn btn-default" href="{$current|escape:'html':'UTF-8'}&amp;deleteorder_return_detail&amp;id_order_detail={$product['id_order_detail']}&amp;id_order_return={$id_order_return}&amp;token={$token|escape:'html':'UTF-8'}">
 									<i class="icon-remove"></i>
-									{l s='Delete'}
 								</a>
 							</td>
 						</tr>
@@ -190,6 +193,7 @@
 				{/foreach}
 			</tbody>
 		</table>
+        </div>
 		<script type="text/javascript">
 			(function () {
 
@@ -240,13 +244,4 @@
 	{/if}
 {/block}
 
-{block name="after"}
-	{if !empty($conversation_template)}
-		<div class="customer-thread-workspace"
-			 data-customer-thread-workspace
-			 data-auto-scroll="0"
-			 data-thread-id="{if $thread}{$thread->id|intval}{else}0{/if}">
-			{include file=$conversation_template}
-		</div>
-	{/if}
-{/block}
+{block name="after"}{/block}

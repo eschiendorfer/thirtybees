@@ -40,7 +40,7 @@ class OrderAdjustmentServiceCore
         $remainingDiscountTaxIncl = 0.0;
         $remainingDiscountTaxExcl = 0.0;
         try {
-            $discountRates = (new RefundDiscountService())->getProductRates($order, true);
+            $discountRates = (new RefundDiscountService())->getProductRates($order);
         } catch (PrestaShopException $exception) {
             return ['errors' => [$exception->getMessage()], 'adjustment' => null];
         }
@@ -380,22 +380,11 @@ class OrderAdjustmentServiceCore
             return 0.0;
         }
 
+        $rates = (new RefundDiscountService())->getProductRates($order);
         $productDiscount = 0.0;
-        $shippingDiscountLeft = max(0.0, (float)$order->total_shipping_tax_incl);
-
-        foreach ($order->getCartRules() as $orderCartRule) {
-            if ((new RefundDiscountService())->isBoughtVoucher((int)$orderCartRule['id_cart_rule'])) {
-                continue;
-            }
-            $discount = max(0.0, (float)$orderCartRule['value']);
-
-            if (!empty($orderCartRule['free_shipping']) && $shippingDiscountLeft > 0.0) {
-                $shippingDiscount = min($discount, $shippingDiscountLeft);
-                $discount -= $shippingDiscount;
-                $shippingDiscountLeft -= $shippingDiscount;
-            }
-
-            $productDiscount += max(0.0, $discount);
+        foreach ($order->getProducts() as $product) {
+            $productDiscount += (float)$product['total_price_tax_incl']
+                * ($rates[(int)$product['id_order_detail']] ?? 0.0) / 100;
         }
 
         return $this->refundPolicy->normalizePercent(($productDiscount / $productTotal) * 100);

@@ -27,8 +27,8 @@ class RefundDiscountServiceCore
         return Tools::roundPrice($amount);
     }
 
-    /** Effective percentages per order detail; fixed discounts are optional for BO suggestions. */
-    public function getProductRates(Order $order, bool $percentageOnly): array
+    /** Percentage discounts actually booked on each order detail. Fixed vouchers stay on the remaining order. */
+    public function getProductRates(Order $order): array
     {
         $products = [];
         foreach ($order->getProducts() as $product) {
@@ -55,7 +55,7 @@ class RefundDiscountServiceCore
             if (!Validate::isLoadedObject($rule)) {
                 throw new PrestaShopException(Tools::displayError('A historical discount is missing. Please review the order discount before refunding.'));
             }
-            if ($percentageOnly && (float)$rule->reduction_percent <= 0.0) {
+            if ((float)$rule->reduction_percent <= 0.0) {
                 continue;
             }
             $eligible = $products;

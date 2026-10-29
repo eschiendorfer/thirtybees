@@ -831,6 +831,11 @@ class OrderInvoiceCore extends ObjectModel
      */
     public function getOutstandingAmountTaxIncl()
     {
+        $order = new Order((int)$this->id_order);
+        if (count($order->getInvoicesCollection()) === 1) {
+            return (new OrderBalanceService())->calculate($order)['outstanding'];
+        }
+        // Multiple-invoice allocation is not inferred from order-level credit slips.
         try {
             $totalPaid = (float)Db::readOnly()->getValue(
                 (new DbQuery())

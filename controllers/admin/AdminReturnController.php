@@ -200,7 +200,7 @@ class AdminReturnControllerCore extends AdminController
     {
         $this->fields_form = [
             'legend' => [
-                'title' => $this->l('Return Merchandise Authorization (RMA)'),
+                'title' => 'Warenrücksendung #'.(int)$this->object->id,
                 'icon' => 'icon-clipboard',
             ],
             'input'  => [
@@ -213,53 +213,16 @@ class AdminReturnControllerCore extends AdminController
                     'name' => 'id_customer',
                 ],
                 [
-                    'type'     => 'text_customer',
-                    'label'    => $this->l('Customer'),
-                    'name'     => '',
-                    'size'     => '',
-                    'required' => false,
-                ],
-                [
-                    'type'     => 'text_order',
-                    'label'    => $this->l('Order'),
-                    'name'     => '',
-                    'size'     => '',
-                    'required' => false,
-                ],
-                [
-                    'type'     => 'free',
-                    'label'    => $this->l('Customer explanation'),
-                    'name'     => 'question',
-                    'size'     => '',
-                    'required' => false,
-                ],
-                [
                     'type'     => 'list_products',
-                    'label'    => $this->l('Products'),
-                    'name'     => '',
-                    'size'     => '',
-                    'required' => false,
-                    'desc'     => $this->l('List of products in return package.'),
-                ],
-                [
-                    'type'     => 'pdf_order_return',
-                    'label'    => $this->l('Return slip'),
+                    'col'      => 12,
                     'name'     => '',
                     'size'     => '',
                     'required' => false,
                 ],
             ],
             'submit' => [
-                'title' => $this->l('Save'),
-            ],
-            'buttons' => [
-                'save-and-stay' => [
-                    'title' => $this->l('Save and stay'),
-                    'name'  => 'submitAdd'.$this->table.'AndStay',
-                    'type'  => 'submit',
-                    'class' => 'btn btn-default pull-right',
-                    'icon'  => 'process-icon-save',
-                ],
+                'title' => 'Mengen speichern',
+                'stay' => true,
             ],
         ];
 
@@ -282,9 +245,6 @@ class AdminReturnControllerCore extends AdminController
         }
         unset($product);
 
-        // Prepare customer explanation for display
-        $this->object->question = '<span class="normal-text">'.nl2br($this->object->question).'</span>';
-
         $customer = new Customer((int)$this->object->id_customer);
         $workspaceProvider = new CustomerThreadWorkspaceDataProvider($this->context);
         $conversation = $workspaceProvider->getEntityConversation(
@@ -303,7 +263,47 @@ class AdminReturnControllerCore extends AdminController
         );
         $templateDirectory = rtrim((string)$this->context->smarty->getTemplateDir(0), '/\\').DIRECTORY_SEPARATOR;
 
+        try {
+            $settlementService = new OrderReturnSettlementService();
+            $settlement = $settlementService->preview($this->object);
+            $settlement['breakdown'] = $settlementService->getCreditBreakdown($settlement);
+        } catch (Throwable $exception) {
+            $settlement = ['errors' => [$exception->getMessage()], 'slips' => [], 'can_settle' => false,
+                'payment_unresolved' => false, 'waiting_package' => false, 'credit' => 0, 'credited' => 0,
+                'payout' => 0, 'remaining' => 0, 'breakdown' => null];
+        }
+        foreach ($products as &$product) {
+            $id = (int)$product['id_order_detail'];
+            $product['credit_amount'] = $settlement['breakdown']['products'][$id] ?? 0.0;
+            $product['previous_credit_amount'] = !empty($settlement['breakdown']['is_new'])
+                ? ($settlement['breakdown']['previous_products'][$id] ?? 0.0) : 0.0;
+        }
+        unset($product);
+        $settlement['adjust_url'] = $this->context->link->getAdminLink('AdminOrders', true, [
+            'vieworder' => 1, 'id_order' => (int)$order->id,
+            'prefill_credit_reason' => RefundPolicy::REASON_KEY_ORDER_RETURN,
+            'prefill_credit_entity' => (int)$this->object->id,
+            'prefill_refund_method' => RefundPolicy::REFUND_METHOD_NONE,
+        ]);
+        foreach ($settlement['slips'] as &$slip) {
+            $slip['url'] = $this->context->link->getAdminLink('AdminReturn', true, [
+                'id_order_return' => (int)$this->object->id, 'returnDocument' => (int)$slip['id_order_slip'],
+            ]);
+        }
+        unset($slip);
         $this->tpl_form_vars = [
+            'return_settlement' => $settlement,
+            'return_settlement_url' => $this->context->link->getAdminLink('AdminReturn', true, [
+                'updateorder_return' => 1, 'id_order_return' => (int)$this->object->id,
+            ]),
+            'return_currency' => new Currency((int)$order->id_currency),
+            'return_completed' => (int)$this->object->state === OrderReturn::STATE_RETURN_COMPLETED,
+            'return_created' => $this->object->date_add,
+            'return_legacy_reason' => (string)$this->object->question,
+            'return_slip_url' => $this->context->link->getPageLink('pdf-order-return', true, null,
+                'id_order_return='.(int)$this->object->id.'&adtoken='.Tools::getAdminTokenLite('AdminReturn').'&id_employee='.(int)$this->context->employee->id),
+            'return_order_reference' => $order->reference,
+            'return_settlement_template' => $templateDirectory.'controllers/return/helpers/form/settlement.tpl',
             'customer'               => $customer,
             'url_customer'           => $this->context->link->getAdminLink('AdminCustomers', true, [
                 'id_customer' => (int)$this->object->id_customer,
@@ -364,6 +364,39 @@ class AdminReturnControllerCore extends AdminController
      */
     public function postProcess()
     {
+        if (Tools::isSubmit('returnDocument') || Tools::isSubmit('settleOrderReturn')) {
+            if (!$this->hasViewPermission() || (Tools::isSubmit('settleOrderReturn') && !$this->hasEditPermission())) {
+                $this->errors[] = Tools::displayError('You do not have permission to edit this.');
+                return;
+            }
+            try {
+                if (Tools::isSubmit('settleOrderReturn') && ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+                    throw new PrestaShopException('Bitte die Abwicklung über das Formular bestätigen.');
+                }
+                $return = new OrderReturn(Tools::getIntValue('id_order_return'));
+                $order = new Order((int)$return->id_order);
+                if (!Validate::isLoadedObject($return) || !Validate::isLoadedObject($order)
+                    || !in_array((int)$order->id_shop, array_map('intval', Shop::getContextListShopID()), true)) {
+                    throw new PrestaShopException('The order return is invalid.');
+                }
+                if (Tools::isSubmit('returnDocument')) {
+                    $slip = new OrderSlip(Tools::getIntValue('returnDocument'));
+                    if (!Validate::isLoadedObject($slip) || (int)$slip->id_order !== (int)$order->id
+                        || (int)$slip->reason_entity_type !== RefundPolicy::REASON_ORDER_RETURN || (int)$slip->reason_id_entity !== (int)$return->id) {
+                        throw new PrestaShopException('The credit slip is invalid.');
+                    }
+                    (new OrderInvoiceCorrectionDocument())->render($order, $slip);
+                    exit;
+                }
+                (new OrderReturnSettlementService())->settle($return, (string)Tools::getValue('return_refund_method'), (string)Tools::getValue('return_fingerprint'));
+                Tools::redirectAdmin($this->context->link->getAdminLink('AdminReturn', true, [
+                    'updateorder_return' => 1, 'id_order_return' => (int)$return->id, 'conf' => 4,
+                ]));
+            } catch (Throwable $exception) {
+                $this->errors[] = $exception->getMessage();
+            }
+            return;
+        }
         if (Tools::isSubmit('deleteorder_return_detail')) {
             if ($this->hasDeletePermission()) {
                 if (($idOrderDetail = Tools::getIntValue('id_order_detail')) && Validate::isUnsignedId($idOrderDetail)) {
@@ -371,6 +404,11 @@ class AdminReturnControllerCore extends AdminController
                         $orderReturn = new OrderReturn($idOrderReturn);
                         if (!Validate::isLoadedObject($orderReturn)) {
                             $this->errors[] = Tools::displayError('Order return not found');
+                        } elseif (Db::getInstance()->getValue('SELECT d.id_order_slip FROM `'._DB_PREFIX_.'order_slip_detail` d'
+                            .' INNER JOIN `'._DB_PREFIX_.'order_slip` s ON s.id_order_slip = d.id_order_slip'
+                            .' WHERE s.reason_entity_type = '.RefundPolicy::REASON_ORDER_RETURN.' AND s.reason_id_entity = '.(int)$idOrderReturn
+                            .' AND d.id_order_detail = '.(int)$idOrderDetail)) {
+                            $this->errors[] = 'Bereits gutgeschriebene Retourenpositionen können nicht gelöscht werden.';
                         } else {
                             if ((int)($orderReturn->countProduct()) > 1) {
                                 if (OrderReturn::deleteOrderReturnDetail($idOrderReturn, $idOrderDetail, Tools::getIntValue('id_customization', 0))) {
@@ -414,7 +452,7 @@ class AdminReturnControllerCore extends AdminController
                         if (Tools::isSubmit('submitAddorder_returnAndStay')) {
                             Tools::redirectAdmin(static::$currentIndex.'&conf=4&token='.$this->token.'&updateorder_return&id_order_return='.(int) $idOrderReturn);
                         } else {
-                            Tools::redirectAdmin(static::$currentIndex.'&conf=4&token='.$this->token);
+                            Tools::redirectAdmin(static::$currentIndex.'&conf=4&token='.$this->token.'&updateorder_return&id_order_return='.(int)$idOrderReturn);
                         }
                     }
                 } else {
@@ -481,6 +519,14 @@ class AdminReturnControllerCore extends AdminController
 
             $otherReceivedQuantity = (int)$orderDetail->product_quantity_return - $this->getReceivedQuantity($orderReturn, $idOrderDetail);
             $totalReceivedQuantity = $otherReceivedQuantity + $receivedQuantity;
+            $creditedQuantity = (int)Db::getInstance()->getValue('SELECT COALESCE(SUM(d.product_quantity), 0)'
+                .' FROM `'._DB_PREFIX_.'order_slip_detail` d INNER JOIN `'._DB_PREFIX_.'order_slip` s ON s.id_order_slip = d.id_order_slip'
+                .' WHERE s.reason_entity_type = '.RefundPolicy::REASON_ORDER_RETURN.' AND s.reason_id_entity = '.(int)$orderReturn->id
+                .' AND d.id_order_detail = '.$idOrderDetail);
+            if ($receivedQuantity < $creditedQuantity) {
+                $this->errors[] = 'Die erhaltene Menge darf nicht unter die bereits gutgeschriebene Menge reduziert werden.';
+                return [];
+            }
             if ($registeredQuantity > $orderedQuantity || $totalReceivedQuantity > $orderedQuantity) {
                 $this->errors[] = Tools::displayError('Returned quantities cannot be greater than the ordered quantity.');
                 return [];

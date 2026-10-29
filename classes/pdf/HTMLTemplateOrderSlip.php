@@ -473,6 +473,8 @@ class HTMLTemplateOrderSlipCore extends HTMLTemplate
                 ->select('`payment_method`, `date_add`')
                 ->from('order_payment')
                 ->where('`id_order_slip` = '.(int)$this->order_slip->id)
+                ->where('`amount` < 0')
+                ->where("`status` = '".pSQL(OrderPayment::STATUS_DONE)."'")
                 ->orderBy('`id_order_payment` DESC')
         );
 

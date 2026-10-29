@@ -21,16 +21,31 @@ class RefundCreatorCore
             $excludeCancellation = (int)$metadata['reason_entity_type'] === RefundPolicy::REASON_CANCELLATION
                 ? (int)$metadata['reason_id_entity'] : 0;
             $eligibility = new RefundEligibilityService();
-            if ((float)$request['effective_tax_incl'] > $eligibility->getRemainingOrderCreditAmount($freshOrder, $excludeCancellation) + 0.000001) {
+            $remainingCredit = $eligibility->getRemainingInvoiceCreditAmount($freshOrder, $excludeCancellation);
+            if ((int)$metadata['reason_entity_type'] !== RefundPolicy::REASON_ORDER_RETURN
+                && ($request['refund_method'] ?? '') !== RefundPolicy::REFUND_METHOD_NONE) {
+                $remainingCredit = min($remainingCredit, $eligibility->getRemainingOrderCreditAmount($freshOrder, $excludeCancellation));
+            }
+            if ((float)$request['effective_tax_incl'] > $remainingCredit + 0.000001) {
                 throw new PrestaShopException(Tools::displayError('The remaining refundable amount changed. Reload the order and review the credit.'));
             }
+            $returnQuantities = (int)$metadata['reason_entity_type'] === RefundPolicy::REASON_ORDER_RETURN
+                ? $eligibility->getOrderReturnQuantities((int)$metadata['reason_id_entity']) : null;
+            if ($returnQuantities !== null && (!$eligibility->isValidOrderReturn($freshOrder, (int)$metadata['reason_id_entity'])
+                || (!empty($request['initial_return_credit'])
+                    && !$eligibility->getInitialOrderReturnQuantities($freshOrder, (int)$metadata['reason_id_entity'])))) {
+                throw new PrestaShopException('Die Retoure wurde bereits bearbeitet. Bitte neu laden.');
+            }
             foreach ($request['order_detail_list'] as $product) {
+                if ($returnQuantities !== null && (int)($returnQuantities[(int)$product['id_order_detail']] ?? 0) <= 0) {
+                    throw new PrestaShopException('Der Artikel wurde in dieser Retoure nicht empfangen. Bitte neu laden.');
+                }
                 $detail = new OrderDetail((int)$product['id_order_detail']);
                 $remaining = $eligibility->getOrderDetailRemainingCreditAmounts($detail);
                 $resume = OrderSlip::getProductSlipResume((int)$detail->id);
                 if ((int)$detail->id_order !== (int)$order->id
                     || (float)$product['amount'] > $remaining[$request['add_tax'] ? 'tax_excl' : 'tax_incl'] + 0.000001
-                    || (int)$product['quantity'] + (int)$resume['product_quantity'] > (int)$detail->product_quantity) {
+                    || ($returnQuantities === null && (int)$product['quantity'] + (int)$resume['product_quantity'] > (int)$detail->product_quantity)) {
                     throw new PrestaShopException(Tools::displayError('The remaining refundable product amount or quantity changed. Reload the order.'));
                 }
             }

@@ -73,13 +73,13 @@ class RefundCalculatorCore
             ? $this->eligibility->getServiceCaseOrderDetailIds($reasonIdEntity)
             : [];
         $orderReturnQuantities = $reasonEntityType === RefundPolicy::REASON_ORDER_RETURN
-            ? $this->eligibility->getUncreditedOrderReturnQuantities($order, $reasonIdEntity)
+            ? $this->eligibility->getOrderReturnQuantities($reasonIdEntity)
             : [];
         $cancellationQuantities = $reasonEntityType === RefundPolicy::REASON_CANCELLATION
             ? $this->eligibility->getUncreditedCancelledQuantities($order, $reasonIdEntity)
             : [];
-        if ($reasonEntityType === RefundPolicy::REASON_ORDER_RETURN && !$orderReturnQuantities) {
-            $errors[] = 'There are no open return quantities for this order.';
+        if ($reasonEntityType === RefundPolicy::REASON_ORDER_RETURN && !array_filter($orderReturnQuantities)) {
+            $errors[] = 'No goods have been received for this return.';
         }
         if ($reasonEntityType === RefundPolicy::REASON_CANCELLATION && !$cancellationQuantities) {
             $errors[] = 'There are no open cancellation quantities for this order.';
@@ -125,9 +125,8 @@ class RefundCalculatorCore
 
             $quantity = max(0, (int)($refundQuantities[$idOrderDetail] ?? 0));
             if ($reasonEntityType === RefundPolicy::REASON_ORDER_RETURN) {
-                $openReturnQuantity = (int)($orderReturnQuantities[$idOrderDetail] ?? 0);
-                if ($quantity <= 0 || $quantity > $openReturnQuantity) {
-                    $errors[] = 'The selected return quantity is invalid.';
+                if ((int)($orderReturnQuantities[$idOrderDetail] ?? 0) <= 0) {
+                    $errors[] = 'The selected product has not been received for this return.';
                     continue;
                 }
             } elseif ($reasonEntityType === RefundPolicy::REASON_CANCELLATION) {
@@ -137,7 +136,7 @@ class RefundCalculatorCore
                     continue;
                 }
             }
-            if ($reasonEntityType === RefundPolicy::REASON_SERVICE_CASE) {
+            if (in_array($reasonEntityType, [RefundPolicy::REASON_SERVICE_CASE, RefundPolicy::REASON_ORDER_RETURN], true)) {
                 $quantity = 0;
             }
 
@@ -233,16 +232,38 @@ class RefundCalculatorCore
         );
 
         $effectiveTaxIncl = $this->policy->roundAmount($intermediateTaxIncl - $feeAdjustment['tax_incl']);
-        $remaining = $this->eligibility->getRemainingOrderCreditAmount(
-            $order, $reasonEntityType === RefundPolicy::REASON_CANCELLATION ? $reasonIdEntity : 0
-        );
+        $excludeCancellation = $reasonEntityType === RefundPolicy::REASON_CANCELLATION ? $reasonIdEntity : 0;
+        $remaining = $this->eligibility->getRemainingInvoiceCreditAmount($order, $excludeCancellation);
+        $isReturn = $reasonEntityType === RefundPolicy::REASON_ORDER_RETURN;
+        if (!$isReturn && $refundMethod !== RefundPolicy::REFUND_METHOD_NONE) {
+            $remaining = min($remaining, $this->eligibility->getRemainingOrderCreditAmount($order, $excludeCancellation));
+        }
         if ($effectiveTaxIncl > $remaining + 0.000001) {
-            return ['errors' => [sprintf(Tools::displayError('The credit exceeds the remaining paid order amount (%.2f).'), $remaining)], 'request' => null];
+            return ['errors' => [sprintf(Tools::displayError('The credit exceeds the available amount for the selected refund method (%.2f).'), $remaining)], 'request' => null];
+        }
+
+        $refundAmount = $refundMethod === RefundPolicy::REFUND_METHOD_NONE ? 0.0 : $effectiveTaxIncl;
+        if ($isReturn && $refundMethod !== RefundPolicy::REFUND_METHOD_NONE) {
+            $settlement = (new OrderReturnSettlementService())->getAmounts($order, $reasonIdEntity, $effectiveTaxIncl);
+            $provided = $input['refund_amount_tax_incl'] ?? null;
+            if ($provided !== null && (!is_numeric(str_replace(',', '.', (string)$provided))
+                || !is_finite((float)str_replace(',', '.', (string)$provided)) || Tools::parseNumber((string)$provided) < 0)) {
+                return ['errors' => ['Bitte einen gültigen Rückzahlungsbetrag eingeben.'], 'request' => null];
+            }
+            $refundAmount = $provided === null ? $settlement['payout'] : $this->policy->roundAmount(Tools::parseNumber((string)$provided));
+            $balance = (new OrderBalanceService())->calculate($order);
+            $available = min($settlement['available_slips'] + $effectiveTaxIncl, max(0.0, $balance['paid'] - $balance['refunded'] - $balance['reserved']));
+            if ($settlement['unresolved'] || $refundAmount > $available + 0.000001) {
+                return ['errors' => ['Die Rückzahlung übersteigt den verfügbaren Betrag oder ein vorhandener Versuch ist noch ungeklärt.'], 'request' => null];
+            }
         }
 
         return [
             'errors' => [],
             'request' => [
+                'refund_method' => $refundMethod,
+                'initial_return_credit' => $isReturn && !empty($input['initial_return_credit']),
+                'refund_amount_tax_incl' => $refundAmount,
                 'order_detail_list' => $orderDetailList,
                 'full_quantity_list' => $fullQuantityList,
                 'shipping_cost_amount' => $shippingCostAmount,
@@ -266,7 +287,7 @@ class RefundCalculatorCore
     public function buildCreditSuggestions(Order $order, array $products, int $idLang, bool $displayIncludesTax): array
     {
         $orderReturnSuggestions = [];
-        foreach ($this->eligibility->getOpenOrderReturnRows($order, $idLang) as $row) {
+        foreach ($this->eligibility->getCreditableOrderReturnRows($order, $idLang) as $row) {
             $idOrderReturn = (int)$row['id_order_return'];
             $orderReturnSuggestions[$idOrderReturn] = $this->buildOrderReturnCreditSuggestion(
                 $order,
@@ -274,6 +295,8 @@ class RefundCalculatorCore
                 $idOrderReturn,
                 $displayIncludesTax
             );
+            $preview = (new OrderReturnSettlementService())->preview(new OrderReturn($idOrderReturn));
+            $orderReturnSuggestions[$idOrderReturn]['refund_amount_tax_incl'] = $preview['payout'];
         }
 
         $cancellationSuggestions = [];
@@ -302,8 +325,9 @@ class RefundCalculatorCore
         return [
             'default_cart_rule_rate' => $this->getOrderPercentCartRuleRate($order),
             'remaining_paid_tax_incl' => $this->eligibility->getRemainingOrderCreditAmount($order),
+            'remaining_credit_tax_incl' => $this->eligibility->getRemainingInvoiceCreditAmount($order),
             'display_includes_tax' => $displayIncludesTax,
-            'product_discount_rates' => (new RefundDiscountService())->getProductRates($order, false),
+            'product_discount_rates' => (new RefundDiscountService())->getProductRates($order),
             'default_fee_rate' => $this->policy->getSuggestedFeeRate(
                 RefundPolicy::REASON_ORDER_RETURN,
                 RefundPolicy::REFUND_METHOD_NONE
@@ -457,11 +481,11 @@ class RefundCalculatorCore
         int $idOrderReturn,
         bool $displayIncludesTax
     ): array {
-        $quantities = $this->eligibility->getUncreditedOrderReturnQuantities($order, $idOrderReturn);
-        $allProductLinesReturned = true;
+        $quantities = $this->eligibility->getInitialOrderReturnQuantities($order, $idOrderReturn);
+        $allProductLinesReturned = (bool)array_filter($quantities);
         $suggestedProducts = [];
         $productsDisplayTotal = 0.0;
-        $discountRates = (new RefundDiscountService())->getProductRates($order, false);
+        $discountRates = (new RefundDiscountService())->getProductRates($order);
         $suggestedDiscount = 0.0;
 
         foreach ($products as $product) {
@@ -519,9 +543,17 @@ class RefundCalculatorCore
             ];
         }
 
+        // Keep fixed vouchers on the remaining order, as cancellations do. The
+        // last/full credit must still stay within the remaining invoice claim.
+        $productTaxIncl = array_sum(array_column($suggestedProducts, 'amount_tax_incl'));
+        $productTaxExcl = array_sum(array_column($suggestedProducts, 'amount_tax_excl'));
+        $minimumDiscountTaxIncl = max(0.0, $productTaxIncl + $shipping['tax_incl']
+            - $this->eligibility->getRemainingInvoiceCreditAmount($order));
+        $minimumDiscount = $displayIncludesTax ? $minimumDiscountTaxIncl
+            : ($productTaxIncl > 0 ? $minimumDiscountTaxIncl * $productTaxExcl / $productTaxIncl : 0.0);
         $cartRuleAdjustment = min(
             $productsDisplayTotal,
-            $this->policy->roundPriceAmount($suggestedDiscount)
+            $this->policy->roundPriceAmount(max($suggestedDiscount, $minimumDiscount))
         );
         $subtotal = max(0.0, $productsDisplayTotal + (float)$shipping['amount'] - $cartRuleAdjustment);
         $feeAdjustment = min(
