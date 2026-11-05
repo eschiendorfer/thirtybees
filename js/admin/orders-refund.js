@@ -111,23 +111,17 @@ function parseCreditNumber(value) {
 }
 
 function roundCreditAmount(amount) {
-  return Math.round(Math.max(0, parseFloat(amount) || 0) * 100) / 100;
+  var value = Math.max(0, parseFloat(amount) || 0);
+  return Math.round((value + Number.EPSILON * Math.max(1, value)) * 100) / 100;
 }
 
 function roundCreditSignedAmount(amount) {
-  return Math.round((parseFloat(amount) || 0) * 100) / 100;
+  var value = parseFloat(amount) || 0;
+  return (value < 0 ? -1 : 1) * roundCreditAmount(Math.abs(value));
 }
 
 function roundCreditRefundTotalAmount(amount) {
-  var unit = window.orderCreditSuggestions && window.orderCreditSuggestions.round_unit
-    ? parseFloat(window.orderCreditSuggestions.round_unit)
-    : 0.05;
-
-  if (!unit || isNaN(unit)) {
-    unit = 0.05;
-  }
-
-  return Math.round(Math.max(0, parseFloat(amount) || 0) / unit) * unit;
+  return roundCreditAmount(amount);
 }
 
 function formatCreditInput(amount) {
@@ -450,7 +444,7 @@ function getCreditEnteredTotals() {
     }
 
     var amount = roundCreditAmount(parseCreditNumber($input.val()));
-    var max = parseCreditNumber($input.data('credit-max'));
+    var max = roundCreditAmount(parseCreditNumber($input.data('credit-max')));
 
     this.setCustomValidity(amount > max ? 'Der Betrag übersteigt den noch erstattbaren Produktbetrag.' : '');
 
@@ -616,7 +610,7 @@ function applyCreditUrlPrefill() {
 function checkPartialRefundProductAmount(it) {
   var $input = $(it);
   var amount = roundCreditAmount(parseCreditNumber($input.val()));
-  var max = parseCreditNumber($input.data('credit-max'));
+  var max = roundCreditAmount(parseCreditNumber($input.data('credit-max')));
   // Keep the submitted value; validation reports the limit instead of silently truncating it.
   $input[0].setCustomValidity(amount > max ? 'Der Betrag übersteigt den noch erstattbaren Produktbetrag.' : '');
   refreshSuggestedCreditAdjustments();

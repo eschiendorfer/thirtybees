@@ -517,25 +517,12 @@ class OrderAdjustmentServiceCore
 
     private function roundSignedAmount(float $amount): float
     {
-        return Tools::roundPrice(round($amount / RefundPolicy::ROUNDING_UNIT) * RefundPolicy::ROUNDING_UNIT);
+        return round($amount, 2);
     }
 
     private function allocatePriceAmount(array $lines, float $target, string $weightKey): array
     {
-        $totalWeight = array_sum(array_column($lines, $weightKey));
-        $result = [];
-        $allocated = 0.0;
-        $ids = array_keys($lines);
-        foreach ($ids as $index => $idOrderDetail) {
-            $amount = $index === count($ids) - 1
-                ? max(0.0, $target - $allocated)
-                : ($totalWeight > 0 ? $target * (float)$lines[$idOrderDetail][$weightKey] / $totalWeight : 0.0);
-            $amount = $this->refundPolicy->roundPriceAmount($amount);
-            $allocated += $amount;
-            $result[$idOrderDetail] = $amount;
-        }
-
-        return $result;
+        return $this->allocateRoundedAmount($lines, $target, $weightKey);
     }
 
     private function updateOrderCartRules(Order $order, float $discountTaxIncl, float $discountTaxExcl): bool

@@ -20,7 +20,7 @@ class RefundPolicyCore
     public const REFUND_METHOD_STORE_CREDIT = 'store_credit';
     public const REFUND_METHOD_ORIGINAL_PAYMENT = 'original_payment';
 
-    public const ROUNDING_UNIT = 0.05;
+    public const ROUNDING_UNIT = 0.01;
     public const ORIGINAL_PAYMENT_CANCELLATION_FEE_RATE = 5.0;
 
     public function getValidActions(): array
@@ -158,12 +158,12 @@ class RefundPolicyCore
 
     public function roundAmount(float $amount): float
     {
-        return Tools::roundPrice(round(max(0.0, $amount) / static::ROUNDING_UNIT) * static::ROUNDING_UNIT);
+        return $this->roundPriceAmount($amount);
     }
 
     public function roundPriceAmount(float $amount): float
     {
-        return Tools::roundPrice(max(0.0, $amount));
+        return round(max(0.0, $amount), 2);
     }
 
     public function normalizePercent(float $rate): float

@@ -310,7 +310,7 @@ class RefundEligibilityServiceCore
     public function getRemainingInvoiceCreditAmount(Order $order, int $excludeCancellation = 0): float
     {
         $balance = (new OrderBalanceService())->calculate($order);
-        return Tools::roundPrice(max(0.0, $balance['claim'] - $this->getReservedCancellationAmount($order, $excludeCancellation)));
+        return $this->policy->roundPriceAmount($balance['claim'] - $this->getReservedCancellationAmount($order, $excludeCancellation));
     }
 
     /** Credits reserve their amount immediately, including refunds awaiting payment. */
@@ -347,8 +347,8 @@ class RefundEligibilityServiceCore
         }
         $paid = min($paid, max(0.0, (float)$order->total_paid_tax_incl) + $legacyPaid);
         $reserved = $this->getReservedCancellationAmount($order, $excludeCancellation);
-        // Never round an available balance upwards beyond money actually received.
-        return Tools::roundPrice(max(0.0, $paid - array_sum($refundsBySlip) - $otherRefunds - $reserved));
+        // Compare balances at the same cent precision as entered credit amounts.
+        return $this->policy->roundPriceAmount($paid - array_sum($refundsBySlip) - $otherRefunds - $reserved);
     }
 
     protected function getCreditPaymentRows(Order $order): array

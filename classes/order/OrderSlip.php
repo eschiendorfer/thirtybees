@@ -370,6 +370,9 @@ class OrderSlipCore extends ObjectModel
             $orderSlip->shipping_cost_amount = 0;
         }
 
+        $orderSlip->total_shipping_tax_excl = round($orderSlip->total_shipping_tax_excl, 2);
+        $orderSlip->total_shipping_tax_incl = round($orderSlip->total_shipping_tax_incl, 2);
+
         $orderSlip->total_products_tax_excl = 0;
         $orderSlip->total_products_tax_incl = 0;
 
@@ -432,8 +435,8 @@ class OrderSlipCore extends ObjectModel
             }
 
             $quantityMultiplier = $quantity > 0 ? $quantity : 1;
-            $product['total_price_tax_excl'] = Tools::roundPrice($product['unit_price_tax_excl'] * $quantityMultiplier);
-            $product['total_price_tax_incl'] = Tools::roundPrice($product['unit_price_tax_incl'] * $quantityMultiplier);
+            $product['total_price_tax_excl'] = round($product['unit_price_tax_excl'] * $quantityMultiplier, 2);
+            $product['total_price_tax_incl'] = round($product['unit_price_tax_incl'] * $quantityMultiplier, 2);
 
             $orderSlip->total_products_tax_excl += $product['total_price_tax_excl'];
             $orderSlip->total_products_tax_incl += $product['total_price_tax_incl'];
@@ -512,9 +515,7 @@ class OrderSlipCore extends ObjectModel
 
     protected static function roundRefundTotal(float $amount): float
     {
-        $roundingUnit = class_exists('RefundPolicy') ? RefundPolicy::ROUNDING_UNIT : 0.05;
-
-        return Tools::roundPrice(round(max(0.0, $amount) / $roundingUnit) * $roundingUnit);
+        return round(max(0.0, $amount), 2);
     }
 
     /**

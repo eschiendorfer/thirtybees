@@ -99,7 +99,7 @@ class CancellationQuoteServiceCore
         $shipping = (float)$adjustment['shipping_adjustment_tax_incl'];
         if ($isPaid) {
             $available = $eligibility->getRemainingOrderCreditAmount($order, $excludeCancellation);
-            $available = floor(($available + 0.000001) / RefundPolicy::ROUNDING_UNIT) * RefundPolicy::ROUNDING_UNIT;
+            $available = $this->policy->roundPriceAmount($available);
             $shipping = min($shipping, $available);
             foreach ($adjustment['lines'] as $id => &$line) {
                 $remainingLine = $eligibility->getOrderDetailRemainingCreditAmounts(new OrderDetail((int)$id));
@@ -108,14 +108,14 @@ class CancellationQuoteServiceCore
             unset($line);
             $productBase = array_sum(array_column($adjustment['lines'], 'product_amount_tax_incl'));
             $target = min($productBase, max(0.0, $available - $shipping));
-            $left = floor(($target + 0.000001) / RefundPolicy::ROUNDING_UNIT) * RefundPolicy::ROUNDING_UNIT;
+            $left = $this->policy->roundPriceAmount($target);
             $ids = array_keys($adjustment['lines']);
             foreach ($ids as $index => $id) {
                 $amount = $index === count($ids) - 1 ? $left
                     : ($productBase > 0 ? $this->policy->roundAmount($target * $adjustment['lines'][$id]['product_amount_tax_incl'] / $productBase) : 0.0);
                 $amount = min($left, $amount, $adjustment['lines'][$id]['product_amount_tax_incl']);
                 $adjustment['lines'][$id]['product_amount_tax_incl'] = $amount;
-                $left = max(0.0, $left - $amount);
+                $left = $this->policy->roundPriceAmount($left - $amount);
             }
         }
 

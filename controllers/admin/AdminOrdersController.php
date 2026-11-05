@@ -1557,8 +1557,8 @@ class AdminOrdersControllerCore extends AdminController
             $product['current_stock'] = StockAvailable::getQuantityAvailableByProduct($product['product_id'], $product['product_attribute_id'], $product['id_shop']);
             $resume = OrderSlip::getProductSlipResume($product['id_order_detail']);
             $product['quantity_refundable'] = $product['product_quantity'] - $resume['product_quantity'];
-            $product['amount_refundable'] = $product['total_price_tax_excl'] - $resume['amount_tax_excl'];
-            $product['amount_refundable_tax_incl'] = $product['total_price_tax_incl'] - $resume['amount_tax_incl'];
+            $product['amount_refundable'] = $this->getRefundPolicy()->roundPriceAmount((float)$product['total_price_tax_excl'] - (float)$resume['amount_tax_excl']);
+            $product['amount_refundable_tax_incl'] = $this->getRefundPolicy()->roundPriceAmount((float)$product['total_price_tax_incl'] - (float)$resume['amount_tax_incl']);
             $product['amount_refund'] = Tools::displayPrice($resume['amount_tax_incl'], $currency);
             $product['refund_history'] = OrderSlip::getProductSlipDetail($product['id_order_detail']);
             $product['return_history'] = OrderReturn::getProductReturnDetail($product['id_order_detail']);
@@ -2204,8 +2204,8 @@ class AdminOrdersControllerCore extends AdminController
         $resume = OrderSlip::getProductSlipResume((int) $product['id_order_detail']);
         $product['customized_product_quantity'] = $this->getCustomizedProductQuantity($product);
         $product['quantity_refundable'] = $product['product_quantity'] - $resume['product_quantity'];
-        $product['amount_refundable'] = $product['total_price_tax_excl'] - $resume['amount_tax_excl'];
-        $product['amount_refundable_tax_incl'] = $product['total_price_tax_incl'] - $resume['amount_tax_incl'];
+        $product['amount_refundable'] = $this->getRefundPolicy()->roundPriceAmount((float)$product['total_price_tax_excl'] - (float)$resume['amount_tax_excl']);
+        $product['amount_refundable_tax_incl'] = $this->getRefundPolicy()->roundPriceAmount((float)$product['total_price_tax_incl'] - (float)$resume['amount_tax_incl']);
         $product['amount_refund'] = Tools::displayPrice($resume['amount_tax_incl']);
         $product['return_history'] = OrderReturn::getProductReturnDetail((int) $product['id_order_detail']);
         $product['refund_history'] = OrderSlip::getProductSlipDetail((int) $product['id_order_detail']);
@@ -2529,8 +2529,8 @@ class AdminOrdersControllerCore extends AdminController
         $resume = OrderSlip::getProductSlipResume($orderDetail->id);
         $product['quantity_refundable'] = $product['product_quantity'] - $resume['product_quantity'];
         $product['customized_product_quantity'] = $this->getCustomizedProductQuantity($product);
-        $product['amount_refundable'] = $product['total_price_tax_excl'] - $resume['amount_tax_excl'];
-        $product['amount_refundable_tax_incl'] = $product['total_price_tax_incl'] - $resume['amount_tax_incl'];
+        $product['amount_refundable'] = $this->getRefundPolicy()->roundPriceAmount((float)$product['total_price_tax_excl'] - (float)$resume['amount_tax_excl']);
+        $product['amount_refundable_tax_incl'] = $this->getRefundPolicy()->roundPriceAmount((float)$product['total_price_tax_incl'] - (float)$resume['amount_tax_incl']);
         $product['amount_refund'] = Tools::displayPrice($resume['amount_tax_incl']);
         $product['refund_history'] = OrderSlip::getProductSlipDetail($orderDetail->id);
         if ($product['id_warehouse'] != 0) {
