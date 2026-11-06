@@ -1319,7 +1319,7 @@
                       </tr>
                       <tr id="credit_refund_amount_row" style="display:none;">
                         <td><label for="credit_refund_amount">Rückzahlungsbetrag (inkl. MwSt.)</label></td>
-                        <td><input type="number" min="0" step="0.05" id="credit_refund_amount" name="credit_refund_amount" class="form-control text-right" value="0" disabled="disabled" /></td>
+                        <td><input type="number" min="0" step="0.01" id="credit_refund_amount" name="credit_refund_amount" class="form-control text-right" value="0" disabled="disabled" /></td>
                       </tr>
                     </tbody>
                   </table>

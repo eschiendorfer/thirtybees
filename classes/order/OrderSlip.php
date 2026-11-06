@@ -297,11 +297,12 @@ class OrderSlipCore extends ObjectModel
         $newProductList = [];
         foreach ($selectedOrderLines as $idOrderDetail) {
             $orderDetail = new OrderDetail((int) $idOrderDetail);
+            $resume = static::getProductSlipResume((int)$idOrderDetail);
+            $quantity = max(0, min((int)$qtyList[$idOrderDetail], (int)$orderDetail->product_quantity - (int)$resume['product_quantity']));
             $newProductList[$idOrderDetail] = [
                 'id_order_detail' => $idOrderDetail,
-                'quantity'        => $qtyList[$idOrderDetail],
-                'unit_price'      => $orderDetail->unit_price_tax_excl,
-                'amount'          => $orderDetail->unit_price_tax_incl * $qtyList[$idOrderDetail],
+                'quantity'        => $quantity,
+                'amount'          => $orderDetail->unit_price_tax_excl * $quantity,
             ];
         }
         return static::create($order, $newProductList, $shippingCost);
@@ -309,7 +310,7 @@ class OrderSlipCore extends ObjectModel
 
     /**
      * @param Order $order The order this refunding is related to.
-     * @param array $productList List of arrays with product descriptions.
+     * @param array $productList Product lines with id_order_detail, quantity and total amount (tax excluded if $addTax).
      * @param float|bool $shippingCost Shipping costs to be refunded. Explicit shipping costs amount can be passed,
      *                                 or boolean value to indicate if total shipping costs should be refunded
      * @param int $amount
@@ -388,7 +389,7 @@ class OrderSlipCore extends ObjectModel
         foreach ($productList as &$product) {
             $orderDetail = new OrderDetail((int) $product['id_order_detail']);
             $quantity = max(0, (int)$product['quantity']);
-            $lineAmount = Tools::roundPrice((float)($product['amount'] ?? 0));
+            $lineAmount = round((float)($product['amount'] ?? 0), 2);
             $orderSlipResume = static::getProductSlipResume((int) $orderDetail->id);
 
             if ($quantity > 0 && $quantity + $orderSlipResume['product_quantity'] > $orderDetail->product_quantity) {
@@ -422,21 +423,18 @@ class OrderSlipCore extends ObjectModel
             $tax->rate = $orderDetail->tax_rate;
             $taxCalculator = new TaxCalculator([$tax]);
 
-            // In case of a distinction between product value in the order and
-            // product value in the refund (choosen by the merchant on refund
-            // creation), these prices are reduced already.
-            $unitPrice = (float)($product['unit_price'] ?? $lineAmount);
+            // The confirmed line amount determines the totals; unit prices are derived afterwards.
             if ($addTax == true) {
-                $product['unit_price_tax_excl'] = Tools::roundPrice($unitPrice);
-                $product['unit_price_tax_incl'] = $taxCalculator->addTaxes($unitPrice);
+                $product['total_price_tax_excl'] = $lineAmount;
+                $product['total_price_tax_incl'] = round($taxCalculator->addTaxes($lineAmount), 2);
             } else {
-                $product['unit_price_tax_incl'] = Tools::roundPrice($unitPrice);
-                $product['unit_price_tax_excl'] = $taxCalculator->removeTaxes($unitPrice);
+                $product['total_price_tax_incl'] = $lineAmount;
+                $product['total_price_tax_excl'] = round($taxCalculator->removeTaxes($lineAmount), 2);
             }
 
             $quantityMultiplier = $quantity > 0 ? $quantity : 1;
-            $product['total_price_tax_excl'] = round($product['unit_price_tax_excl'] * $quantityMultiplier, 2);
-            $product['total_price_tax_incl'] = round($product['unit_price_tax_incl'] * $quantityMultiplier, 2);
+            $product['unit_price_tax_excl'] = Tools::roundPrice($product['total_price_tax_excl'] / $quantityMultiplier);
+            $product['unit_price_tax_incl'] = Tools::roundPrice($product['total_price_tax_incl'] / $quantityMultiplier);
 
             $orderSlip->total_products_tax_excl += $product['total_price_tax_excl'];
             $orderSlip->total_products_tax_incl += $product['total_price_tax_incl'];

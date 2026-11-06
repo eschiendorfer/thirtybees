@@ -153,7 +153,6 @@ class RefundCalculatorCore
                 'id_order_detail' => $idOrderDetail,
                 'quantity' => $quantity,
                 'amount' => $refundAmount,
-                'unit_price' => $quantity > 0 ? Tools::roundPrice($refundAmount / $quantity) : $refundAmount,
             ];
         }
 
