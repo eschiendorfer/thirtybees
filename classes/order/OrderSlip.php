@@ -513,7 +513,7 @@ class OrderSlipCore extends ObjectModel
 
     protected static function roundRefundTotal(float $amount): float
     {
-        return round(max(0.0, $amount), 2);
+        return (new RefundPolicy())->roundAmount($amount);
     }
 
     /**

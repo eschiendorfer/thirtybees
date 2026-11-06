@@ -121,7 +121,13 @@ function roundCreditSignedAmount(amount) {
 }
 
 function roundCreditRefundTotalAmount(amount) {
-  return roundCreditAmount(amount);
+  var unit = window.orderCreditSuggestions && window.orderCreditSuggestions.round_unit
+    ? parseFloat(window.orderCreditSuggestions.round_unit)
+    : 0.05;
+  if (!isFinite(unit) || unit <= 0) {
+    unit = 0.05;
+  }
+  return roundCreditAmount(Math.round(Math.max(0, parseFloat(amount) || 0) / unit) * unit);
 }
 
 function formatCreditInput(amount) {
