@@ -58,6 +58,13 @@
 						<div class="col-lg-3"><p class="form-control-static">{displayWtPriceWithCurrency price=$customer_stats.total_orders currency=$currency}</p></div>
 					</div>
 				</div>
+				{if $can_unassign_customer}
+					<form method="post" action="{$link->getAdminLink('AdminCarts')|escape:'html':'UTF-8'}">
+						<input type="hidden" name="action" value="unassignCustomer" />
+						<input type="hidden" name="id_cart" value="{$cart->id|intval}" />
+						<button type="submit" class="btn btn-default"><i class="icon-unlink"></i> {l s='Kundenzuordnung aufheben'}</button>
+					</form>
+				{/if}
 			{else}
 				<h2>{l s='Guest not registered'}</h2>
 			{/if}
@@ -71,9 +78,7 @@
 				{l s='Made on:'} {dateFormat date=$order->date_add}
 			{else}
 				<h2>{l s='No order was created from this cart.'}</h2>
-				{if $customer->id}
 					<a class="btn btn-default" href="{$link->getAdminLink('AdminOrders')|escape:'html':'UTF-8'}&amp;id_cart={$cart->id|intval}&amp;addorder"><i class="icon-shopping-cart"></i> {l s='Create an order from this cart.'}</a>
-				{/if}
 			{/if}
 		</div>
 	</div>

@@ -368,6 +368,8 @@ class AdminCartsControllerCore extends AdminController
         $kpi = $helper->generate();
 
         $this->tpl_view_vars = [
+            'can_unassign_customer'  => !$order->id && $this->hasEditPermission()
+                && Shop::getContext() == Shop::CONTEXT_SHOP && (int) $cart->id_shop === (int) $this->context->shop->id,
             'kpi'                    => $kpi,
             'products'               => $products,
             'discounts'              => $cart->getCartRules(),
@@ -389,19 +391,71 @@ class AdminCartsControllerCore extends AdminController
     }
 
     /**
+     * Remove the customer from an unordered cart so it can be assigned again.
+     *
+     * @throws PrestaShopException
+     */
+    public function processUnassignCustomer()
+    {
+        $this->display = 'view';
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !$this->hasEditPermission()) {
+            $this->errors[] = Tools::displayError('You do not have permission to edit this.');
+            return;
+        }
+        $cart = new Cart(Tools::getIntValue('id_cart'));
+        if (!Validate::isLoadedObject($cart) || !$cart->id_customer || $cart->orderExists()
+            || Shop::getContext() != Shop::CONTEXT_SHOP || (int) $cart->id_shop !== (int) $this->context->shop->id) {
+            $this->errors[] = $this->l('Die Kundenzuordnung kann für diesen Warenkorb nicht aufgehoben werden.');
+            return;
+        }
+
+        $cart->id_customer = 0;
+        $cart->id_guest = 0;
+        $cart->secure_key = '-1';
+        $cart->id_address_delivery = 0;
+        $cart->id_address_invoice = 0;
+        $cart->setDeliveryOption();
+        if (!$cart->update()) {
+            $this->errors[] = $this->l('Die Kundenzuordnung konnte nicht gespeichert werden.');
+            return;
+        }
+        $cart->setNoMultishipping();
+        $this->context->cart = $cart;
+        $this->context->customer = new Customer();
+        $this->context->currency = new Currency((int) $cart->id_currency);
+        CartRule::autoRemoveFromCart($this->context);
+
+        Tools::redirectAdmin($this->context->link->getAdminLink('AdminCarts').'&id_cart='.(int) $cart->id.'&viewcart&conf=4');
+    }
+
+    /**
      * @throws PrestaShopException
      */
     public function ajaxPreProcess()
     {
+        $assignCustomer = Tools::getIntValue('assign_customer');
+        if ($assignCustomer && ($_SERVER['REQUEST_METHOD'] !== 'POST' || !$this->checkToken()
+            || !$this->hasEditPermission() || Tools::getValue('action') !== 'searchCarts')) {
+            $this->ajaxDie(json_encode(['error' => Tools::displayError('You do not have permission to edit this.')]));
+        }
         if ($this->hasEditPermission()) {
             $idCustomer = Tools::getIntValue('id_customer');
             $customer = new Customer((int) $idCustomer);
             $this->context->customer = $customer;
             $idCart = Tools::getIntValue('id_cart');
-            if (!$idCart) {
+            if (!$idCart && !$assignCustomer) {
                 $idCart = $customer->getLastCart(false);
             }
             $this->context->cart = new Cart((int) $idCart);
+
+            if ($assignCustomer && (!Validate::isLoadedObject($this->context->cart)
+                || $this->context->cart->id_customer || $this->context->cart->orderExists()
+                || Shop::getContext() != Shop::CONTEXT_SHOP
+                || (int) $this->context->cart->id_shop !== (int) $this->context->shop->id
+                || !Validate::isLoadedObject($customer) || !$customer->active || $customer->deleted || $customer->is_guest
+                || !in_array((int) $customer->id_shop, Shop::getSharedShops((int) $this->context->cart->id_shop, Shop::SHARE_CUSTOMER)))) {
+                $this->ajaxDie(json_encode(['error' => $this->l('Bitte einen aktiven Kunden aus diesem Shop und einen noch nicht zugeordneten, unbestellten Warenkorb auswählen.')]));
+            }
 
             if (!$this->context->cart->id) {
                 $this->context->cart->recyclable = 0;
@@ -410,6 +464,7 @@ class AdminCartsControllerCore extends AdminController
 
             if (!$this->context->cart->id_customer) {
                 $this->context->cart->id_customer = $idCustomer;
+                $this->context->cart->secure_key = $customer->secure_key;
             }
             if (Validate::isLoadedObject($this->context->cart) && $this->context->cart->OrderExists()) {
                 return;
@@ -441,8 +496,8 @@ class AdminCartsControllerCore extends AdminController
             } elseif ($idAddressDelivery) {
                 $this->context->cart->id_address_delivery = (int) $idAddressDelivery;
             }
-            $this->context->cart->setNoMultishipping();
             $this->context->cart->save();
+            $this->context->cart->setNoMultishipping();
             $currency = new Currency((int) $this->context->cart->id_currency);
             $this->context->currency = $currency;
         }

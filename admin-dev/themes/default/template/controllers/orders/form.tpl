@@ -24,6 +24,7 @@
 *}
 <script type="text/javascript">
 	var id_cart = {$cart->id|intval};
+	var id_cart_to_assign = {if !$cart->id_customer}{$cart->id|intval}{else}0{/if};
 	var id_customer = 0;
 	var admin_order_tab_link = "{$link->getAdminLink('AdminOrders')|addslashes}";
 	var changed_shipping_price = false;
@@ -125,7 +126,7 @@
 				$('#voucher').val(data.name);
 				add_cart_rule(data.id_cart_rule);
 			});
-		{if $cart->id}
+		{if $cart->id && $cart->id_customer}
 			setupCustomer({$cart->id_customer|intval});
 			useCart('{$cart->id|intval}');
 		{/if}
@@ -237,7 +238,9 @@
 
 		$('#customer_part').on('click','button.setup-customer',function(e){
 			e.preventDefault();
-			setupCustomer($(this).data('customer'));
+			if (!setupCustomer($(this).data('customer'))) {
+				return;
+			}
 			$(this).removeClass('setup-customer').addClass('change-customer').html('<i class="icon-refresh"></i>&nbsp;{l s="Change"}').blur();
 			$(this).closest('.customerCard').addClass('selected-customer');
 			$('.selected-customer .panel-heading').prepend('<i class="icon-ok text-success"></i>');
@@ -533,15 +536,10 @@
 
 	function setupCustomer(idCustomer)
 	{
-		$('#carts').show();
-		$('#products_part').show();
-		$('#vouchers_part').show();
-		$('#address_part').show();
-		$('#carriers_part').show();
-		$('#summary_part').show();
+		var customerReady = false;
 		var address_link = $('#new_address').attr('href');
 		id_customer = idCustomer;
-		id_cart = 0;
+		id_cart = id_cart_to_assign;
 		$('#new_address').attr('href', address_link.replace(/id_customer=[0-9]+/, 'id_customer='+id_customer));
 		$.ajax({
 			type:"POST",
@@ -554,10 +552,18 @@
 				tab: "AdminCarts",
 				action: "searchCarts",
 				id_customer: id_customer,
+				assign_customer: id_cart_to_assign ? 1 : 0,
 				id_cart: id_cart
 			},
 			success : function(res)
 			{
+				if (res.error) {
+					jAlert(res.error);
+					return;
+				}
+				id_cart_to_assign = 0;
+				customerReady = true;
+				$('#carts, #products_part, #vouchers_part, #address_part, #carriers_part, #summary_part').show();
 				if(res.found)
 				{
 					var html_carts = '';
@@ -595,6 +601,7 @@
 				resetBind();
 			}
 		});
+		return customerReady;
 	}
 
 	function updateDeliveryOptionList(delivery_option_list, isVirtualCart)
