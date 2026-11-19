@@ -1683,7 +1683,7 @@ class OrderCore extends ObjectModel implements CustomerThreadContextSourceInterf
                 $orderPayment = new OrderPayment();
                 $orderPayment->order_reference = $this->reference;
                 $orderPayment->id_currency = $this->id_currency;
-                $orderPayment->amount = $this->total_paid_tax_incl;
+                $orderPayment->amount = $useExistingPayment ? 0.0 : $this->total_paid_tax_incl;
                 $orderPayment->payment_method = $this->payment;
                 $orderPayment->payment_module = $this->module;
                 $orderPayment->conversion_rate = $this->conversion_rate;
