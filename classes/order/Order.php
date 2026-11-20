@@ -942,7 +942,7 @@ class OrderCore extends ObjectModel implements CustomerThreadContextSourceInterf
         if (!Cache::isStored($cacheId)) {
             $result = (int) Db::readOnly()->getValue(
                 (new DbQuery())
-                    ->select('COUNT(*)')
+                    ->select('COUNT(DISTINCT o.`id_cart`)')
                     ->from(bqSQL(static::$definition['table']), 'o')
                     ->leftJoin('order_cart_rule', 'ocr', 'ocr.`id_order` = o.`id_order`')
                     ->where('o.`id_customer` = '.(int) $idCustomer)
@@ -3024,6 +3024,9 @@ class OrderCore extends ObjectModel implements CustomerThreadContextSourceInterf
         $query->select('MIN(id_order) as min, MAX(id_order) as max');
         $query->from('orders');
         $query->where('id_cart = '.(int) $this->id_cart);
+        if ($this->module === 'invoicepayment') {
+            $query->where("reference = '".pSQL($this->reference)."'");
+        }
 
         $order = Db::readOnly()->getRow($query);
 

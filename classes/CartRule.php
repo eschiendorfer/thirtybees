@@ -1101,7 +1101,7 @@ class CartRuleCore extends ObjectModel
         if ($context->cart->id_customer) {
             $quantityUsed = $conn->getValue(
                 (new DbQuery())
-                    ->select('COUNT(*)')
+                    ->select('COUNT(DISTINCT o.`id_cart`)')
                     ->from('orders', 'o')
                     ->leftJoin('order_cart_rule', 'od', 'od.`id_order` = o.`id_order`')
                     ->where('o.`id_customer` = '.(int) $context->cart->id_customer)
